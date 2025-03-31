@@ -1,13 +1,9 @@
 import numpy as np
-from scipy.stats import norm, multivariate_normal
 from scipy.special import erfinv
+from scipy.stats import norm, multivariate_normal
 
 from Service.Copulas.base import BaseCopula
 
-
-import numpy as np
-from scipy.stats import norm, multivariate_normal
-from scipy.special import erfinv
 
 class GaussianCopula(BaseCopula):
     """
@@ -42,6 +38,7 @@ class GaussianCopula(BaseCopula):
         self.bounds_param = [(-0.999, 0.999)]
         self.parameters = np.array([0.0])  # Initial guess for correlation coefficient
         self.n_obs = None # Number of data for the fit
+        self.default_optim_method = "SLSQP"  # or "trust-constr"
 
     def get_cdf(self, u, v, param):
         """

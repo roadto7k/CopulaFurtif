@@ -3,7 +3,7 @@ from scipy.optimize import minimize
 from scipy.stats import beta, lognorm, norm
 
 from Service.Copulas.elliptical.gaussian import GaussianCopula
-from Service.Copulas.fitting.estimation import cmle, fit_mle
+from Service.Copulas.fitting.estimation import cmle, fit_mle, fit_ifm
 import matplotlib.pyplot as plt
 
 def generate_data_beta_lognorm(n=1000, rho=0.7):
@@ -39,53 +39,92 @@ def generate_data_beta_lognorm(n=1000, rho=0.7):
 
 def main():
     np.random.seed(42)
-    X, Y = generate_data_beta_lognorm(n=1000, rho=0.7)
+
+    # === Step 0: Generate data with known Gaussian copula ===
+    true_rho = 0.7
+    X, Y = generate_data_beta_lognorm(n=10000, rho=true_rho)
     data = [X, Y]
 
-    # === Instantiate the Gaussian Copula ===
+    print("=== Data generated with Gaussian Copula ===")
+    print(f"True rho: {true_rho}")
+    print("=" * 50)
+
+    # === Step 1: Instantiate Gaussian Copula ===
     copula = GaussianCopula()
 
-    # === CMLE (Canonical MLE, known margins, no param fit) ===
-    rho_hat_cmle, ll_cmle = cmle(copula, data)
-    print(f"[CMLE] rho_hat = {rho_hat_cmle[0]:.4f}, loglik = {ll_cmle:.4f}")
-    print(f"→ Copula internal params: {copula.parameters}")
-    print(f"→ Copula log-likelihood:  {copula.log_likelihood_:.4f}\n")
+    # === Step 2: CMLE (Canonical MLE using pseudo-observations) ===
+    print("→ [Step 1] CMLE (Canonical MLE)")
+    res = cmle(copula, data)
+    if res is None:
+        print("❌ CMLE failed.\n")
+    else:
+        rho_cmle = res[0][0]
+        ll_cmle = res[1]
+        print(f"✅ CMLE succeeded")
+        print(f"   rho = {rho_cmle:.4f}")
+        print(f"   log-likelihood = {ll_cmle:.4f}\n")
 
-    # === MLE with fully known margins (Beta + LogNorm with true params) ===
+    # === Step 3: MLE with known marginals ===
+    print("→ [Step 2] MLE with known marginals")
     marginals_known = [
         {"distribution": beta, "a": 2, "b": 5, "loc": 0, "scale": 1},
         {"distribution": lognorm, "s": 0.5, "loc": 0, "scale": np.exp(1)}
     ]
-    rho_hat_mle_known, ll_known = fit_mle(data, copula, marginals=marginals_known, known_parameters=True)
-    print(f"[MLE with known margins] rho_hat = {rho_hat_mle_known[0]:.4f}, loglik = {ll_known:.4f}")
-    print(f"→ Copula internal params: {copula.parameters}")
-    print(f"→ Copula log-likelihood:  {copula.log_likelihood_:.4f}\n")
+    try:
+        mle_known, ll_known = fit_mle(data, copula, marginals=marginals_known, known_parameters=True)
+        rho_known = mle_known[0]
+        print(f"✅ MLE with known margins succeeded")
+        print(f"   rho = {rho_known:.4f}")
+        print(f"   log-likelihood = {ll_known:.4f}\n")
+    except Exception as e:
+        print("❌ MLE with known margins failed:", e, "\n")
 
-    # === MLE with automatic estimation of marginal parameters ===
+    # === Step 4: Full MLE (copula + marginals) ===
+    print("→ [Step 3] Full MLE (copula + marginals)")
     marginals_auto = [
-        {"distribution": "beta"},       # auto-init from data
-        {"distribution": "lognorm"}     # auto-init from data
+        {"distribution": "beta"},
+        {"distribution": "lognorm"}
     ]
-    params_mle, ll_mle = fit_mle(
-        data,
-        copula,
-        marginals=marginals_auto,
-        known_parameters=False
-    )
+    try:
+        full_params, ll_full = fit_mle(
+            data,
+            copula,
+            marginals=marginals_auto,
+            known_parameters=False
+        )
 
-    # === Decompose the output
-    # [theta, a, b, loc1, scale1, s, loc2, scale2]
-    rho_hat = params_mle[0]
-    a_hat, b_hat = params_mle[1], params_mle[2]
-    loc1, scale1 = params_mle[3], params_mle[4]
-    s_hat = params_mle[5]
-    loc2, scale2 = params_mle[6], params_mle[7]
+        rho_mle = full_params[0]
+        a_hat, b_hat = full_params[1], full_params[2]
+        loc1, scale1 = full_params[3], full_params[4]
+        s_hat = full_params[5]
+        loc2, scale2 = full_params[6], full_params[7]
 
-    print(f"[Full MLE] rho_hat = {rho_hat:.4f}")
-    print(f"--> Beta params:      a = {a_hat:.4f}, b = {b_hat:.4f}, loc = {loc1:.4f}, scale = {scale1:.4f}")
-    print(f"--> LogNorm params:   s = {s_hat:.4f}, loc = {loc2:.4f}, scale = {scale2:.4f}")
-    print(f"→ Copula internal params: {copula.parameters}")
-    print(f"→ Copula log-likelihood:  {copula.log_likelihood_:.4f}")
+        print(f"✅ Full MLE succeeded")
+        print(f"   rho = {rho_mle:.4f}")
+        print(f"   Beta:    a = {a_hat:.4f}, b = {b_hat:.4f}, loc = {loc1:.4f}, scale = {scale1:.4f}")
+        print(f"   LogNorm: s = {s_hat:.4f}, loc = {loc2:.4f}, scale = {scale2:.4f}")
+        print(f"   log-likelihood = {ll_full:.4f}\n")
+    except Exception as e:
+        print("❌ Full MLE failed:", e, "\n")
+
+    # === Step 5: IFM (Inference Functions for Margins) ===
+    print("→ [Step 4] IFM (Inference Functions for Margins)")
+    marginals_ifm = [
+        {"distribution": beta},
+        {"distribution": lognorm}
+    ]
+    try:
+        res_ifm = fit_ifm(data, copula, marginals_ifm, opti_method='Powell')
+        if res_ifm is None:
+            print("❌ IFM failed.\n")
+        else:
+            rho_ifm = res_ifm[0][0]
+            ll_ifm = res_ifm[1]
+            print(f"✅ IFM succeeded")
+            print(f"   rho = {rho_ifm:.4f}")
+            print(f"   log-likelihood = {ll_ifm:.4f}\n")
+    except Exception as e:
+        print("❌ IFM crashed:", e, "\n")
 
     # === Visualization ===
     plt.figure()
