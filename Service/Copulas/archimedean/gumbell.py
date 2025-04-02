@@ -2,7 +2,10 @@ import numpy as np
 from scipy.stats import norm
 from scipy.special import expm1, log1p
 
-class GumbelCopula:
+from Service.Copulas.base import BaseCopula
+
+
+class GumbelCopula(BaseCopula):
     """
     Gumbel Copula (Archimedean)
 
@@ -39,6 +42,7 @@ class GumbelCopula:
     """
 
     def __init__(self):
+        super().__init__()
         self.type = "gumbel"
         self.name = "Gumbel Copula"
         self.bounds_param = [(1+ 1e-6, None)]

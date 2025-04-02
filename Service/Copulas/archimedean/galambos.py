@@ -38,6 +38,7 @@ class GalambosCopula(BaseCopula):
     """
 
     def __init__(self):
+        super().__init__()
         self.type = 'galambos'
         self.name = "Galambos Copula"
         self.bounds_param = [(1e-6, None)]

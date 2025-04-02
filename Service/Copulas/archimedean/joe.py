@@ -38,6 +38,7 @@ class JoeCopula(BaseCopula):
     """
 
     def __init__(self):
+        super().__init__()
         self.type = 'joe'
         self.name = "Joe Copula"
         self.bounds_param = [(1, None)]

@@ -6,12 +6,18 @@ class BaseCopula:
     Définit l'API commune : get_pdf, get_cdf, sample, etc.
     """
 
-    def __init__(self):
-        self.type = None  # type of copula
-        self.name = None  # string for output/logging
-        self.parameters = None  # initial guess for copula params
-        self.bounds_param = None  # optimizer bounds
-        self.max_likelihood = None  # function handle, assigned later
+    def __init__(self, rotation=0):
+        """
+        rotation : int ∈ {0, 90, 180, 270}
+        """
+        self.type = None
+        self.name = None
+        self.parameters = None
+        self.bounds_param = None
+        self.max_likelihood = None
+        self.rotation = rotation
+        if self.rotation not in {0, 90, 180, 270}:
+            raise ValueError("Rotation must be 0, 90, 180, or 270 degrees.")
 
 
     def get_pdf(self, u, v, params):
