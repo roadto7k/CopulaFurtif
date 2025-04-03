@@ -103,16 +103,18 @@ class ClaytonCopula(BaseCopula):
 
         return np.column_stack((u, v))
 
-    def LTDC(self, theta):
+    def LTDC(self, param):
         """
         Computes the lower tail dependence coefficient for the Clayton copula.
 
         Formula:
             LTDC = 2^(-1 / theta)
         """
+        theta = param[0]
+
         return 2 ** (-1 / theta)
 
-    def UTDC(self, theta):
+    def UTDC(self, param):
         """
         Computes the upper tail dependence coefficient for the Clayton copula.
 

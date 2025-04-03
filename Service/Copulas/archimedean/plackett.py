@@ -198,7 +198,7 @@ class PlackettCopula(BaseCopula):
 
         return np.column_stack((u_samples, v_samples))
 
-    def LTDC(self, theta):
+    def LTDC(self, param):
         """
         Computes the lower tail dependence coefficient for the plackett copula.
 
@@ -207,7 +207,7 @@ class PlackettCopula(BaseCopula):
         """
         return 0
 
-    def UTDC(self, theta):
+    def UTDC(self, param):
         """
         Computes the upper tail dependence coefficient for the plackett copula.
 

@@ -166,7 +166,7 @@ class JoeCopula(BaseCopula):
 
         return np.column_stack((u_samples, v_samples))
 
-    def LTDC(self, theta):
+    def LTDC(self, param):
         """
         Computes the lower tail dependence coefficient for the Joe copula.
 
@@ -175,7 +175,7 @@ class JoeCopula(BaseCopula):
         """
         return 0.0
 
-    def UTDC(self, theta):
+    def UTDC(self, param):
         """
         Computes the upper tail dependence coefficient for the Joe copula.
 
@@ -184,6 +184,9 @@ class JoeCopula(BaseCopula):
 
         This increases with theta and is in [0, 1).
         """
+
+        theta = param[0]
+
         return 2 - 2 ** (1 / theta)
 
 

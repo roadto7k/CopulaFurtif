@@ -116,7 +116,7 @@ class GumbelCopula(BaseCopula):
 
         return np.column_stack((U, V))
 
-    def LTDC(self, theta):
+    def LTDC(self, param):
         """
         Computes the lower tail dependence coefficient for the Gumbel copula.
 
@@ -125,12 +125,14 @@ class GumbelCopula(BaseCopula):
         """
         return 0.0
 
-    def UTDC(self, theta):
+    def UTDC(self, param):
         """
         Computes the upper tail dependence coefficient for the Gumbel copula.
 
         Formula:
             UTDC = 2 - 2^(1 / theta)
         """
+        theta = param[0]
+
         return 2 - 2 ** (1 / theta)
 

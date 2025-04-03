@@ -2,13 +2,14 @@ import numpy as np
 
 class BaseCopula:
     """
-    Classe de base pour toutes les copules bivariées.
-    Définit l'API commune : get_pdf, get_cdf, sample, etc.
+    Base class for all bivariate copulas.
+    Defines the common API: get_pdf, get_cdf, sample, etc.
     """
 
     def __init__(self, rotation=0):
         """
-        rotation : int ∈ {0, 90, 180, 270}
+        Parameters:
+            rotation (int): Must be one of {0, 90, 180, 270} degrees.
         """
         self.type = None
         self.name = None
@@ -17,30 +18,32 @@ class BaseCopula:
         self.max_likelihood = None
         self.rotation = rotation
         if self.rotation not in {0, 90, 180, 270}:
-            raise ValueError("Rotation must be 0, 90, 180, or 270 degrees.")
-
+            raise ValueError("Wrapper must be 0, 90, 180, or 270 degrees.")
 
     def get_pdf(self, u, v, params):
         """
-        Densité de la copule évaluée en (u, v).
-        A override dans la classe fille.
+        Computes the density of the copula at (u, v).
+        This method should be overridden in the subclass.
         """
         raise NotImplementedError
 
     def get_cdf(self, u, v, params):
         """
-        Fonction de répartition de la copule en (u, v).
-        Idem, à override si on veut la CDF.
+        Computes the cumulative distribution function (CDF) of the copula at (u, v).
+        This method should be overridden in the subclass.
         """
         raise NotImplementedError
 
     def kendall_tau(self, param):
-
+        """
+        Computes Kendall's tau for the given parameter.
+        This method should be overridden in the subclass.
+        """
         raise NotImplementedError
 
     def sample(self, n, params):
         """
-        Génération de n échantillons (u_i, v_i) ~ Copule(params).
-        A override dans la classe fille.
+        Generates n samples (u_i, v_i) from the copula with the given parameters.
+        This method should be overridden in the subclass.
         """
         raise NotImplementedError

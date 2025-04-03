@@ -179,7 +179,7 @@ class FGMCopula(BaseCopula):
         v[mask] = chosen_v
         return np.column_stack((u, v))
 
-    def LTDC(self, theta):
+    def LTDC(self, param):
         """
         Computes the lower tail dependence coefficient for the fgm copula.
 
@@ -188,7 +188,7 @@ class FGMCopula(BaseCopula):
         """
         return 0.0
 
-    def UTDC(self, theta):
+    def UTDC(self, param):
         """
         Computes the upper tail dependence coefficient for the fgm copula.
 
