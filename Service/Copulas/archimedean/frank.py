@@ -42,7 +42,6 @@ class FrankCopula(BaseCopula):
         self.name = "Frank Copula"
         self.bounds_param = [(None, None)]
         self.parameters = np.array([2.0])
-        self.n_obs = None
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):

@@ -42,8 +42,7 @@ class PlackettCopula(BaseCopula):
         self.type = 'plackett'
         self.name = "Plackett Copula"
         self.bounds_param = [(1e-6, None)]
-        self.parameters_start = np.array(0.5)
-        self.n_obs = None
+        self.parameters = np.array(0.5)
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):

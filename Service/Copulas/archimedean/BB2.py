@@ -49,8 +49,7 @@ class BB2Copula(BaseCopula):
         self.type = "BB2"
         self.name = "BB2 Copula"
         self.bounds_param = [(1e-6, None), (1e-6, None)]
-        self.parameters_start = (np.array(1), np.array(1))
-        self.n_obs = None
+        self.parameters = (np.array(1), np.array(1))
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):

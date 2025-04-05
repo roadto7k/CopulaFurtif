@@ -10,39 +10,39 @@ from scipy.stats import rv_continuous
 # === Derivative-based optimizers ===
 # ⚙️ Use when you have smooth, differentiable functions (like log-likelihoods).
 
-# 'L-BFGS-B' : Quasi-Newton method. Handles box constraints (bounds). ✅ Default for copulas with bounds.
-#              ⚠️ Does NOT support general inequality or equality constraints (just bounds).
-#              🚀 Fast and robust when gradients are smooth.
+# 'L-BFGS-B' : Quasi-Newton method. Handles box constraints (bounds). Default for copulas with bounds.
+#              - Does NOT support general inequality or equality constraints (just bounds).
+#              - Fast and robust when gradients are smooth.
 
 # 'SLSQP'    : Sequential Least Squares Programming. Handles bounds AND linear/nonlinear constraints.
-#              ⚠️ Sometimes fails near boundary (e.g., when a parameter like nu is close to its lower bound).
-#              ❌ Less stable for copulas with highly constrained parameters.
+#              - Sometimes fails near boundary (e.g., when a parameter like nu is close to its lower bound).
+#              - Less stable for copulas with highly constrained parameters.
 
 # 'trust-constr' : Trust region method. Supports bounds + equality + inequality constraints.
-#                  🧠 Very general but can be slow. Use if you need full constraint support.
+#                  - Very general but can be slow. Use if you need full constraint support.
 
-# 'CG'       : Conjugate Gradient. No constraints support. 🚫 Not ideal if you have bounds.
+# 'CG'       : Conjugate Gradient. No constraints support. Not ideal if you have bounds.
 # 'BFGS'     : Quasi-Newton. No bounds support. Mostly academic unless constraints are added manually.
 
 # === Derivative-free optimizers ===
 # ⚙️ Use when function is noisy, discontinuous, or has unreliable gradients.
 
-# 'Nelder-Mead' : Simplex method. No bounds or constraints. 🚫 Only for prototyping.
-#                 ✅ Very robust, but slow and doesn't scale well in high dimensions.
+# 'Nelder-Mead' : Simplex method. No bounds or constraints. Only for prototyping.
+#                 - Very robust, but slow and doesn't scale well in high dimensions.
 
 # 'Powell'      : Direction set method. Handles bounds (via penalties internally), no gradients needed.
-#                 ✅ Works well for non-smooth functions.
+#                 - Works well for non-smooth functions.
 
 # 'COBYLA'      : Constrained Optimization BY Linear Approximation. Inequality constraints supported.
-#                 ❌ No bounds support — bounds must be rephrased as constraints.
+#                 - No bounds support — bounds must be rephrased as constraints.
 
 # 'TNC'         : Truncated Newton Conjugate-Gradient. Supports bounds only.
-#                 ✅ Similar to L-BFGS-B but less used.
+#                 - Similar to L-BFGS-B but less used.
 
 # 'dogleg'      : Trust-region method for small problems. Only works with unconstrained problems.
 
 # ==============================================================================
-# ✅ Recommended for copula estimation with bounds:
+#   Recommended for copula estimation with bounds:
 #     → 'L-BFGS-B'  : (robust, handles bounds perfectly)
 #     → 'SLSQP'     : (if you need nonlinear constraints — test stability!)
 #     → 'Powell'    : (if gradients are unstable / custom model)

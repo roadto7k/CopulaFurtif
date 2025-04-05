@@ -6,7 +6,7 @@ class BaseCopula:
     Defines the common API: get_pdf, get_cdf, sample, etc.
     """
 
-    def __init__(self, rotation=0):
+    def __init__(self):
         """
         Parameters:
             rotation (int): Must be one of {0, 90, 180, 270} degrees.
@@ -16,9 +16,7 @@ class BaseCopula:
         self.parameters = None
         self.bounds_param = None
         self.max_likelihood = None
-        self.rotation = rotation
-        if self.rotation not in {0, 90, 180, 270}:
-            raise ValueError("Wrapper must be 0, 90, 180, or 270 degrees.")
+        self.n_obs = None
 
     def get_pdf(self, u, v, params):
         """

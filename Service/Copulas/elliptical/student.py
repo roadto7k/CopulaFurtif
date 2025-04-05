@@ -42,7 +42,6 @@ class StudentCopula(BaseCopula):
         self.name = "Student-t Copula"
         self.bounds_param = [(-0.999, 0.999), (1e-6, 50.0)]
         self.parameters = np.array([0.5, 4.0])  # [rho, df]
-        self.n_obs = None
         self.default_optim_method = "Powell"  # or "trust-constr"
 
     def get_cdf(self, u, v, param):
@@ -219,4 +218,31 @@ class StudentCopula(BaseCopula):
         # Compute Kendall's tau on the generated samples
         tau, _ = kendalltau(samples[:, 0], samples[:, 1])
         return tau
+
+    def LTDC(self, param):
+        """
+        Computes the lower tail dependence coefficient for the Student copula.
+
+        For a bivariate Student-t copula with correlation ρ and degrees of freedom ν,
+        the tail dependence coefficient is:
+
+            LTDC = 2 * T_{ν+1} ( -sqrt((ν+1)*(1-ρ)/(1+ρ)) )
+
+        where T_{ν+1} is the CDF of a Student-t distribution with (ν+1) degrees of freedom.
+        """
+        rho = param[0]
+        nu = param[1]
+        return 2 * t.cdf(-np.sqrt((nu + 1) * (1 - rho) / (1 + rho)), df=nu + 1)
+
+    def UTDC(self, param):
+        """
+        Computes the upper tail dependence coefficient for the Student copula.
+
+        For the bivariate Student-t copula, the upper tail dependence is equal to the lower tail dependence:
+
+            UTDC = 2 * T_{ν+1} ( -sqrt((ν+1)*(1-ρ)/(1+ρ)) )
+        """
+        # They are identical for the Student copula.
+        return self.LTDC(param)
+
 

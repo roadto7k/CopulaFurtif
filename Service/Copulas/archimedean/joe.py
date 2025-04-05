@@ -42,8 +42,7 @@ class JoeCopula(BaseCopula):
         self.type = 'joe'
         self.name = "Joe Copula"
         self.bounds_param = [(1, None)]
-        self.parameters_start = np.array([1.5])
-        self.n_obs = None
+        self.parameters = np.array([1.5])
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):

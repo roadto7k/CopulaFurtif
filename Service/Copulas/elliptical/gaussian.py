@@ -37,7 +37,6 @@ class GaussianCopula(BaseCopula):
         self.name = "Gaussian Copula"
         self.bounds_param = [(-0.999, 0.999)]
         self.parameters = np.array([0.0])  # Initial guess for correlation coefficient
-        self.n_obs = None # Number of data for the fit
         self.default_optim_method = "SLSQP"  # or "trust-constr"
 
     def get_cdf(self, u, v, param):
@@ -132,6 +131,25 @@ class GaussianCopula(BaseCopula):
         v = norm.cdf(correlated[:, 1])
 
         return np.column_stack((u, v))
+
+    def LTDC(self, param):
+        """
+        Computes the lower tail dependence coefficient for the Gaussian copula.
+
+        Gaussian copula has no tail dependence:
+            LTDC = 0
+        """
+        return 0.0
+
+    def UTDC(self, param):
+        """
+        Computes the upper tail dependence coefficient for the Gaussian copula.
+
+        Gaussian copula has no tail dependence:
+            UTDC = 0
+        """
+        return 0.0
+
 
 
 

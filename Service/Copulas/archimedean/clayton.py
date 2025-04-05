@@ -42,7 +42,6 @@ class ClaytonCopula(BaseCopula):
         self.name = "Clayton Copula"
         self.bounds_param = [(1e-6, None)]
         self.parameters = np.array([0.5])  # initial guess for theta
-        self.n_obs = None
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):
