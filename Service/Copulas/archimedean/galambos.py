@@ -1,7 +1,10 @@
+import math
+
 import numpy as np
 from scipy.stats import uniform
 from scipy.optimize import brentq
 from scipy.special import comb
+from math import comb, log, exp
 
 from Service.Copulas.base import BaseCopula
 
@@ -115,36 +118,68 @@ class GalambosCopula(BaseCopula):
 
         return term1 * term2 + term3 * term4
 
-    def kendall_tau(self, param):
+    def kendall_tau(self, param, tol=1e-10, max_iter=1000):
         """
-        Computes Kendall's tau for the Galambos copula.
+        Compute Kendall's tau for the Galambos copula using a series expansion
+        in log-space to avoid overflow:
 
-        One common series representation for Kendall's tau is:
-            tau = 1 - (1/theta) * sum_{j=1}^∞ [ (-1)^(j-1) / (j + 1/theta) * C(2j, j)/4^j ]
-        This series is computed until convergence.
+            tau = 1 - (1/theta) * sum_{j=1}^∞ [ (-1)^(j-1) / (j + 1/theta) * C(2j, j) / 4^j ],
 
         Parameters
         ----------
         param : array_like
-            Copula parameter (theta).
+            Copula parameters, with param[0] = theta. Must satisfy theta > 0.
+        tol : float, optional
+            Relative tolerance for convergence of the series.
+        max_iter : int, optional
+            Maximum number of series terms to sum.
 
         Returns
         -------
         float
-            Kendall's tau for the Galambos copula.
+            The approximate Kendall's tau for the Galambos copula.
+
+        Raises
+        ------
+        ValueError
+            If theta <= 0 or if an invalid denominator is encountered.
         """
         theta = param[0]
+        if theta <= 0:
+            raise ValueError("Galambos copula requires theta > 0.")
+
         summation = 0.0
-        j = 1
-        while True:
-            term = ((-1) ** (j - 1) / (j + 1 / theta)) * comb(2 * j, j) / (4 ** j)
+        for j in range(1, max_iter + 1):
+            # Compute the sign (-1)^(j-1)
+            sign = 1.0 if ((j - 1) % 2 == 0) else -1.0
+
+            denom = j + (1.0 / theta)
+            if abs(denom) < 1e-15:
+                raise ValueError(f"Encountered nearly zero denominator at j={j}.")
+
+            # Use math.comb without keyword arguments; returns an integer.
+            bin_coeff = math.comb(2 * j, j)
+            log_bin_coeff = math.log(bin_coeff)
+
+            # Compute log(4^j * denom) = j * log(4) + log(denom)
+            log_divisor = j * math.log(4.0) + math.log(denom)
+
+            # The term in log-space
+            log_term_abs = log_bin_coeff - log_divisor
+
+            # Exponentiate to get the absolute value of the term, then apply the sign.
+            term = sign * exp(log_term_abs)
+
             summation += term
-            if abs(term) < 1e-8:
+
+            # Check for convergence: stop when the term is negligible relative to the sum.
+            if abs(term) < tol * abs(summation):
                 break
-            j += 1
-            if j > 1000:
-                break
-        tau = 1 - (1 / theta) * summation
+        else:
+            print(f"[WARNING] Galambos tau series did not converge within {max_iter} terms. "
+                  "Result may be inaccurate.")
+
+        tau = 1.0 - (1.0 / theta) * summation
         return tau
 
     def sample(self, n, param):

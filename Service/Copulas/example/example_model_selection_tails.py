@@ -16,7 +16,7 @@ from Service.Copulas.elliptical.gaussian import GaussianCopula
 from Service.Copulas.elliptical.student import StudentCopula
 
 from Service.Copulas.fitting.estimation import fit_mle, pseudo_obs
-from Service.Copulas.metrics.model_selection import compare_tail_dependence
+from Service.Copulas.metrics.tail_dependance import compare_tail_dependence
 
 
 def generate_data_beta_lognorm_student(n=1000, rho=0.7, nu=4):

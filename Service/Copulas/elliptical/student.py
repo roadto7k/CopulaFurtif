@@ -163,7 +163,7 @@ class StudentCopula(BaseCopula):
         v = t.cdf(scaled[:, 1], df=nu)
         return np.column_stack((u, v))
 
-    def kendall_tau_monte_carlo(self, param, n_samples=10000, random_state=None):
+    def kendall_tau(self, param, n_samples=10000, random_state=None):
         """
         Estimate Kendall's tau for the bivariate Student-t copula using Monte Carlo simulation.
 
@@ -244,5 +244,19 @@ class StudentCopula(BaseCopula):
         """
         # They are identical for the Student copula.
         return self.LTDC(param)
+
+    def IAD(self, data):
+        """
+        Skipped IAD computation due to high computational cost for elliptical copulas.
+        """
+        print(f"[INFO] IAD is disabled for {self.name} due to performance limitations.")
+        return np.nan
+
+    def AD(self, data):
+        """
+        Skipped AD computation due to high computational cost for elliptical copulas.
+        """
+        print(f"[INFO] AD is disabled for {self.name} due to performance limitations.")
+        return np.nan
 
 

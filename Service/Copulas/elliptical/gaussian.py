@@ -150,6 +150,20 @@ class GaussianCopula(BaseCopula):
         """
         return 0.0
 
+    def IAD(self, data):
+        """
+        Skipped IAD computation due to high computational cost for elliptical copulas.
+        """
+        print(f"[INFO] IAD is disabled for {self.name} due to performance limitations.")
+        return np.nan
+
+    def AD(self, data):
+        """
+        Skipped AD computation due to high computational cost for elliptical copulas.
+        """
+        print(f"[INFO] AD is disabled for {self.name} due to performance limitations.")
+        return np.nan
+
 
 
 

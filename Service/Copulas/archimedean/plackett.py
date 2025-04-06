@@ -121,7 +121,7 @@ class PlackettCopula(BaseCopula):
         discriminant = np.maximum(discriminant, 0.0)
         B = np.sqrt(discriminant)
 
-        numerator = theta * (1 + (theta - 1) * (u + v) - (theta - 1) * B)
+        numerator = theta * (1 + (theta - 1)*(u + v)) - (theta - 1)*B
         denominator = B * (1 + (theta - 1) * (u + v) - B) ** 2
         denominator = np.clip(denominator, 1e-14, np.inf)
         return numerator / denominator

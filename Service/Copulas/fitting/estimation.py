@@ -1,14 +1,16 @@
 import numpy as np
-import scipy.stats as stats
 from scipy.optimize import minimize
-from scipy.stats import rv_continuous
+
+from Service.Copulas.fitting.utils import auto_initialize_marginal_params, flatten_theta, adapt_theta, \
+    log_likelihood_only_copula, log_likelihood_joint
+
 
 # ==============================================================================
-# 🔍 SCIPY OPTIMIZERS REFERENCE (for `scipy.optimize.minimize`)
+# SCIPY OPTIMIZERS REFERENCE (for `scipy.optimize.minimize`)
 # ==============================================================================
 
 # === Derivative-based optimizers ===
-# ⚙️ Use when you have smooth, differentiable functions (like log-likelihoods).
+# ⚙Use when you have smooth, differentiable functions (like log-likelihoods).
 
 # 'L-BFGS-B' : Quasi-Newton method. Handles box constraints (bounds). Default for copulas with bounds.
 #              - Does NOT support general inequality or equality constraints (just bounds).
@@ -25,7 +27,7 @@ from scipy.stats import rv_continuous
 # 'BFGS'     : Quasi-Newton. No bounds support. Mostly academic unless constraints are added manually.
 
 # === Derivative-free optimizers ===
-# ⚙️ Use when function is noisy, discontinuous, or has unreliable gradients.
+# ⚙Use when function is noisy, discontinuous, or has unreliable gradients.
 
 # 'Nelder-Mead' : Simplex method. No bounds or constraints. Only for prototyping.
 #                 - Very robust, but slow and doesn't scale well in high dimensions.
@@ -50,72 +52,7 @@ from scipy.stats import rv_continuous
 
 
 
-def auto_initialize_marginal_params(data, dist_name):
-    """
-    Automatically fit a distribution from scipy.stats to the given 1D data,
-    and return a dictionary of its best-fit parameters.
 
-    Parameters
-    ----------
-    data : array-like
-        1D array of observations.
-    dist_name : str
-        Name of the scipy.stats distribution (e.g., "beta", "lognorm", "gamma", ...)
-
-    Returns
-    -------
-    param_dict : dict
-        A dictionary with keys:
-            - "distribution": the scipy.stats distribution object
-            - one key per shape parameter (if any), with their fitted values
-            - "loc": the fitted location parameter
-            - "scale": the fitted scale parameter
-
-    Raises
-    ------
-    ValueError
-        If the distribution name is invalid or if fitting fails.
-
-    Example
-    -------
-    >>> auto_initialize_marginal_params(X, "beta")
-    {'distribution': <scipy.stats._continuous_distns.beta_gen>,
-     'a': 2.03, 'b': 4.97, 'loc': 0.01, 'scale': 0.98}
-    """
-    # Get all available continuous distributions from scipy.stats
-    available_distributions = {
-        name: getattr(stats, name) for name in dir(stats)
-        if isinstance(getattr(stats, name), rv_continuous)
-    }
-
-    # Check if the provided name is valid
-    if dist_name not in available_distributions:
-        valid = sorted(available_distributions.keys())
-        raise ValueError(
-            f"Invalid distribution name '{dist_name}'. Must be one of:\n{valid}"
-        )
-
-    dist = available_distributions[dist_name]
-
-    # Fit the distribution to the data
-    try:
-        fitted_params = dist.fit(data)
-    except Exception as e:
-        raise ValueError(f"Failed to fit distribution '{dist_name}': {e}")
-
-    # Extract shape parameter names
-    shape_names = []
-    if hasattr(dist, 'shapes') and dist.shapes is not None:
-        shape_names = [s.strip() for s in dist.shapes.split(',')]
-
-    # Build the parameter dictionary
-    param_dict = {"distribution": dist}
-    for i, name in enumerate(shape_names):
-        param_dict[name] = fitted_params[i]
-    param_dict["loc"] = fitted_params[-2]
-    param_dict["scale"] = fitted_params[-1]
-
-    return param_dict
 
 
 def pseudo_obs(data):
@@ -146,6 +83,7 @@ def pseudo_obs(data):
     v = empirical_cdf_ranks(Y)
 
     return np.vstack((u, v))
+
 
 def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
     """
@@ -245,6 +183,8 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
             print("→ Bounds:", clean_bounds)
             print("→ Message:", result.message)
         return None
+
+
 def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False):
     """
     Fit a bivariate copula by Maximum Likelihood Estimation (MLE),
@@ -320,7 +260,7 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
         scale_guess = marg.get("scale", 1.0)
 
         if known_parameters:
-            # ✅ Parameters are declared as known → strict validation required
+            # Parameters are declared as known → strict validation required
             if scale_guess <= 0:
                 raise ValueError(f"Distribution '{dist_name}' must have scale > 0. Got: {scale_guess}")
 
@@ -347,23 +287,9 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
     # -------------------------------------------------------------------------
     # 2) Organize the copula parameter(s) initial guesses
     # -------------------------------------------------------------------------
-    def adapt_theta(theta_array):
-        """Convert a flattened slice of parameters (theta) back to the
-        copula's required format if needed."""
-        if isinstance(copula.parameters, tuple):
-            return tuple(theta_array[:len(copula.parameters)])
-        elif isinstance(copula.parameters, np.ndarray) and copula.parameters.shape == ():
-            return [theta_array[0]]
-        else:
-            return list(theta_array[:len(copula.parameters)])
 
     # Flatten copula parameter starts into a list
-    if isinstance(copula.parameters, tuple):
-        theta0 = [float(x) for x in copula.parameters]
-    elif isinstance(copula.parameters, np.ndarray) and copula.parameters.shape == ():
-        theta0 = [copula.parameters.item()]
-    else:
-        theta0 = list(copula.parameters)
+    theta0 = flatten_theta(copula.parameters)
 
     # -------------------------------------------------------------------------
     # 3) Build the optimization function
@@ -381,33 +307,22 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
         # ---------------------------------------------------------------------
         # All marginals are fixed => we optimize only copula parameters
         # ---------------------------------------------------------------------
-        def log_likelihood_only_copula(theta_array):
-            theta = adapt_theta(theta_array)
-
-            # For each margin, read the user-supplied (fixed) shape, loc, scale
-            shape_keys_0 = [k for k in marginals[0] if k not in ("distribution", "loc", "scale")]
-            shape_keys_1 = [k for k in marginals[1] if k not in ("distribution", "loc", "scale")]
-            shape_params_0 = tuple(marginals[0][key] for key in shape_keys_0)
-            shape_params_1 = tuple(marginals[1][key] for key in shape_keys_1)
-
-            loc1, scale1 = marginals[0].get('loc', 0), marginals[0].get('scale', 1)
-            loc2, scale2 = marginals[1].get('loc', 0), marginals[1].get('scale', 1)
-
-            # Evaluate cdf and pdf for each margin
-            u = marginals[0]['distribution'].cdf(X, *shape_params_0, loc=loc1, scale=scale1)
-            v = marginals[1]['distribution'].cdf(Y, *shape_params_1, loc=loc2, scale=scale2)
-            pdf1 = marginals[0]['distribution'].pdf(X, *shape_params_0, loc=loc1, scale=scale1)
-            pdf2 = marginals[1]['distribution'].pdf(Y, *shape_params_1, loc=loc2, scale=scale2)
-
-            # Evaluate copula PDF
-            cop_pdf = copula.get_pdf(u, v, theta)
-            # sum of log(pdf_cop * pdf_margin1 * pdf_margin2)
-            return -np.sum(np.log(cop_pdf) + np.log(pdf1) + np.log(pdf2))
 
         x0 = np.array(theta0, dtype=float)
         bounds = copula.bounds_param if hasattr(copula, "bounds_param") else None
 
-        results = minimize(log_likelihood_only_copula, x0,
+        # define an objective function that calls the external log-likelihood
+        def objective(theta_array):
+            return log_likelihood_only_copula(
+                theta_array=theta_array,
+                copula=copula,
+                X=X,
+                Y=Y,
+                marginals=marginals,
+                adapt_theta_func=adapt_theta
+            )
+
+        results = minimize(objective, x0,
                            method=opti_method, bounds=bounds)
         print("Method:", opti_method, " | success:", results.success,
               " | message:", results.message)
@@ -472,50 +387,17 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
             # scale => must be positive
             bounds.append((1e-6, None))
 
-        def log_likelihood_joint(param_vec):
-            # param_vec layout:
-            # 1) copula params
-            # 2) margin1 shape param(s) + loc + scale
-            # 3) margin2 shape param(s) + loc + scale
-            p = len(theta0)
-
-            # Reconstruct copula parameters
-            theta = adapt_theta(param_vec)
-
-            # keep track of the index from which margin-1's params start
-            idx_current = p
-            # margin 1
-            shape_count_1 = margin_shapes_count[0]
-            shape_params_1 = param_vec[idx_current : idx_current + shape_count_1]
-            idx_current += shape_count_1
-            loc1 = param_vec[idx_current]
-            scale1 = param_vec[idx_current + 1]
-            idx_current += 2
-
-            # margin 2
-            shape_count_2 = margin_shapes_count[1]
-            shape_params_2 = param_vec[idx_current : idx_current + shape_count_2]
-            idx_current += shape_count_2
-            loc2 = param_vec[idx_current]
-            scale2 = param_vec[idx_current + 1]
-            idx_current += 2
-
-            dist0 = marginals[0]['distribution']
-            dist1 = marginals[1]['distribution']
-
-            # Evaluate CDF/PDF for margin 1
-            u = dist0.cdf(X, *shape_params_1, loc=loc1, scale=scale1)
-            pdf1 = dist0.pdf(X, *shape_params_1, loc=loc1, scale=scale1)
-
-            # Evaluate CDF/PDF for margin 2
-            v = dist1.cdf(Y, *shape_params_2, loc=loc2, scale=scale2)
-            pdf2 = dist1.pdf(Y, *shape_params_2, loc=loc2, scale=scale2)
-
-            # Copula PDF
-            cop_pdf = copula.get_pdf(u, v, theta)
-
-            # Negative log-likelihood
-            return -np.sum(np.log(cop_pdf) + np.log(pdf1) + np.log(pdf2))
+        def objective(param_vec):
+            return log_likelihood_joint(
+                param_vec=param_vec,
+                copula=copula,
+                X=X,
+                Y=Y,
+                marginals=marginals,
+                margin_shapes_count=margin_shapes_count,
+                adapt_theta_func=adapt_theta,
+                theta0_length=len(theta0)
+            )
 
         # Pre-check: catch NaNs or invalid scales in x0
         if np.any(np.isnan(x0)) or np.any(np.isinf(x0)):
@@ -530,7 +412,7 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
 
         # Try the optimization
         try:
-            results = minimize(log_likelihood_joint, x0, method=opti_method, bounds=bounds)
+            results = minimize(objective, x0, method=opti_method, bounds=bounds)
         except Exception as e:
             print(f"[ERROR] Optimization raised an exception: {e}")
             raise RuntimeError(f"Optimization crashed due to exception: {e}")
