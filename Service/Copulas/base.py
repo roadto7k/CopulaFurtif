@@ -1,7 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
-from Service.Copulas.fitting.estimation import pseudo_obs
 from Service.Copulas.metrics.gof import compute_iad_score, AD_score, kendall_tau_distance, compute_aic, compute_bic
 
 

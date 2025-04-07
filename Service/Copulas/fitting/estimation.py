@@ -66,8 +66,8 @@ def pseudo_obs(data):
 
     Returns
     -------
-    np.ndarray
-        Array of shape (2, n) containing scaled ranks (pseudo-observations)
+    u, v : np.ndarray, np.ndarray
+        Pseudo-observations from empirical CDFs, both in (0,1).
     """
     if len(data) != 2:
         raise ValueError("Input must be a list or tuple with two elements [X, Y].")
@@ -76,13 +76,13 @@ def pseudo_obs(data):
     n = len(X)
 
     def empirical_cdf_ranks(values):
-        ranks = np.argsort(np.argsort(values)) + 1  # ranks in 1..n
-        return ranks / (n + 1)  # scale to (0,1)
+        ranks = np.argsort(np.argsort(values)) + 1
+        return ranks / (n + 1)
 
     u = empirical_cdf_ranks(X)
     v = empirical_cdf_ranks(Y)
 
-    return np.vstack((u, v))
+    return u, v
 
 
 def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):

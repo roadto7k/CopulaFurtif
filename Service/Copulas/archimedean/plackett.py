@@ -42,89 +42,74 @@ class PlackettCopula(BaseCopula):
         self.type = 'plackett'
         self.name = "Plackett Copula"
         self.bounds_param = [(1e-6, None)]
-        self.parameters = np.array(0.5)
+        self.parameters = np.array([0.5])
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):
         """
-        Computes the cumulative distribution function (CDF) of the Plackett copula.
-
-        Formula:
-            For theta ≠ 1:
-                C(u,v; θ) = [1 + (θ-1)(u+v) - √((1+(θ-1)(u+v))² - 4θ(θ-1)uv)] / [2(θ-1)]
-            For θ = 1, the copula reduces to independence: C(u,v) = u*v.
+        Computes the CDF of the Plackett copula using a reformulated expression.
 
         Parameters
         ----------
         u : array_like
-            First set of uniform marginals.
+            First uniform marginal.
         v : array_like
-            Second set of uniform marginals.
+            Second uniform marginal.
         param : array_like
-            Copula parameter (theta).
+            Copula parameter (theta,) as a one-element array.
 
         Returns
         -------
         np.ndarray
-            The CDF evaluated at (u, v).
+            Copula CDF values for the input pairs.
         """
         theta = param[0]
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        # For theta close to 1, return independence
-        if abs(theta - 1) < 1e-8:
-            return u * v
+        delta = theta - 1.0
 
-        A = 1 + (theta - 1) * (u + v)
+        u = np.asarray(u)
+        v = np.asarray(v)
 
-        discriminant = A ** 2 - 4 * theta * (theta - 1) * u * v
-        discriminant = np.maximum(discriminant, 0.0)  # avoid sqrt of negative
-        B = np.sqrt(discriminant)
+        pre_factor = 0.5 / delta
+        sum_uv = u + v
+        linear = 1.0 + delta * sum_uv
+        square = linear ** 2
+        correction = 4.0 * theta * delta * u * v
+        root_term = np.sqrt(square - correction)
 
-        return (A - B) / (2 * (theta - 1))
+        return pre_factor * (linear - root_term)
 
     def get_pdf(self, u, v, param):
         """
-        Computes the probability density function (PDF) of the Plackett copula.
-
-        One common form for the PDF is given by:
-            c(u,v; θ) = [θ * {1 + (θ-1)(u+v) - (θ-1)B}]
-                        / [B * {1 + (θ-1)(u+v) - B}²],
-        where:
-            B = √((1 + (θ-1)(u+v))² - 4θ(θ-1)uv).
-        For θ = 1, the PDF is 1 (i.e., independence).
+        Computes the PDF of the Plackett copula with restructured expression.
 
         Parameters
         ----------
         u : array_like
-            First set of uniform marginals.
+            First array of uniform marginals.
         v : array_like
-            Second set of uniform marginals.
+            Second array of uniform marginals.
         param : array_like
-            Copula parameter (theta).
+            Copula parameter array, where param[0] = theta.
 
         Returns
         -------
         np.ndarray
-            The PDF evaluated at (u, v).
+            The copula density evaluated at each (u, v).
         """
         theta = param[0]
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        if abs(theta - 1) < 1e-8:
-            return np.ones_like(u)
-        A = 1 + (theta - 1) * (u + v)
+        delta = theta - 1.0
 
-        discriminant = A ** 2 - 4 * theta * (theta - 1) * u * v
-        discriminant = np.maximum(discriminant, 0.0)
-        B = np.sqrt(discriminant)
+        uv = np.asarray(u)
+        vv = np.asarray(v)
 
-        numerator = theta * (1 + (theta - 1)*(u + v)) - (theta - 1)*B
-        denominator = B * (1 + (theta - 1) * (u + v) - B) ** 2
-        denominator = np.clip(denominator, 1e-14, np.inf)
-        return numerator / denominator
+        s = uv + vv
+        p = uv * vv
+
+        top = theta * (1.0 + delta * (s - 2.0 * p))
+        inner = (1.0 + delta * s) ** 2 - 4.0 * theta * delta * p
+        bottom = inner ** 1.5
+
+        return top / bottom
 
     def kendall_tau(self, param):
         """
