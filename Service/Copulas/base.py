@@ -193,4 +193,63 @@ class BaseCopula:
 
         return residuals
 
+    def check_axioms(self, atol=1e-6, verbose=True):
+        """
+        Check that the copula satisfies the basic Sklar axioms numerically.
+
+        Parameters
+        ----------
+        atol : float
+            Absolute tolerance allowed for numerical differences.
+        verbose : bool
+            If True, print which axioms pass or fail.
+
+        Returns
+        -------
+        dict
+            Dictionary of boolean results for each axiom.
+        """
+        # Choix de points de test
+        u_vals = np.linspace(0.01, 0.99, 20)
+        v_vals = np.linspace(0.01, 0.99, 20)
+
+        p = self.parameters
+        results = {}
+
+        # A1: C(u, 0) == 0
+        results["C(u,0)=0"] = np.allclose([self.get_cdf(u, 0.0, p) for u in u_vals], 0.0, atol=atol)
+
+        # A2: C(0, v) == 0
+        results["C(0,v)=0"] = np.allclose([self.get_cdf(0.0, v, p) for v in v_vals], 0.0, atol=atol)
+
+        # A3: C(u,1) == u
+        results["C(u,1)=u"] = np.allclose(
+            [self.get_cdf(u, 1.0, p) for u in u_vals], u_vals, atol=atol
+        )
+
+        # A4: C(1,v) == v
+        results["C(1,v)=v"] = np.allclose(
+            [self.get_cdf(1.0, v, p) for v in v_vals], v_vals, atol=atol
+        )
+
+        # A5: C(u,v) is increasing in u and v (discrete test on grid)
+        grid = np.linspace(0.01, 0.99, 10)
+        increasing = True
+        for i in range(len(grid) - 1):
+            for j in range(len(grid) - 1):
+                u1, u2 = grid[i], grid[i + 1]
+                v1, v2 = grid[j], grid[j + 1]
+                c1 = self.get_cdf(u1, v1, p)
+                c2 = self.get_cdf(u2, v2, p)
+                if c2 < c1 - atol:
+                    increasing = False
+                    break
+        results["C is increasing"] = increasing
+
+        if verbose:
+            for k, v in results.items():
+                print(f"{k}: {'Good' if v else 'Wrong'}")
+
+        return results
+
 

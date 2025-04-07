@@ -44,38 +44,65 @@ class StudentCopula(BaseCopula):
         self.parameters = np.array([0.5, 4.0])  # [rho, df]
         self.default_optim_method = "Powell"  # or "trust-constr"
 
-    def get_cdf(self, u, v, param):
+    def get_cdf(self, u, v, params):
         """
-        Compute the CDF of the Student-t copula at given pseudo-observations.
+        Robust CDF of the bivariate Student-t copula.
 
         Parameters
         ----------
-        u, v : array-like
-            Pseudo-observations in [0, 1].
-        param : list or array
-            Copula parameters [rho, nu].
+        u : float or array-like
+            First pseudo-observation(s) in [0,1].
+        v : float or array-like
+            Second pseudo-observation(s) in [0,1].
+        params : list or array-like
+            [rho, nu] where rho is the correlation and nu the degrees of freedom.
 
         Returns
         -------
-        np.ndarray
-            CDF values of the copula at (u, v).
+        float or np.ndarray
+            The copula CDF evaluated at (u, v).
         """
-        rho, nu = param
+        rho, nu = params
+
+        # Ensure u and v are numpy arrays
+        u_arr = np.asarray(u)
+        v_arr = np.asarray(v)
+
+        # Force inputs to be at least 1D for broadcasting
+        u_vec = np.atleast_1d(u_arr)
+        v_vec = np.atleast_1d(v_arr)
+
+        # Handle boundary cases: when u or v = 0 or 1
+        mask_zero = (u_vec <= 0) | (v_vec <= 0)
+        mask_u_one = (u_vec >= 1)
+        mask_v_one = (v_vec >= 1)
+
+        # Clip inputs to avoid -inf/+inf from t.ppf
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
+        u_clipped = np.clip(u_vec, eps, 1 - eps)
+        v_clipped = np.clip(v_vec, eps, 1 - eps)
 
-        t1 = t.ppf(u, df=nu)
-        t2 = t.ppf(v, df=nu)
+        # Inverse transform: convert to t quantiles
+        t1 = t.ppf(u_clipped, df=nu)
+        t2 = t.ppf(v_clipped, df=nu)
 
-        # Parameters of the multivariate t-distribution
-        loc = np.zeros(2)
-        shape = np.array([[1, rho], [rho, 1]])
+        # Stack data for multivariate t CDF evaluation
+        data = np.column_stack([t1, t2])
+        cov = np.array([[1, rho], [rho, 1]])
+        mv_t = multivariate_t(loc=[0, 0], shape=cov, df=nu)
 
-        return np.array([
-            multivariate_t.cdf([x, y], df=nu, loc=loc, shape=shape)
-            for x, y in zip(t1, t2)
-        ])
+        # Force the result to be at least 1D
+        result = np.atleast_1d(np.asarray(mv_t.cdf(data)))
+
+        # Enforce boundary values
+        result[mask_zero] = 0.0
+        result[mask_u_one] = v_vec[mask_u_one]
+        result[mask_v_one] = u_vec[mask_v_one]
+
+        # Return scalar if original input was scalar
+        if np.isscalar(u) and np.isscalar(v):
+            return result.item()
+        return result
 
     def get_pdf(self, u, v, param):
         """
