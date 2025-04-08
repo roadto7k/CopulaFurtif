@@ -143,3 +143,88 @@ class BB2Copula(BaseCopula):
         """
         theta, delta = param[0], param[1]
         return 2 ** (-1 / (theta * delta))
+
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        """
+        Analytically computes the conditional CDF P(U ≤ u | V = v) for the BB2 copula.
+
+        The BB2 copula is defined as:
+            C(u,v) = { 1 + [ (1/u - 1)^δ + (1/v - 1)^δ ]^(1/δ) }^(-1).
+
+        Define:
+            A(u,v) = (1/u - 1)^δ + (1/v - 1)^δ,     T = A(u,v)^(1/δ).
+        Then,
+            C(u,v) = 1/(1+T),
+        and the derivative with respect to v is given by:
+            ∂C(u,v)/∂v = (1/(1+T)^2) * A(u,v)^(1/δ - 1) * ((1/v - 1)^(δ-1))*(1/v^2).
+
+        Since C(1,v) = v and its derivative equals 1, we have:
+            F_{U|V}(u|v) = ∂C(u,v)/∂v.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) of u in (0,1).
+        v : float or array-like
+            Value(s) of v in (0,1) (conditioning variable).
+        param : list or array-like, optional
+            Copula parameter(s) as [δ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(U ≤ u | V = v).
+        """
+        if param is None:
+            assert self.parameters is not None, "Parameters must be set or provided."
+            param = self.parameters
+        # For BB2 we assume a one-parameter family with delta.
+        delta = param[0]
+
+        # Ensure u and v are numpy arrays
+        u = np.asarray(u)
+        v = np.asarray(v)
+
+        A = (1 / u - 1) ** delta + (1 / v - 1) ** delta
+        T = A ** (1 / delta)
+        return (1 / (1 + T) ** 2) * (A ** (1 / delta - 1)) * ((1 / v - 1) ** (delta - 1)) * (1 / v ** 2)
+
+    def conditional_cdf_v_given_u(self, v, u, param=None):
+        """
+        Analytically computes the conditional CDF P(V ≤ v | U = u) for the BB2 copula.
+
+        With
+            A(u,v) = (1/u - 1)^δ + (1/v - 1)^δ   and T = A(u,v)^(1/δ),
+        the copula is defined as:
+            C(u,v) = {1+T}^(-1),
+        and the derivative with respect to u is given by:
+            ∂C(u,v)/∂u = (1/(1+T)^2) * A(u,v)^(1/delta - 1) * ((1/u - 1)^(δ-1))*(1/u^2).
+
+        Thus, we define:
+            F_{V|U}(v | u) = ∂C(u,v)/∂u.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Value(s) of v in (0,1).
+        u : float or array-like
+            Value(s) of u in (0,1) (conditioning variable).
+        param : list or array-like, optional
+            Copula parameter(s) as [δ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(V ≤ v | U = u).
+        """
+        if param is None:
+            assert self.parameters is not None, "Parameters must be set or provided."
+            param = self.parameters
+        delta = param[0]
+
+        u = np.asarray(u)
+        v = np.asarray(v)
+
+        A = (1 / u - 1) ** delta + (1 / v - 1) ** delta
+        T = A ** (1 / delta)
+        return (1 / (1 + T) ** 2) * (A ** (1 / delta - 1)) * ((1 / u - 1) ** (delta - 1)) * (1 / u ** 2)

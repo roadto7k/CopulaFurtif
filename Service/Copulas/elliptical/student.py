@@ -286,4 +286,70 @@ class StudentCopula(BaseCopula):
         print(f"[INFO] AD is disabled for {self.name} due to performance limitations.")
         return np.nan
 
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v) for the Student copula.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in (0,1) corresponding to U = t_ν(x), i.e. the univariate Student CDF.
+        v : float or array-like
+            Value(s) in (0,1) corresponding to V = t_ν(y).
+        param : list or array-like, optional
+            The copula parameters [ρ, ν]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            Conditional probability P(U ≤ u | V = v).
+        """
+
+        rho = param[0]
+        nu = param[1]
+
+        # Inverse CDF (quantile) for Student-t with ν degrees of freedom
+        x = t.ppf(u, nu)
+        y = t.ppf(v, nu)
+
+        # For a bivariate Student-t, the conditional distribution X|Y=y is t-distributed
+        # with ν+1 degrees of freedom, mean = ρ*y, and scale = sqrt(((ν+y²)(1-ρ²))/(ν+1))
+        scale = np.sqrt(((nu + y ** 2) * (1 - rho ** 2)) / (nu + 1))
+
+        # Compute the conditional CDF using the Student-t CDF with ν+1 degrees of freedom
+        cond_cdf = t.cdf((x - rho * y) / scale, df=nu + 1)
+        return cond_cdf
+
+    def conditional_cdf_v_given_u(self, v, u, param):
+        """
+        Compute the conditional CDF P(V ≤ v | U = u) for the Student copula.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Value(s) in (0,1) corresponding to V = t_ν(y).
+        u : float or array-like
+            Value(s) in (0,1) corresponding to U = t_ν(x).
+        param : list or array-like, optional
+            The copula parameters [ρ, ν]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            Conditional probability P(V ≤ v | U = u).
+        """
+
+        rho = param[0]
+        nu = param[1]
+
+        x = t.ppf(u, nu)
+        y = t.ppf(v, nu)
+
+        # Ici, la distribution conditionnelle Y|X=x est t-distribuée avec ν+1 degrés de liberté,
+        # mean = ρ*x et scale = sqrt(((ν+x²)(1-ρ²))/(ν+1))
+        scale = np.sqrt(((nu + x ** 2) * (1 - rho ** 2)) / (nu + 1))
+
+        cond_cdf = t.cdf((y - rho * x) / scale, df=nu + 1)
+        return cond_cdf
+
 

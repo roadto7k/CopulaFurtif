@@ -122,3 +122,59 @@ class ClaytonCopula(BaseCopula):
         """
         return 0.0
 
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v) for the Clayton copula analytically.
+
+        For the Clayton copula, defined by:
+            C(u, v) = (u^(-θ) + v^(-θ) - 1)^(-1/θ),
+        the conditional CDF is given by:
+            F_{U|V}(u | v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v]
+                          = v^(-θ-1) * (u^(-θ) + v^(-θ) - 1)^(-1/θ - 1)
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) of u in [0, 1].
+        v : float or array-like
+            Value(s) of v in [0, 1] (the conditioning value).
+        param : list or array-like, optional
+            Copula parameter(s) in the form [θ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(U ≤ u | V = v).
+        """
+
+        theta = param[0]
+
+        return v ** (-theta - 1) * (u ** (-theta) + v ** (-theta) - 1) ** (-1 / theta - 1)
+
+    def conditional_cdf_v_given_u(self, v, u, param):
+        """
+        Compute the conditional CDF P(V ≤ v | U = u) for the Clayton copula analytically.
+
+        By symmetry, we have:
+            F_{V|U}(v | u) = u^(-θ-1) * (u^(-θ) + v^(-θ) - 1)^(-1/θ - 1)
+
+        Parameters
+        ----------
+        v : float or array-like
+            Value(s) of v in [0, 1].
+        u : float or array-like
+            Value(s) of u in [0, 1] (the conditioning value).
+        param : list or array-like, optional
+            Copula parameter(s) in the form [θ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(V ≤ v | U = u).
+        """
+
+        theta = param[0]
+
+        return u ** (-theta - 1) * (u ** (-theta) + v ** (-theta) - 1) ** (-1 / theta - 1)
+
+

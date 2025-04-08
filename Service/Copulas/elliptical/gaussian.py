@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.special import erfinv
 from scipy.stats import norm, multivariate_normal
+import scipy.stats as st
 
 from Service.Copulas.base import BaseCopula
 
@@ -163,6 +164,38 @@ class GaussianCopula(BaseCopula):
         """
         print(f"[INFO] AD is disabled for {self.name} due to performance limitations.")
         return np.nan
+
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Analytically computes the conditional CDF P(U ≤ u | V = v) for the Gaussian copula.
+
+        Using the relationship for a bivariate normal,
+            P(U ≤ u | V = v) = Φ((Φ⁻¹(u) - ρ Φ⁻¹(v)) / sqrt(1-ρ²))
+        """
+
+        rho = param[0]
+
+        # Transform u and v via the inverse normal
+        x = st.norm.ppf(u)
+        y = st.norm.ppf(v)
+        # Compute the conditional CDF
+        cond = st.norm.cdf((x - rho * y) / np.sqrt(1 - rho ** 2))
+        return cond
+
+    def conditional_cdf_v_given_u(self, v, u, param):
+        """
+        Analytically computes the conditional CDF P(V ≤ v | U = u) for the Gaussian copula.
+
+        Using the symmetric relationship:
+            P(V ≤ v | U = u) = Φ((Φ⁻¹(v) - ρ Φ⁻¹(u)) / sqrt(1-ρ²))
+        """
+
+        rho = param[0]
+
+        x = st.norm.ppf(u)
+        y = st.norm.ppf(v)
+        cond = st.norm.cdf((y - rho * x) / np.sqrt(1 - rho ** 2))
+        return cond
 
 
 

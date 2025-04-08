@@ -151,3 +151,63 @@ class FrankCopula(BaseCopula):
             UTDC = 0
         """
         return 0.0
+
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Analytically computes the conditional CDF P(U ≤ u | V = v) for the Frank copula.
+
+        Using the derivative:
+            ∂C(u,v)/∂v =  e^(−θv) * (e^(−θu) − 1) /
+                           [ (e^(−θ) − 1) + (e^(−θu) − 1)(e^(−θv) − 1) ]
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in [0,1] for U.
+        v : float or array-like
+            Value(s) in [0,1] for V.
+        param : list or array-like, optional
+            The copula parameter [θ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            Conditional CDF P(U ≤ u | V = v).
+        """
+
+        theta = param[0]
+
+        numerator = np.exp(-theta * v) * (np.exp(-theta * u) - 1)
+        denominator = (np.exp(-theta) - 1) + (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1)
+        return numerator / denominator
+
+    def conditional_cdf_v_given_u(self, v, u, param):
+        """
+        Analytically computes the conditional CDF P(V ≤ v | U = u) for the Frank copula.
+
+        Using the symmetric derivative:
+            ∂C(u,v)/∂u =  e^(−θu) * (e^(−θv) − 1) /
+                           [ (e^(−θ) − 1) + (e^(−θu) − 1)(e^(−θv) − 1) ]
+
+        Parameters
+        ----------
+        v : float or array-like
+            Value(s) in [0,1] for V.
+        u : float or array-like
+            Value(s) in [0,1] for U.
+        param : list or array-like, optional
+            The copula parameter [θ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            Conditional CDF P(V ≤ v | U = u).
+        """
+
+        theta = param[0]
+
+        numerator = np.exp(-theta * u) * (np.exp(-theta * v) - 1)
+        denominator = (np.exp(-theta) - 1) + (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1)
+        return numerator / denominator
+
+

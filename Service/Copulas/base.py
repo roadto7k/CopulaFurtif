@@ -133,6 +133,20 @@ class BaseCopula:
         self._check_is_fitted()
         return compute_bic(self)
 
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        """
+        Analytically computes the conditional CDF P(U ≤ u | V = v).
+        """
+
+        raise NotImplementedError
+
+    def conditional_cdf_v_given_u(self, v, u, param=None):
+        """
+        Analytically computes the conditional CDF P(V ≤ v | U = u).
+        """
+
+        raise NotImplementedError
+
     def residual_heatmap(self, u, v, bins=50, cmap="coolwarm", figsize=(6, 5), show=True):
         """
         Plot a residual heatmap: Empirical CDF - Copula Model CDF.

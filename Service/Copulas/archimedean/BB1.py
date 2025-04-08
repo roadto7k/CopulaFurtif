@@ -144,3 +144,83 @@ class BB1Copula(BaseCopula):
         """
         delta = param[1]
         return 2 - 2 ** (1 / delta)
+
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Analytically computes the conditional CDF P(U ≤ u | V = v)
+        for the BB1 copula.
+
+        For the BB1 copula defined as:
+            C(u,v) = [ 1 + { (u^(-θ)-1)^δ + (v^(-θ)-1)^δ }^(1/δ) ]^(-1/θ),
+        let T = (u^(-θ)-1)^δ + (v^(-θ)-1)^δ.
+
+        Then, the derivative with respect to v is given by:
+            ∂C(u,v)/∂v = [1+T^(1/δ)]^(-1/θ-1) * T^(1/δ-1)
+                            * (v^(-θ)-1)^(δ-1) * v^(-θ-1).
+
+        Since C(1,v)=v and ∂C(1,v)/∂v=1, we have:
+            F_{U|V}(u|v) = ∂C(u,v)/∂v.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Values in (0,1) for U.
+        v : float or array-like
+            Values in (0,1) for V (conditioning variable).
+        param : list or array-like, optional
+            Parameters [θ, δ] for the BB1 copula. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(U ≤ u | V = v).
+        """
+
+        theta, delta = param[0], param[1]
+
+        u = np.asarray(u)
+        v = np.asarray(v)
+
+        T = (u ** (-theta) - 1) ** delta + (v ** (-theta) - 1) ** delta
+        factor = (1 + T ** (1 / delta)) ** (-1 / theta - 1)
+        return factor * T ** (1 / delta - 1) * (v ** (-theta) - 1) ** (delta - 1) * v ** (-theta - 1)
+
+    def conditional_cdf_v_given_u(self, v, u, param):
+        """
+        Analytically computes the conditional CDF P(V ≤ v | U = u)
+        for the BB1 copula.
+
+        For the BB1 copula defined as:
+            C(u,v) = [ 1 + { (u^(-θ)-1)^δ + (v^(-θ)-1)^δ }^(1/δ) ]^(-1/θ),
+        let T = (u^(-θ)-1)^δ + (v^(-θ)-1)^δ.
+
+        Then, the derivative with respect to u is given by:
+            ∂C(u,v)/∂u = [1+T^(1/δ)]^(-1/θ-1) * T^(1/δ-1)
+                            * (u^(-θ)-1)^(δ-1) * u^(-θ-1).
+
+        Since C(u,1)=u (and ∂C(u,1)/∂u=1), we have:
+            F_{V|U}(v|u) = ∂C(u,v)/∂u.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Values in (0,1) for V.
+        u : float or array-like
+            Values in (0,1) for U (conditioning variable).
+        param : list or array-like, optional
+            Parameters [θ, δ] for the BB1 copula. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(V ≤ v | U = u).
+        """
+
+        theta, delta = param[0], param[1]
+
+        u = np.asarray(u)
+        v = np.asarray(v)
+
+        T = (u ** (-theta) - 1) ** delta + (v ** (-theta) - 1) ** delta
+        factor = (1 + T ** (1 / delta)) ** (-1 / theta - 1)
+        return factor * T ** (1 / delta - 1) * (u ** (-theta) - 1) ** (delta - 1) * u ** (-theta - 1)

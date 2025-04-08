@@ -188,4 +188,73 @@ class JoeCopula(BaseCopula):
 
         return 2 - 2 ** (1 / theta)
 
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Analytically computes the conditional CDF P(U ≤ u | V = v) for the Joe copula.
+
+        The Joe copula is defined as:
+            C(u,v) = 1 - [ (1-u)^θ + (1-v)^θ - (1-u)^θ (1-v)^θ ]^(1/θ).
+
+        Let A(u,v) = (1-u)^θ + (1-v)^θ - (1-u)^θ (1-v)^θ. Then, by differentiating C(u,v)
+        with respect to v, we obtain:
+
+            ∂C(u,v)/∂v = A(u,v)^(1/θ - 1) * (1-v)^(θ - 1) * [1 - (1-u)^θ].
+
+        Since C(1,v) = v (with derivative 1), the conditional CDF is given by:
+
+            F_{U|V}(u | v) = A(u,v)^(1/θ - 1) * (1-v)^(θ - 1) * [1 - (1-u)^θ].
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) of u in [0,1].
+        v : float or array-like
+            Value(s) of v in [0,1] (the conditioning variable).
+        param : list or array-like, optional
+            The copula parameter(s) as [θ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(U ≤ u | V = v).
+        """
+
+        theta = param[0]
+
+        u = np.asarray(u)
+        v = np.asarray(v)
+        A = (1 - u) ** theta + (1 - v) ** theta - (1 - u) ** theta * (1 - v) ** theta
+        return A ** (1 / theta - 1) * (1 - v) ** (theta - 1) * (1 - (1 - u) ** theta)
+
+    def conditional_cdf_v_given_u(self, v, u, param):
+        """
+        Analytically computes the conditional CDF P(V ≤ v | U = u) for the Joe copula.
+
+        By symmetry, the conditional CDF is given by:
+            F_{V|U}(v | u) = A(u,v)^(1/θ - 1) * (1-u)^(θ - 1) * [1 - (1-v)^θ],
+        where
+            A(u,v) = (1-u)^θ + (1-v)^θ - (1-u)^θ (1-v)^θ.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Value(s) of v in [0,1].
+        u : float or array-like
+            Value(s) of u in [0,1] (the conditioning variable).
+        param : list or array-like, optional
+            The copula parameter(s) as [θ]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional CDF P(V ≤ v | U = u).
+        """
+
+        theta = param[0]
+
+        u = np.asarray(u)
+        v = np.asarray(v)
+        A = (1 - u) ** theta + (1 - v) ** theta - (1 - u) ** theta * (1 - v) ** theta
+        return A ** (1 / theta - 1) * (1 - u) ** (theta - 1) * (1 - (1 - v) ** theta)
+
 
