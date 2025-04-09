@@ -46,7 +46,7 @@ class GumbelCopula(BaseCopula):
         self.type = "gumbel"
         self.name = "Gumbel Copula"
         self.bounds_param = [(1+ 1e-6, None)]
-        self.parameters = np.array(1.5)
+        self.parameters = np.array([1.5])
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):

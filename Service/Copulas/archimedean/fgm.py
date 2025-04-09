@@ -38,7 +38,7 @@ class FGMCopula(BaseCopula):
         self.type = 'fgm'
         self.name = "FGM Copula"
         self.bounds_param = [(-1, 1 - 1e-6)]
-        self.parameters = np.array(0)
+        self.parameters = np.array([0.0])
         self.default_optim_method = "Powell"
 
     def get_cdf(self, u, v, param):
