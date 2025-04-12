@@ -1,0 +1,24 @@
+name: Python Project CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Python and Python3, and Build Essentials
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python python3
+
+    - name: Configure project
+      run: pip install -e CopulaFurtif
+
+    - name: Build
+      run: echo "Hello World"
+
+
+    # - name: Test
