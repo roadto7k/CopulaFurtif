@@ -240,140 +240,144 @@ class GalambosCopula(BaseCopula):
 
         return 2 ** (-1 / theta)
 
-    def partial_v_cdf(self, u, v, theta):
+    def partial_derivative_C_wrt_v(self, u, v, param):
         """
-        Computes the partial derivative ∂C/∂v for the copula function with a u*v prefactor.
+        Compute the partial derivative ∂C(u,v)/∂v for the Galambos copula.
 
-        The copula function is defined as:
-            C(u,v) = u * v * exp(g)
-        where:
-            g = [(-ln(u))^(-θ) + (-ln(v))^(-θ)]^(-1/θ)
+        Using:
+            dC/dv = u * exp(G)
+               * [ 1  -  (X+Y)^(-1/theta - 1) * (-ln v)^(-theta - 1) ]
 
-        This function computes the derivative with respect to v. It performs the following steps:
-          1. Clips the inputs u and v to avoid numerical instability.
-          2. Sets x = -ln(u) and y = -ln(v).
-          3. Computes h = x^(-θ) + y^(-θ) and then g = h^(-1/θ).
-          4. Computes the derivative dg/dv.
-          5. Applies the product rule to compute ∂C/∂v = u * exp(g) * (1 + v * dg/dv).
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in (0,1) for U.
+        v : float or array-like
+            Value(s) in (0,1) for V.
+        param : iterable
+            Copula parameter(s) as [theta].
 
-        Parameters:
-            u : array_like or float
-                The u-values of the copula, expected in the interval (0, 1).
-            v : array_like or float
-                The v-values of the copula, expected in the interval (0, 1).
-            theta : float
-                The copula parameter θ controlling the dependence structure.
-
-        Returns:
-            array_like or float
-                The computed partial derivative of the copula function with respect to v.
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C(u,v)/∂v.
         """
+        theta = param[0]
 
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        x = -np.log(u)
-        y = -np.log(v)
-        h = x ** (-theta) + y ** (-theta)
-        g = h ** (-1 / theta)
+        X = (-np.log(u)) ** (-theta)
+        Y = (-np.log(v)) ** (-theta)
+        A = X + Y
+        G = A ** (-1.0 / theta)
 
-        dg_dv = - (1.0 / v) * y ** (-theta - 1) * h ** (-1 / theta - 1)
+        # C(u,v) = u v e^(G)
+        # dC/dv = [u e^(G)] + [u v e^(G) * dG/dv]
+        #         = u e^G * [ 1 - A^(-1/theta -1) * (-ln(v))^(-theta-1) ]
 
-        return u * np.exp(g) * (1.0 + v * dg_dv)
+        dCdv = (u * np.exp(G)
+                * (1.0 - A ** (-1.0 / theta - 1.0) * (-np.log(v)) ** (-theta - 1.0)))
 
-    def partial_u_cdf(self, u, v, theta):
+        return dCdv
+
+    def partial_derivative_C_wrt_u(self, u, v, param):
         """
-        Computes the partial derivative ∂C/∂u for the copula function with a u*v prefactor.
+        Compute the partial derivative ∂C(u,v)/∂u for the Galambos copula.
 
-        The copula function is defined as:
-            C(u,v) = u * v * exp(g)
-        where:
-            g = [(-ln(u))^(-θ) + (-ln(v))^(-θ)]^(-1/θ)
+        Using the symmetric formula:
+            dC/du = v e^G * [ 1  -  A^(-1/theta -1) * (-ln u)^(-theta -1) ]
 
-        This function computes the derivative with respect to u. The key steps are:
-          1. Clipping of u and v to ensure numerical stability.
-          2. Calculation of x = -ln(u) and y = -ln(v).
-          3. Computation of h = x^(-θ) + y^(-θ) and subsequently g = h^(-1/θ).
-          4. Calculation of the derivative dg/du.
-          5. Application of the product rule for differentiation:
-                ∂C/∂u = v * exp(g) * (1 + u * dg/du)
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in (0,1) for U.
+        v : float or array-like
+            Value(s) in (0,1) for V.
+        param : iterable
+            Copula parameter(s) as [theta].
 
-        Parameters:
-            u : array_like or float
-                The u-values of the copula, expected in the interval (0, 1).
-            v : array_like or float
-                The v-values of the copula, expected in the interval (0, 1).
-            theta : float
-                The copula parameter θ controlling the dependence structure.
-
-        Returns:
-            array_like or float
-                The computed partial derivative of the copula function with respect to u.
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C(u,v)/∂u.
         """
+        theta = param[0]
+
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        x = -np.log(u)
-        y = -np.log(v)
-        h = x ** (-theta) + y ** (-theta)
-        g = h ** (-1 / theta)
+        X = (-np.log(u)) ** (-theta)
+        Y = (-np.log(v)) ** (-theta)
+        A = X + Y
+        G = A ** (-1.0 / theta)
 
-        dg_du = - (1.0 / u) * x ** (-theta - 1) * h ** (-1 / theta - 1)
+        dCdu = (v * np.exp(G)
+                * (1.0 - A ** (-1.0 / theta - 1.0) * (-np.log(u)) ** (-theta - 1.0)))
 
-        return v * np.exp(g) * (1.0 + u * dg_du)
+        return dCdu
 
     def conditional_cdf_u_given_v(self, u, v, param):
         """
-        Computes the conditional CDF P(U ≤ u | V = v) from the copula.
+        Compute the conditional CDF P(U ≤ u | V = v) for the Galambos copula.
 
-        The conditional CDF is defined as:
-            P(U ≤ u | V = v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v]
-        which essentially normalizes the partial derivative with respect to v.
+        Defined as:
+            P(U ≤ u | V = v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v].
 
-        Parameters:
-            u : array_like or float
-                The u-value at which the conditional CDF is evaluated.
-            v : array_like or float
-                The given fixed v-value.
-            param : iterable
-                An iterable where the first element is the copula parameter θ.
+        Since by the copula property C(1,v)=v (and hence ∂C(1,v)/∂v=1),
+        the normalization is automatic—but we include the division for consistency.
 
-        Returns:
-            array_like or float
-                The computed conditional cumulative distribution function P(U ≤ u | V = v).
+        Parameters
+        ----------
+        u : float or array-like
+            The u-value (in (0,1)) at which the conditional CDF is evaluated.
+        v : float or array-like
+            The fixed v-value (in (0,1)).
+        param : iterable
+            Copula parameter(s) as [theta].
+
+        Returns
+        -------
+        float or np.ndarray
+            The computed conditional CDF P(U ≤ u | V = v).
         """
         theta = param[0]
-        num = self.partial_v_cdf(u, v, theta)
-        den = self.partial_v_cdf(1.0, v, theta)
+        num = self.partial_derivative_C_wrt_v(u, v, param)
+        # At u = 1, C(1,v)=v and therefore ∂C(1,v)/∂v = 1.
+        den = self.partial_derivative_C_wrt_v(1.0, v, param)
         eps = 1e-14
         den = np.maximum(den, eps)
         return num / den
 
-    def conditional_cdf_v_given_u(self, v, u, param):
+    def conditional_cdf_v_given_u(self, u, v, param):
         """
-        Computes the conditional CDF P(V ≤ v | U = u) from the copula.
+        Compute the conditional CDF P(V ≤ v | U = u) for the Galambos copula.
 
-        The conditional CDF is defined as:
-            P(V ≤ v | U = u) = [∂C(u,v)/∂u] / [∂C(u,1)/∂u]
-        which normalizes the partial derivative with respect to u.
+        Defined as:
+            P(V ≤ v | U = u) = [∂C(u,v)/∂u] / [∂C(u,1)/∂u].
 
-        Parameters:
-            v : array_like or float
-                The v-value at which the conditional CDF is evaluated.
-            u : array_like or float
-                The given fixed u-value.
-            param : iterable
-                An iterable where the first element is the copula parameter θ.
+        Since C(u,1)=u (and thus ∂C(u,1)/∂u=1), the normalization factor is 1.
+        We include it here for consistency.
 
-        Returns:
-            array_like or float
-                The computed conditional cumulative distribution function P(V ≤ v | U = u).
+        Parameters
+        ----------
+        v : float or array-like
+            The v-value (in (0,1)) at which the conditional CDF is evaluated.
+        u : float or array-like
+            The fixed u-value (in (0,1)).
+        param : iterable
+            Copula parameter(s) as [theta].
+
+        Returns
+        -------
+        float or np.ndarray
+            The computed conditional CDF P(V ≤ v | U = u).
         """
         theta = param[0]
-        num = self.partial_u_cdf(u, v, theta)
-        den = self.partial_u_cdf(u, 1.0, theta)
+        num = self.partial_derivative_C_wrt_u(u, v, param)
+        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
         eps = 1e-14
         den = np.maximum(den, eps)
         return num / den

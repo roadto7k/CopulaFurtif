@@ -135,88 +135,121 @@ class GumbelCopula(BaseCopula):
 
         return 2 - 2 ** (1 / theta)
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param):
         """
-        Analytically compute the conditional CDF P(U ≤ u | V = v) for the Gumbel copula.
+        Compute the partial derivative ∂C(u,v)/∂v for the Gumbel copula.
 
-        The Gumbel copula is defined as:
-            C(u,v) = exp{ -[(-ln u)^θ + (-ln v)^θ]^(1/θ) }.
-
-        Its derivative with respect to v is given by:
+        Using the formula:
             ∂C(u,v)/∂v = [C(u,v)/v] * A^(1/θ - 1) * (-ln v)^(θ - 1),
         where A = (-ln u)^θ + (-ln v)^θ.
 
-        Since C(1,v) = v and ∂C(1,v)/∂v = 1, the conditional CDF is simply:
-            F_{U|V}(u|v) = ∂C(u,v)/∂v.
-
         Parameters
         ----------
         u : float or array-like
-            Value(s) of u in [0,1].
+            Values in (0,1) for U.
         v : float or array-like
-            Value(s) of v in [0,1] (the conditioning value).
-        param : list or array-like, optional
-            The copula parameter(s) as [θ]. If None, self.parameters is used.
+            Values in (0,1) for V.
+        param : iterable
+            Copula parameter(s) as [theta].
 
         Returns
         -------
         float or np.ndarray
-            The conditional CDF P(U ≤ u | V = v).
+            The partial derivative ∂C(u,v)/∂v.
         """
-
         theta = param[0]
-
-        # Ensure u and v are arrays for vectorized operations.
         u = np.asarray(u)
         v = np.asarray(v)
+        A = (-np.log(u))**theta + (-np.log(v))**theta
+        Cuv = np.exp(-A**(1/theta))
+        return (Cuv / v) * (A)**(1/theta - 1) * ((-np.log(v))**(theta - 1))
 
-        # Compute A = (-ln u)^θ + (-ln v)^θ
-        A = (-np.log(u)) ** theta + (-np.log(v)) ** theta
+    def partial_derivative_C_wrt_u(self, u, v, param):
+        """
+        Compute the partial derivative ∂C(u,v)/∂u for the Gumbel copula.
 
-        # Compute the copula CDF: C(u,v) = exp{ -A^(1/θ) }
-        Cuv = np.exp(-A ** (1 / theta))
+        Using the symmetric formula:
+            ∂C(u,v)/∂u = [C(u,v)/u] * A^(1/θ - 1) * (-ln u)^(θ - 1),
+        where A = (-ln u)^θ + (-ln v)^θ.
 
-        # Derivative factor: A^(1/θ - 1)*(-ln v)^(θ-1)/v
-        derivative = (A ** (1 / theta - 1) * (-np.log(v)) ** (theta - 1)) / v
+        Parameters
+        ----------
+        u : float or array-like
+            Values in (0,1) for U.
+        v : float or array-like
+            Values in (0,1) for V.
+        param : iterable
+            Copula parameter(s) as [theta].
 
-        return Cuv * derivative
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C(u,v)/∂u.
+        """
+        theta = param[0]
+        u = np.asarray(u)
+        v = np.asarray(v)
+        A = (-np.log(u))**theta + (-np.log(v))**theta
+        Cuv = np.exp(-A**(1/theta))
+        return (Cuv / u) * (A)**(1/theta - 1) * ((-np.log(u))**(theta - 1))
+
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v) for the Gumbel copula.
+
+        Defined as:
+            F_{U|V}(u|v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v].
+
+        Since C(1,v)=v and therefore ∂C(1,v)/∂v=1,
+        the normalization is automatic—but the division is performed for consistency.
+
+        Parameters
+        ----------
+        u : float or array-like
+            The u-value (in (0,1)) at which the conditional CDF is evaluated.
+        v : float or array-like
+            The fixed v-value (in (0,1)).
+        param : iterable
+            Copula parameter(s) as [theta].
+
+        Returns
+        -------
+        float or np.ndarray
+            The computed conditional CDF P(U ≤ u | V = v).
+        """
+        num = self.partial_derivative_C_wrt_v(u, v, param)
+        den = self.partial_derivative_C_wrt_v(1.0, v, param)
+        eps = 1e-14
+        den = np.maximum(den, eps)
+        return num / den
 
     def conditional_cdf_v_given_u(self, v, u, param):
         """
-        Analytically compute the conditional CDF P(V ≤ v | U = u) for the Gumbel copula.
+        Compute the conditional CDF P(V ≤ v | U = u) for the Gumbel copula.
 
-        By symmetry, this is given by:
-            F_{V|U}(v|u) = [C(u,v)/u] * A^(1/θ - 1) * (-ln u)^(θ - 1),
-        with A = (-ln u)^θ + (-ln v)^θ.
+        Defined as:
+            F_{V|U}(v|u) = [∂C(u,v)/∂u] / [∂C(u,1)/∂u].
+
+        Since C(u,1)=u and hence ∂C(u,1)/∂u=1,
+        the normalization is automatic—but we include the division for consistency.
 
         Parameters
         ----------
         v : float or array-like
-            Value(s) of v in [0,1].
+            The v-value (in (0,1)) at which the conditional CDF is evaluated.
         u : float or array-like
-            Value(s) of u in [0,1] (the conditioning value).
-        param : list or array-like, optional
-            The copula parameter(s) as [θ]. If None, self.parameters is used.
+            The fixed u-value (in (0,1)).
+        param : iterable
+            Copula parameter(s) as [theta].
 
         Returns
         -------
         float or np.ndarray
-            The conditional CDF P(V ≤ v | U = u).
+            The computed conditional CDF P(V ≤ v | U = u).
         """
-
-        theta = param[0]
-
-        u = np.asarray(u)
-        v = np.asarray(v)
-
-        # Compute A = (-ln u)^θ + (-ln v)^θ
-        A = (-np.log(u)) ** theta + (-np.log(v)) ** theta
-
-        # Compute the copula CDF: C(u,v) = exp{ -A^(1/θ) }
-        Cuv = np.exp(-A ** (1 / theta))
-
-        # Derivative factor: A^(1/θ - 1)*(-ln u)^(θ-1)/u
-        derivative = (A ** (1 / theta - 1) * (-np.log(u)) ** (theta - 1)) / u
-
-        return Cuv * derivative
+        num = self.partial_derivative_C_wrt_u(u, v, param)
+        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
+        eps = 1e-14
+        den = np.maximum(den, eps)
+        return num / den
 

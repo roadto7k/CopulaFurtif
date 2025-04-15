@@ -146,13 +146,28 @@ class BB2Copula(BaseCopula):
         theta, delta = param[0], param[1]
         return 2 ** (-1 / (theta * delta))
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param):
         """
-        Computes F_{U|V}^{BB2}(u | v) for the BB2 copula using the survival
-        transformation of the conditional CDF from the BB1 copula.
+        Compute the partial derivative ∂C(u,v)/∂v for the BB2 copula.
 
-        That is:
-            F_{U|V}^{BB2}(u | v) = 1 - F_{U|V}^{BB1}(1 - u | 1 - v).
+        For BB2 defined via the survival transform of BB1:
+            C^{BB2}(u,v) = u + v - 1 + C^{BB1}(1-u, 1-v),
+        on a alors (par chaîne) :
+            ∂C^{BB2}(u,v)/∂v = 1 - ∂C^{BB1}(1-u, 1-v)/∂(1-v).
+
+        Parameters
+        ----------
+        u : float or array-like
+            Values in (0,1) for U.
+        v : float or array-like
+            Values in (0,1) for V.
+        param : list or array-like
+            Parameters [θ, δ] for the BB1 (et donc BB2) copula.
+
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C^{BB2}(u,v)/∂v.
         """
 
         # Ensure param is an array (flattened)
@@ -160,18 +175,82 @@ class BB2Copula(BaseCopula):
         # Create an instance of BB1 to use its conditional CDFs.
         bb1 = BB1Copula()
         bb1.parameters = param  # using the same two parameters [theta, delta]
-        return 1 - bb1.conditional_cdf_u_given_v(1 - u, 1 - v, param)
+        return 1 - bb1.partial_derivative_C_wrt_v(1 - u, 1 - v, param)
 
-    def conditional_cdf_v_given_u(self, v, u, param):
+    def partial_derivative_C_wrt_u(self, u, v, param):
         """
-        Computes F_{V|U}^{BB2}(v | u) for the BB2 copula using the survival
-        transformation of the conditional CDF from the BB1 copula.
+        Compute the partial derivative ∂C(u,v)/∂u for the BB2 copula.
 
-        That is:
-            F_{V|U}^{BB2}(v | u) = 1 - F_{V|U}^{BB1}(1 - v | 1 - u).
+        With the survival transform:
+            C^{BB2}(u,v) = u + v - 1 + C^{BB1}(1-u, 1-v),
+        we have:
+            ∂C^{BB2}(u,v)/∂u = 1 - ∂C^{BB1}(1-u, 1-v)/∂(1-u).
+
+        Parameters
+        ----------
+        u : float or array-like
+            Values in (0,1) for U.
+        v : float or array-like
+            Values in (0,1) for V.
+        param : list or array-like
+            Parameters [θ, δ] for the BB1/BB2 copula.
+
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C^{BB2}(u,v)/∂u.
         """
 
         param = np.asarray(param).flatten()
         bb1 = BB1Copula()
         bb1.parameters = param
-        return 1 - bb1.conditional_cdf_v_given_u(1 - v, 1 - u, param)
+        return 1 - bb1.partial_derivative_C_wrt_u(1 - u, 1 - v, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Compute the conditional probability P(U ≤ u | V = v) for the BB2 copula.
+
+        Using the survival transformation of the BB1 conditional CDF:
+            F_{U|V}^{BB2}(u|v) = 1 - F_{U|V}^{BB1}(1-u | 1-v).
+        Since the copula margins are uniform, this is equal to
+            ∂C^{BB2}(u,v)/∂v.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Values in (0,1) for U.
+        v : float or array-like
+            Values in (0,1) for V.
+        param : list or array-like
+            Parameters [θ, δ] for the BB2 copula.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional probability P(U ≤ u | V = v) for BB2.
+        """
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, u, v, param):
+        """
+        Compute the conditional probability P(V ≤ v | U = u) for the BB2 copula.
+
+        Using the survival transformation:
+            F_{V|U}^{BB2}(v|u) = 1 - F_{V|U}^{BB1}(1-v | 1-u),
+        which equals the partial derivative ∂C^{BB2}(u,v)/∂u.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Values in (0,1) for V.
+        u : float or array-like
+            Values in (0,1) for U.
+        param : list or array-like
+            Parameters [θ, δ] for the BB2 copula.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional probability P(V ≤ v | U = u) for BB2.
+        """
+        return self.partial_derivative_C_wrt_u(u, v, param)

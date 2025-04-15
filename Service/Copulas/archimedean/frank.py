@@ -152,13 +152,15 @@ class FrankCopula(BaseCopula):
         """
         return 0.0
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param):
         """
-        Analytically computes the conditional CDF P(U ≤ u | V = v) for the Frank copula.
+        Compute the partial derivative ∂C(u,v)/∂v of the Frank copula.
 
-        Using the derivative:
-            ∂C(u,v)/∂v =  e^(−θv) * (e^(−θu) − 1) /
-                           [ (e^(−θ) − 1) + (e^(−θu) − 1)(e^(−θv) − 1) ]
+        The Frank copula is defined as:
+            C(u,v) = -1/θ * log[ 1 + ((exp(-θu)-1)(exp(-θv)-1))/(exp(-θ)-1) ]
+        and its derivative with respect to v is given by:
+            ∂C(u,v)/∂v = [ exp(-θv)*(exp(-θu)-1) ] /
+                          [ (exp(-θ)-1) + (exp(-θu)-1)(exp(-θv)-1) ]
 
         Parameters
         ----------
@@ -166,28 +168,26 @@ class FrankCopula(BaseCopula):
             Value(s) in [0,1] for U.
         v : float or array-like
             Value(s) in [0,1] for V.
-        param : list or array-like, optional
-            The copula parameter [θ]. If None, self.parameters is used.
+        param : list or array-like
+            [theta] parameter of the Frank copula.
 
         Returns
         -------
         float or np.ndarray
-            Conditional CDF P(U ≤ u | V = v).
+            The partial derivative ∂C(u,v)/∂v.
         """
-
         theta = param[0]
-
         numerator = np.exp(-theta * v) * (np.exp(-theta * u) - 1)
         denominator = (np.exp(-theta) - 1) + (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1)
         return numerator / denominator
 
-    def conditional_cdf_v_given_u(self, v, u, param):
+    def partial_derivative_C_wrt_u(self, u, v, param):
         """
-        Analytically computes the conditional CDF P(V ≤ v | U = u) for the Frank copula.
+        Compute the partial derivative ∂C(u,v)/∂u of the Frank copula.
 
-        Using the symmetric derivative:
-            ∂C(u,v)/∂u =  e^(−θu) * (e^(−θv) − 1) /
-                           [ (e^(−θ) − 1) + (e^(−θu) − 1)(e^(−θv) − 1) ]
+        Using the symmetry of the Frank copula, we have:
+            ∂C(u,v)/∂u = [ exp(-θu)*(exp(-θv)-1) ] /
+                          [ (exp(-θ)-1) + (exp(-θu)-1)(exp(-θv)-1) ]
 
         Parameters
         ----------
@@ -195,19 +195,69 @@ class FrankCopula(BaseCopula):
             Value(s) in [0,1] for V.
         u : float or array-like
             Value(s) in [0,1] for U.
-        param : list or array-like, optional
-            The copula parameter [θ]. If None, self.parameters is used.
+        param : list or array-like
+            [theta] parameter of the Frank copula.
 
         Returns
         -------
         float or np.ndarray
-            Conditional CDF P(V ≤ v | U = u).
+            The partial derivative ∂C(u,v)/∂u.
         """
-
         theta = param[0]
-
         numerator = np.exp(-theta * u) * (np.exp(-theta * v) - 1)
         denominator = (np.exp(-theta) - 1) + (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1)
         return numerator / denominator
+
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Compute the conditional probability P(U ≤ u | V = v) for the Frank copula.
+
+        Since the margins of any copula are uniform (i.e. C(1,v)=v), we have:
+            f_V(v) = ∂C(1,v)/∂v = 1.
+        Therefore:
+            P(U ≤ u | V = v) = ∂C(u,v)/∂v.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in [0,1] for U.
+        v : float or array-like
+            Value(s) in [0,1] for V.
+        param : list or array-like
+            [theta] parameter of the Frank copula.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional probability P(U ≤ u | V = v).
+        """
+        # For Frank, the conditional probability equals the partial derivative.
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, u, v, param):
+        """
+        Compute the conditional probability P(V ≤ v | U = u) for the Frank copula.
+
+        Similarly to the previous case:
+            P(V ≤ v | U = u) = ∂C(u,v)/∂u,
+        since f_U(u) = ∂C(u,1)/∂u = 1.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Value(s) in [0,1] for V.
+        u : float or array-like
+            Value(s) in [0,1] for U.
+        param : list or array-like
+            [theta] parameter of the Frank copula.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional probability P(V ≤ v | U = u).
+        """
+        # For Frank, the conditional probability equals the partial derivative.
+        return self.partial_derivative_C_wrt_u(u, v, param)
+
 
 

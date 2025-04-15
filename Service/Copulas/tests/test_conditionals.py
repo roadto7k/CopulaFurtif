@@ -13,7 +13,9 @@ from Service.Copulas.archimedean.joe import JoeCopula
 from Service.Copulas.archimedean.plackett import PlackettCopula
 from Service.Copulas.elliptical.gaussian import GaussianCopula
 from Service.Copulas.elliptical.student import StudentCopula
-from Service.Copulas.tests.validation import test_conditional_cdf_u_given_v, test_conditional_cdf_v_given_u
+from Service.Copulas.tests.validation import test_partial_derivative_C_wrt_u, test_partial_derivative_C_wrt_v, \
+    test_partial_derivative_C_wrt_v_order2, test_partial_derivative_C_wrt_u_order2, \
+    test_partial_derivative_C_wrt_v_order4, test_partial_derivative_C_wrt_u_order4
 
 copulas_to_test = [
     (BB1Copula, [2.0, 3.0]),
@@ -40,8 +42,8 @@ def run_conditional_test(copula_class, param, tol=1e-4):
     for u in u_vals:
         for v in v_vals:
             try:
-                ana1, num1, err1 = test_conditional_cdf_u_given_v(cop, u, v)
-                ana2, num2, err2 = test_conditional_cdf_v_given_u(cop, v, u)
+                ana1, num1, err1 = test_partial_derivative_C_wrt_v_order2(cop, u, v)
+                ana2, num2, err2 = test_partial_derivative_C_wrt_u_order2(cop, u, v)
                 if err1 > tol or err2 > tol:
                     print(f"❌ {cop.name} | u={u:.2f}, v={v:.2f} | Δu={err1:.2e}, Δv={err2:.2e}")
                     all_good = False

@@ -286,70 +286,108 @@ class StudentCopula(BaseCopula):
         print(f"[INFO] AD is disabled for {self.name} due to performance limitations.")
         return np.nan
 
+    def partial_derivative_C_wrt_v(self, u, v, param):
+        """
+        Compute ∂C(u,v)/∂v for the Student-t copula.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in (0,1).
+        v : float or array-like
+            Value(s) in (0,1).
+        param : list or array-like
+            [rho, nu] - correlation and degrees of freedom.
+
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C(u,v)/∂v.
+        """
+        rho, nu = param
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+
+        x = t.ppf(u, df=nu)  # X = quantile Student
+        y = t.ppf(v, df=nu)  # Y = quantile Student
+
+        scale = np.sqrt((1 - rho ** 2) * (nu + y ** 2) / (nu + 1))
+        z = (x - rho * y) / scale
+        pdf_std = t.pdf(z, df=nu + 1)
+        cond_pdf = pdf_std / scale
+
+        return cond_pdf
+
+    def partial_derivative_C_wrt_u(self, u, v, param):
+        """
+        Compute ∂C(u,v)/∂u for the Student-t copula.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Value(s) in (0,1).
+        u : float or array-like
+            Value(s) in (0,1).
+        param : list or array-like
+            [rho, nu] - correlation and degrees of freedom.
+
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C(u,v)/∂u.
+        """
+        rho, nu = param
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+
+        # x,y
+        x = t.ppf(u, df=nu)
+        y = t.ppf(v, df=nu)
+
+        # scale = sqrt( (1 - rho^2)*(nu + x^2)/(nu + 1) )
+        scale = np.sqrt((1 - rho ** 2) * (nu + x ** 2) / (nu + 1))
+
+        z = (y - rho * x) / scale
+        pdf_std = t.pdf(z, df=nu + 1)
+
+        cond_pdf = pdf_std / scale
+        return cond_pdf
+
     def conditional_cdf_u_given_v(self, u, v, param):
         """
-        Compute the conditional CDF P(U ≤ u | V = v) for the Student copula.
+        Compute P(U <= u | V = v) for the Student-t copula.
 
-        Parameters
-        ----------
-        u : float or array-like
-            Value(s) in (0,1) corresponding to U = t_ν(x), i.e. the univariate Student CDF.
-        v : float or array-like
-            Value(s) in (0,1) corresponding to V = t_ν(y).
-        param : list or array-like, optional
-            The copula parameters [ρ, ν]. If None, self.parameters is used.
+        By copula theory, we have:
+            P(U <= u | V=v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v].
 
-        Returns
-        -------
-        float or np.ndarray
-            Conditional probability P(U ≤ u | V = v).
+        Since in theory C(1,v) = v and thus ∂C(1,v)/∂v = 1,
+        we typically expect the denominator to be ~1. But we compute
+        partial_derivative_C_wrt_v(1.0, v) and divide for consistency.
         """
+        eps = 1e-14
+        numerator = self.partial_derivative_C_wrt_v(u, v, param)
+        denominator = self.partial_derivative_C_wrt_v(1.0, v, param)
+        denominator = np.maximum(denominator, eps)
+        return numerator / denominator
 
-        rho = param[0]
-        nu = param[1]
-
-        # Inverse CDF (quantile) for Student-t with ν degrees of freedom
-        x = t.ppf(u, nu)
-        y = t.ppf(v, nu)
-
-        # For a bivariate Student-t, the conditional distribution X|Y=y is t-distributed
-        # with ν+1 degrees of freedom, mean = ρ*y, and scale = sqrt(((ν+y²)(1-ρ²))/(ν+1))
-        scale = np.sqrt(((nu + y ** 2) * (1 - rho ** 2)) / (nu + 1))
-
-        # Compute the conditional CDF using the Student-t CDF with ν+1 degrees of freedom
-        cond_cdf = t.cdf((x - rho * y) / scale, df=nu + 1)
-        return cond_cdf
-
-    def conditional_cdf_v_given_u(self, v, u, param):
+    def conditional_cdf_v_given_u(self, u, v, param):
         """
-        Compute the conditional CDF P(V ≤ v | U = u) for the Student copula.
+        Compute P(V <= v | U = u) for the Student-t copula.
 
-        Parameters
-        ----------
-        v : float or array-like
-            Value(s) in (0,1) corresponding to V = t_ν(y).
-        u : float or array-like
-            Value(s) in (0,1) corresponding to U = t_ν(x).
-        param : list or array-like, optional
-            The copula parameters [ρ, ν]. If None, self.parameters is used.
+        By copula theory:
+            P(V <= v | U=u) = [∂C(u,v)/∂u] / [∂C(u,1)/∂u].
 
-        Returns
-        -------
-        float or np.ndarray
-            Conditional probability P(V ≤ v | U = u).
+        Similarly, C(u,1) = u in theory, so ∂C(u,1)/∂u = 1,
+        but we compute it explicitly to handle possible floating-point issues.
         """
-
-        rho = param[0]
-        nu = param[1]
-
-        x = t.ppf(u, nu)
-        y = t.ppf(v, nu)
-
-        # Ici, la distribution conditionnelle Y|X=x est t-distribuée avec ν+1 degrés de liberté,
-        # mean = ρ*x et scale = sqrt(((ν+x²)(1-ρ²))/(ν+1))
-        scale = np.sqrt(((nu + x ** 2) * (1 - rho ** 2)) / (nu + 1))
-
-        cond_cdf = t.cdf((y - rho * x) / scale, df=nu + 1)
-        return cond_cdf
+        eps = 1e-14
+        numerator = self.partial_derivative_C_wrt_u(u, v, param)
+        denominator = self.partial_derivative_C_wrt_u(u, 1.0, param)
+        denominator = np.maximum(denominator, eps)
+        return numerator / denominator
 
 

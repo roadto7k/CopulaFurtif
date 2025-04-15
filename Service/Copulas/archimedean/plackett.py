@@ -200,74 +200,121 @@ class PlackettCopula(BaseCopula):
         """
         return 0.0
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param):
         """
-        Analytically computes the conditional CDF P(U ≤ u | V = v)
-        for the Plackett copula.
+        Compute the partial derivative ∂C(u,v)/∂v for the Plackett copula.
 
-        The Plackett copula is defined as:
-            C(u, v; θ) = [1 + (θ-1)(u+v) - √{[1+(θ-1)(u+v)]² - 4θ(θ-1)uv}] / [2(θ-1)].
-
-        Let
+        Using the definitions:
             A = 1 + (θ-1)(u+v),
-            D = A² - 4θ(θ-1)u v.
-        Then the conditional CDF is given by:
-            F_{U|V}(u|v) = (1/2) * [1 - (A - 2θ u)/√D].
+            D = A² - 4θ(θ-1)uv,
+        we have:
+            ∂C(u,v)/∂v = 0.5 * [1 - (A - 2θ u)/√D].
 
         Parameters
         ----------
         u : float or array-like
-            Value(s) in [0, 1] for U.
+            Value(s) in (0,1) for U.
         v : float or array-like
-            Value(s) in [0, 1] for V (conditioning variable).
-        param : list or array-like, optional
-            Copula parameter(s) as [θ]. If None, self.parameters is used.
+            Value(s) in (0,1) for V.
+        param : iterable
+            Copula parameter(s) as [θ].
+
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C(u,v)/∂v.
+        """
+        theta = param[0]
+        u = np.asarray(u)
+        v = np.asarray(v)
+        A = 1 + (theta - 1) * (u + v)
+        D = A**2 - 4 * theta * (theta - 1) * u * v
+        return 0.5 * (1 - (A - 2 * theta * u) / np.sqrt(D))
+
+    def partial_derivative_C_wrt_u(self, u, v, param):
+        """
+        Compute the partial derivative ∂C(u,v)/∂u for the Plackett copula.
+
+        With:
+            A = 1 + (θ-1)(u+v),
+            D = A² - 4θ(θ-1)uv,
+        we have:
+            ∂C(u,v)/∂u = 0.5 * [1 - (A - 2θ v)/√D].
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in (0,1) for U.
+        v : float or array-like
+            Value(s) in (0,1) for V.
+        param : iterable
+            Copula parameter(s) as [θ].
+
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative ∂C(u,v)/∂u.
+        """
+        theta = param[0]
+        u = np.asarray(u)
+        v = np.asarray(v)
+        A = 1 + (theta - 1) * (u + v)
+        D = A**2 - 4 * theta * (theta - 1) * u * v
+        return 0.5 * (1 - (A - 2 * theta * v) / np.sqrt(D))
+
+    def conditional_cdf_u_given_v(self, u, v, param):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v) for the Plackett copula.
+
+        Defined as:
+            F_{U|V}(u|v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v].
+        Although theoretically ∂C(1,v)/∂v = 1,
+        the division is performed for consistency and numerical safety.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Value(s) in (0,1) for U.
+        v : float or array-like
+            Value(s) in (0,1) for V.
+        param : iterable
+            Copula parameter(s) as [θ].
 
         Returns
         -------
         float or np.ndarray
             The conditional CDF P(U ≤ u | V = v).
         """
-
-        theta = param[0]
-
-        u = np.asarray(u)
-        v = np.asarray(v)
-
-        A = 1 + (theta - 1) * (u + v)
-        D = A ** 2 - 4 * theta * (theta - 1) * u * v
-        return 0.5 * (1 - (A - 2 * theta * u) / np.sqrt(D))
+        num = self.partial_derivative_C_wrt_v(u, v, param)
+        den = self.partial_derivative_C_wrt_v(1.0, v, param)
+        eps = 1e-14
+        den = np.maximum(den, eps)
+        return num / den
 
     def conditional_cdf_v_given_u(self, v, u, param):
         """
-        Analytically computes the conditional CDF P(V ≤ v | U = u)
-        for the Plackett copula.
+        Compute the conditional CDF P(V ≤ v | U = u) for the Plackett copula.
 
-        By symmetry, we define:
-            A = 1 + (θ-1)(u+v) and D = A² - 4θ(θ-1)uv.
-        Then the conditional CDF is:
-            F_{V|U}(v|u) = (1/2) * [1 - (A - 2θ v)/√D].
+        Defined as:
+            F_{V|U}(v|u) = [∂C(u,v)/∂u] / [∂C(u,1)/∂u].
+        We perform the normalization for consistency.
 
         Parameters
         ----------
         v : float or array-like
-            Value(s) in [0, 1] for V.
+            Value(s) in (0,1) for V.
         u : float or array-like
-            Value(s) in [0, 1] for U (conditioning variable).
-        param : list or array-like, optional
-            Copula parameter(s) as [θ]. If None, self.parameters is used.
+            Value(s) in (0,1) for U.
+        param : iterable
+            Copula parameter(s) as [θ].
 
         Returns
         -------
         float or np.ndarray
             The conditional CDF P(V ≤ v | U = u).
         """
-
-        theta = param[0]
-
-        u = np.asarray(u)
-        v = np.asarray(v)
-
-        A = 1 + (theta - 1) * (u + v)
-        D = A ** 2 - 4 * theta * (theta - 1) * u * v
-        return 0.5 * (1 - (A - 2 * theta * v) / np.sqrt(D))
+        num = self.partial_derivative_C_wrt_u(u, v, param)
+        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
+        eps = 1e-14
+        den = np.maximum(den, eps)
+        return num / den

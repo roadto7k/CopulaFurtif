@@ -196,67 +196,108 @@ class FGMCopula(BaseCopula):
         """
         return 0
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
         """
-        Computes the conditional CDF P(U ≤ u | V = v) for the FGM copula analytically.
+        Compute the partial derivative ∂C(u,v)/∂v for the FGM copula.
 
-        The FGM copula is defined as:
-            C(u,v) = u*v + θ * u*v*(1-u)*(1-v),
-        so that the derivative with respect to v is:
+        For the FGM copula
+            C(u,v) = u*v + θ*u*v*(1-u)*(1-v),
+        the derivative with respect to v is:
             ∂C(u,v)/∂v = u + θ * u*(1-u)*(1-2v).
-
-        Since C(1,v)=v (and its derivative with respect to v is 1),
-        we set:
-            F_{U|V}(u | v) = u + θ * u*(1-u)*(1-2v)
 
         Parameters
         ----------
         u : float or array-like
-            Value(s) in [0, 1] for U.
+            Values in (0,1) for U.
         v : float or array-like
-            Value(s) in [0, 1] for V (the conditioning variable).
+            Values in (0,1) for V.
         param : list or array-like, optional
-            Copula parameter(s) as [θ]. If None, self.parameters is used.
+            Copula parameter(s) as [theta]. If None, self.parameters is used.
 
         Returns
         -------
         float or np.ndarray
-            Conditional CDF P(U ≤ u | V = v).
+            The partial derivative ∂C(u,v)/∂v.
         """
-
+        if param is None:
+            param = self.parameters
         theta = param[0]
         u = np.asarray(u)
         v = np.asarray(v)
         return u + theta * u * (1 - u) * (1 - 2 * v)
 
-    def conditional_cdf_v_given_u(self, v, u, param):
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
-        Computes the conditional CDF P(V ≤ v | U = u) for the FGM copula analytically.
+        Compute the partial derivative ∂C(u,v)/∂u for the FGM copula.
 
-        By symmetry, for the FGM copula:
-            C(u,v) = u*v + θ * u*v*(1-u)*(1-v),
+        For the FGM copula, with
+            C(u,v) = u*v + θ*u*v*(1-u)*(1-v),
         the derivative with respect to u is:
             ∂C(u,v)/∂u = v + θ * v*(1-v)*(1-2u).
 
-        Therefore, we define:
-            F_{V|U}(v | u) = v + θ * v*(1-v)*(1-2u)
-
         Parameters
         ----------
-        v : float or array-like
-            Value(s) in [0, 1] for V.
         u : float or array-like
-            Value(s) in [0, 1] for U (the conditioning variable).
+            Values in (0,1) for U.
+        v : float or array-like
+            Values in (0,1) for V.
         param : list or array-like, optional
-            Copula parameter(s) as [θ]. If None, self.parameters is used.
+            Copula parameter(s) as [theta]. If None, self.parameters is used.
 
         Returns
         -------
         float or np.ndarray
-            Conditional CDF P(V ≤ v | U = u).
+            The partial derivative ∂C(u,v)/∂u.
         """
-
+        if param is None:
+            param = self.parameters
         theta = param[0]
         u = np.asarray(u)
         v = np.asarray(v)
         return v + theta * v * (1 - v) * (1 - 2 * u)
+
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        """
+        Compute the conditional probability P(U ≤ u | V = v) for the FGM copula.
+
+        Since for a copula the margins are uniform (C(1,v)=v and f_V(v)=1), we have:
+            P(U ≤ u | V = v) = ∂C(u,v)/∂v.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Values in (0,1) for U.
+        v : float or array-like
+            Values in (0,1) for V.
+        param : list or array-like, optional
+            Copula parameter(s) as [theta]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional probability P(U ≤ u | V = v).
+        """
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, v, u, param=None):
+        """
+        Compute the conditional probability P(V ≤ v | U = u) for the FGM copula.
+
+        By symmetry, since C(u,1)=u and f_U(u)=1, we have:
+            P(V ≤ v | U = u) = ∂C(u,v)/∂u.
+
+        Parameters
+        ----------
+        v : float or array-like
+            Values in (0,1) for V.
+        u : float or array-like
+            Values in (0,1) for U.
+        param : list or array-like, optional
+            Copula parameter(s) as [theta]. If None, self.parameters is used.
+
+        Returns
+        -------
+        float or np.ndarray
+            The conditional probability P(V ≤ v | U = u).
+        """
+        return self.partial_derivative_C_wrt_u(u, v, param)

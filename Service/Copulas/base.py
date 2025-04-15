@@ -133,6 +133,20 @@ class BaseCopula:
         self._check_is_fitted()
         return compute_bic(self)
 
+    def partial_derivative_C_wrt_v(self, u, v, param):
+        """
+        Analytically computes ∂C(u,v)/∂v.
+        """
+
+        raise NotImplementedError
+
+    def partial_derivative_C_wrt_u(self, u, v, param):
+        """
+        Analytically computes ∂C(u,v)/∂u.
+        """
+
+        raise NotImplementedError
+
     def conditional_cdf_u_given_v(self, u, v, param=None):
         """
         Analytically computes the conditional CDF P(U ≤ u | V = v).
