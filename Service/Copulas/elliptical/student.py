@@ -1,8 +1,11 @@
+from math import sqrt
+
 import numpy as np
+from scipy.integrate import quad
 from scipy.special import gammaln
+from scipy.special import roots_genlaguerre, gamma
 from scipy.stats import kendalltau
-from scipy.stats import multivariate_t
-from scipy.stats import t
+from scipy.stats import multivariate_normal, t
 
 from Service.Copulas.base import BaseCopula
 
@@ -43,66 +46,73 @@ class StudentCopula(BaseCopula):
         self.bounds_param = [(-0.999, 0.999), (1e-6, 50.0)]
         self.parameters = np.array([0.5, 4.0])  # [rho, df]
         self.default_optim_method = "Powell"  # or "trust-constr"
+        self.n_nodes = 64  # Gauss–Laguerre nodes
 
-    def get_cdf(self, u, v, params):
+    def get_cdf(self, u, v, param):
         """
-        Robust CDF of the bivariate Student-t copula.
+        Compute the CDF of the bivariate Student-t copula using Gauss-Laguerre quadrature.
+
+        This method relies on the fact that a bivariate Student-t distribution can be expressed
+        as a scale mixture of normals, where the mixing variable follows a Gamma distribution.
+
+        It approximates the integral:
+            C(u, v) = P(U <= u, V <= v)
+                   = F_{t, rho, nu}(x, y)
+                   ≈ (1 / Gamma(nu/2)) * sum_i w_i * Φ_2(x * sqrt(2 * z_i / nu),
+                                                        y * sqrt(2 * z_i / nu); rho)
+        where Φ_2 is the CDF of the bivariate normal distribution with correlation rho.
 
         Parameters
         ----------
-        u : float or array-like
-            First pseudo-observation(s) in [0,1].
-        v : float or array-like
-            Second pseudo-observation(s) in [0,1].
-        params : list or array-like
-            [rho, nu] where rho is the correlation and nu the degrees of freedom.
+        u : float
+            First pseudo-observation in [0, 1].
+        v : float
+            Second pseudo-observation in [0, 1].
+        rho : float
+            Linear correlation parameter in [-1, 1].
+        nu : float
+            Degrees of freedom of the Student-t copula.
+        n : int, optional (default=64)
+            Number of Gauss-Laguerre quadrature nodes (higher = better precision).
 
         Returns
         -------
-        float or np.ndarray
-            The copula CDF evaluated at (u, v).
+        float
+            The estimated copula CDF C(u, v).
         """
-        rho, nu = params
+        if u <= 0 or v <= 0:
+            return 0.0
+        if u >= 1 and v >= 1:
+            return 1.0
+        if u >= 1:
+            return v
+        if v >= 1:
+            return u
 
-        # Ensure u and v are numpy arrays
-        u_arr = np.asarray(u)
-        v_arr = np.asarray(v)
+        rho, nu = param
+        n = self.n_nodes
 
-        # Force inputs to be at least 1D for broadcasting
-        u_vec = np.atleast_1d(u_arr)
-        v_vec = np.atleast_1d(v_arr)
+        # Convert pseudo-observations to Student-t quantiles
+        x = t.ppf(u, df=nu)
+        y = t.ppf(v, df=nu)
 
-        # Handle boundary cases: when u or v = 0 or 1
-        mask_zero = (u_vec <= 0) | (v_vec <= 0)
-        mask_u_one = (u_vec >= 1)
-        mask_v_one = (v_vec >= 1)
+        # Gauss-Laguerre quadrature nodes and weights for weight function z^(alpha) * exp(-z)
+        k = nu / 2.0
+        alpha = k - 1.0
+        z_nodes, w_weights = roots_genlaguerre(n, alpha)
 
-        # Clip inputs to avoid -inf/+inf from t.ppf
-        eps = 1e-12
-        u_clipped = np.clip(u_vec, eps, 1 - eps)
-        v_clipped = np.clip(v_vec, eps, 1 - eps)
+        # Setup bivariate normal CDF with correlation rho
+        cov = [[1, rho], [rho, 1]]
+        mvn = multivariate_normal(mean=[0, 0], cov=cov)
 
-        # Inverse transform: convert to t quantiles
-        t1 = t.ppf(u_clipped, df=nu)
-        t2 = t.ppf(v_clipped, df=nu)
+        # Compute weighted sum
+        total = 0.0
+        for z_i, w_i in zip(z_nodes, w_weights):
+            scale = np.sqrt(2.0 * z_i / nu)
+            total += w_i * mvn.cdf([x * scale, y * scale])
 
-        # Stack data for multivariate t CDF evaluation
-        data = np.column_stack([t1, t2])
-        cov = np.array([[1, rho], [rho, 1]])
-        mv_t = multivariate_t(loc=[0, 0], shape=cov, df=nu)
+        return total / gamma(k)
 
-        # Force the result to be at least 1D
-        result = np.atleast_1d(np.asarray(mv_t.cdf(data)))
-
-        # Enforce boundary values
-        result[mask_zero] = 0.0
-        result[mask_u_one] = v_vec[mask_u_one]
-        result[mask_v_one] = u_vec[mask_v_one]
-
-        # Return scalar if original input was scalar
-        if np.isscalar(u) and np.isscalar(v):
-            return result.item()
-        return result
 
     def get_pdf(self, u, v, param):
         """

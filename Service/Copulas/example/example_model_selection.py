@@ -165,7 +165,7 @@ def main():
             print(f"MLE fitting for {copula.name} failed: {e}")
 
     # --- Compare model fitting ---
-    result_df = copula_diagnostics(data, candidate_list, verbose=True, quick=False)
+    result_df = copula_diagnostics(data, candidate_list, verbose=True, quick=True)
     print(result_df)
     msg = interpret_copula_results(result_df)
     print(msg)

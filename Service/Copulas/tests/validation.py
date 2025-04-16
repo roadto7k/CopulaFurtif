@@ -1,3 +1,8 @@
+def optimal_eps(u, v):
+    # machine epsilon ~1e-16, (1e-16)^(1/5)≈1e-3
+    h0 = 1e-3
+    return h0 * max(1.0, v, u)
+
 def test_partial_derivative_C_wrt_v(copula, u, v, eps=1e-6):
     """
     Compare ∂C(u,v)/∂v (numerical) with partial_derivative_C_wrt_v (analytical).
@@ -125,7 +130,7 @@ def test_partial_derivative_C_wrt_u_order2(copula, u, v, eps=1e-4):
     return ana, num, error
 
 
-def test_partial_derivative_C_wrt_v_order4(copula, u, v, eps=1e-4):
+def test_partial_derivative_C_wrt_v_order4(copula, u, v):
     """
     Différence centrée d'ordre 4 pour approximer ∂C(u,v)/∂v.
 
@@ -146,8 +151,9 @@ def test_partial_derivative_C_wrt_v_order4(copula, u, v, eps=1e-4):
     error : float
         Erreur absolue |ana - num|.
     """
+    eps = optimal_eps(u, v)
     param = copula.parameters
-    # Définir les points en gérant les bornes
+
     v_plus2 = min(v + 2 * eps, 1 - 1e-10)
     v_plus = min(v + eps, 1 - 1e-10)
     v_minus = max(v - eps, 1e-10)
@@ -164,7 +170,7 @@ def test_partial_derivative_C_wrt_v_order4(copula, u, v, eps=1e-4):
     return ana, num, error
 
 
-def test_partial_derivative_C_wrt_u_order4(copula, u, v, eps=1e-4):
+def test_partial_derivative_C_wrt_u_order4(copula, u, v):
     """
     Différence centrée d'ordre 4 pour approximer ∂C(u,v)/∂u.
 
@@ -185,8 +191,9 @@ def test_partial_derivative_C_wrt_u_order4(copula, u, v, eps=1e-4):
     error : float
         Erreur absolue |ana - num|.
     """
+    eps = optimal_eps(u, v)
     param = copula.parameters
-    # Définir les points en gérant les bornes
+
     u_plus2 = min(u + 2 * eps, 1 - 1e-10)
     u_plus = min(u + eps, 1 - 1e-10)
     u_minus = max(u - eps, 1e-10)
