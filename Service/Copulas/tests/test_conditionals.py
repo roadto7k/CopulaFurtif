@@ -9,6 +9,7 @@ from Service.Copulas.archimedean.BB4 import BB4Copula
 from Service.Copulas.archimedean.BB5 import BB5Copula
 from Service.Copulas.archimedean.BB6 import BB6Copula
 from Service.Copulas.archimedean.BB7 import BB7Copula
+from Service.Copulas.archimedean.Tawn import TawnCopula
 from Service.Copulas.archimedean.TawnT1 import TawnT1Copula
 from Service.Copulas.archimedean.TawnT2 import TawnT2Copula
 from Service.Copulas.archimedean.clayton import ClaytonCopula
@@ -37,6 +38,7 @@ copulas_to_test = [
     (BB5Copula, [2.0, 3.0]),
     (BB6Copula, [2.0, 3.0]),
     (BB7Copula, [2.0, 3.0]),
+    (TawnCopula, [2.0, 0.5, 0.5]),
     (TawnT1Copula, [2.0, 0.5]),
     (TawnT2Copula, [2.0, 0.5]),
     (ClaytonCopula, [2.0]),
