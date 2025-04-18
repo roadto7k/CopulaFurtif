@@ -138,45 +138,53 @@ class BB5Copula(BaseCopula):
 
     def partial_derivative_C_wrt_u(self, u, v, param):
         """
-        ∂C/∂u via chain rule:
-          dC/du = -C * (1/θ) w^{1/θ -1} * dw/du
+        ∂C/∂u via chain‑rule for BB5:
+          C(u,v) = exp(-g),  g = w^(1/θ),
+          w = x^θ + y^θ − ( x^(−δθ) + y^(−δθ) )^(−1/δ).
         """
         θ, δ = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
+        # basic transforms
         x = -np.log(u)
         y = -np.log(v)
-        xt = x**θ
-        xdt = x**(-δ * θ)
-        ydt = y**(-δ * θ)
-        S = xdt + ydt
-        xyp = S**(-1.0/δ)
-        w = xt + ydt - xyp
 
-        # dw/du
-        dxt_dx = θ * x**(θ - 1)
+        # build w correctly (was missing yt = y**θ)
+        xt = x ** θ
+        yt = y ** θ
+        xdt = x ** (-δ * θ)
+        ydt = y ** (-δ * θ)
+        S = xdt + ydt
+        xyp = S ** (-1.0 / δ)
+        w = xt + yt - xyp
+
+        # g = w^(1/θ), C = exp(-g)
+        g = w ** (1.0 / θ)
+        C = np.exp(-g)
+
+        # chain‑rule pieces
+        dg_dw = (1.0 / θ) * w ** (1.0 / θ - 1)
+
+        # dw/du = d(x^θ)/du − d(xyp)/du
+        dxt_dx = θ * x ** (θ - 1)
         dx_du = -1.0 / u
         dxt_du = dxt_dx * dx_du
 
-        dxdt_dx = -δ * θ * x**(-δ * θ - 1)
+        dxdt_dx = -δ * θ * x ** (-δ * θ - 1)
         dxdt_du = dxdt_dx * dx_du
-
-        dxyp_dS = -(1.0/δ) * S**(-1.0/δ - 1)
+        dxyp_dS = -(1.0 / δ) * S ** (-1.0 / δ - 1)
         dxyp_du = dxyp_dS * dxdt_du
 
         dw_du = dxt_du - dxyp_du
 
-        g = w**(1.0/θ)
-        C = np.exp(-g)
-        dg_dw = (1.0/θ) * w**(1.0/θ - 1)
-
+        # ∂C/∂u = -C * dg_dw * dw_du
         return -C * dg_dw * dw_du
 
     def partial_derivative_C_wrt_v(self, u, v, param):
         """
-        ∂C/∂v via symmetry of ∂C/∂u (swap u<->v).
+        ∂C/∂v via symmetry: swap u<->v.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
 

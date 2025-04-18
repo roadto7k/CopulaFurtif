@@ -97,65 +97,47 @@ class BB6Copula(BaseCopula):
 
     def partial_derivative_C_wrt_u(self, u, v, param):
         """
-        ∂C/∂u via chain rule: dC/dw·dw/dtem·dtem/dsm·dsm/dx·dx/du.
+        ∂C/∂u via chain‑rule for BB6:
+          C = 1 - (1-w)^(1/θ),
+          w = exp(- [ x^δ + y^δ ]^(1/δ) ),
+          x = -ln(1-(1-u)^θ), y = -ln(1-(1-v)^θ).
         """
         θ, δ = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
+        # build w
         ubar, vbar = 1 - u, 1 - v
-        x = -np.log(1 - ubar**θ)
-        y = -np.log(1 - vbar**θ)
-        xd, yd = x**δ, y**δ
+        x = -np.log(1 - ubar ** θ)
+        y = -np.log(1 - vbar ** θ)
+        xd = x ** δ
+        yd = y ** δ
         sm = xd + yd
-        tem = sm**(1.0/δ)
+        tem = sm ** (1.0 / δ)
         w = np.exp(-tem)
 
-        # dC/dw and dw/dtem
-        dC_dw = -(1.0/θ) * (1 - w)**(1.0/θ - 1)
+        # **correct** dC/dw for C=1-(1-w)^(1/θ)
+        dC_dw = (1.0 / θ) * (1 - w) ** (1.0 / θ - 1)
         dw_dtem = -w
         dC_dtem = dC_dw * dw_dtem
 
         # dtem/dsm and dsm/dx
-        dtem_dsm = (1.0/δ) * sm**(1.0/δ - 1)
-        dsm_dx = δ * x**(δ - 1)
+        dtem_dsm = (1.0 / δ) * sm ** (1.0 / δ - 1)
+        dsm_dx = δ * x ** (δ - 1)
         dC_dx = dC_dtem * dtem_dsm * dsm_dx
 
-        # dx/du
-        dx_du = -θ * ubar**(θ - 1) / (1 - ubar**θ)
+        # dx/du for x = -ln(1-ubar^θ)
+        dx_du = -θ * ubar ** (θ - 1) / (1 - ubar ** θ)
 
+        # ∂C/∂u
         return dC_dx * dx_du
 
     def partial_derivative_C_wrt_v(self, u, v, param):
         """
-        ∂C/∂v via symmetry of ∂/∂u.
+        ∂C/∂v via symmetry: swap u<->v.
         """
-        # same logic as ∂/∂u but swap roles of u↔v
-        θ, δ = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-
-        ubar, vbar = 1 - u, 1 - v
-        x = -np.log(1 - ubar**θ)
-        y = -np.log(1 - vbar**θ)
-        xd, yd = x**δ, y**δ
-        sm = xd + yd
-        tem = sm**(1.0/δ)
-        w = np.exp(-tem)
-
-        dC_dw = -(1.0/θ) * (1 - w)**(1.0/θ - 1)
-        dw_dtem = -w
-        dC_dtem = dC_dw * dw_dtem
-
-        dtem_dsm = (1.0/δ) * sm**(1.0/δ - 1)
-        dsm_dy = δ * y**(δ - 1)
-        dC_dy = dC_dtem * dtem_dsm * dsm_dy
-
-        dy_dv = -θ * vbar**(θ - 1) / (1 - vbar**θ)
-
-        return dC_dy * dy_dv
+        return self.partial_derivative_C_wrt_u(v, u, param)
 
     def conditional_cdf_v_given_u(self, u, v, param):
         """
