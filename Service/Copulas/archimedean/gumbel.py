@@ -1,7 +1,5 @@
 import numpy as np
-from scipy.stats import norm
-from scipy.special import expm1, log1p
-
+from scipy.stats import uniform
 from Service.Copulas.base import BaseCopula
 
 
@@ -9,247 +7,218 @@ class GumbelCopula(BaseCopula):
     """
     Gumbel Copula (Archimedean)
 
-    A copula used to model asymmetric upper tail dependence. Belongs to the Archimedean family.
+    Parameters
+    ----------
+    theta : float
+        Copula parameter (θ ≥ 1) controlling upper-tail dependence.
 
     Attributes
     ----------
     type : str
-        Identifier for the copula type.
+        Identifier for the copula family ('gumbel').
     name : str
         Human-readable name.
+    param_names : list of str
+        Names of copula parameters in order.
     bounds_param : list of tuple
-        Bounds for the copula parameter(s). For Gumbel: theta in [1, ∞)
-    parameters : np.ndarray
-        Initial guess for the copula parameter(s).
-    n_obs : int or None
-        Number of observations, populated during fitting.
+        Bounds for each parameter: [(1+eps, None)].
+    _parameters : np.ndarray
+        Internal parameter storage [theta].
     default_optim_method : str
-        Default optimization algorithm.
-
-    Methods
-    -------
-    get_cdf(u, v, param):
-        Cumulative distribution function of the Gumbel copula.
-
-    get_pdf(u, v, param):
-        Probability density function of the Gumbel copula.
-
-    kendall_tau(param):
-        Computes Kendall's tau as a function of theta.
-
-    sample(n, param):
-        Generates n pseudo-observations from the copula.
+        Default optimizer for parameter fitting.
     """
 
     def __init__(self):
         super().__init__()
         self.type = "gumbel"
         self.name = "Gumbel Copula"
-        self.bounds_param = [(1+ 1e-6, None)]
-        self.parameters = np.array([1.5])
-        self.default_optim_method = "Powell"
+        # Theta must be >= 1
+        self.param_names = ["theta"]
+        self.bounds_param = [(1.0 + 1e-6, None)]
+        self._parameters = np.array([1.5])  # [theta]
+        self.default_optim_method = "SLSQP"
 
-    def get_cdf(self, u, v, param):
-        """Gumbel copula CDF"""
+    @property
+    def parameters(self) -> np.ndarray:
+        """Current copula parameters [theta]."""
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
+        """Validate and set copula parameters."""
+        theta = float(param[0])
+        lower, upper = self.bounds_param[0]
+        if theta < lower or (upper is not None and theta > upper):
+            raise ValueError(f"Parameter 'theta' must satisfy {self.bounds_param[0]}, got {theta}.")
+        self._parameters = np.array([theta])
+
+    def get_cdf(self, u: float, v: float, param: np.ndarray=None) -> float:
+        """
+        CDF of the Gumbel copula: C(u,v) = exp(-[(-log u)^theta + (-log v)^theta]^(1/theta)).
+
+        Parameters
+        ----------
+        u : float
+            First uniform input in (0,1).
+        v : float
+            Second uniform input in (0,1).
+        param : ndarray, optional
+            [theta], default to self.parameters.
+
+        Returns
+        -------
+        float
+            Copula CDF value.
+        """
+        if param is None:
+            param = self.parameters
         theta = param[0]
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        log_u = -np.log(u)
-        log_v = -np.log(v)
-        sum_logs_theta = log_u ** theta + log_v ** theta
-        return np.exp(-sum_logs_theta ** (1 / theta))
+        s_u = -np.log(u)
+        s_v = -np.log(v)
+        S = s_u**theta + s_v**theta
+        return np.exp(-S**(1.0/theta))
 
-    def get_pdf(self, u, v, param):
-        """Density of the Gumbel copula"""
+    def get_pdf(self, u: float, v: float, param: np.ndarray=None) -> float:
+        """
+        PDF of the Gumbel copula.
+
+        c(u,v) = C(u,v)/(u v) * S^(2/theta - 2) * (s_u s_v)^(theta-1)
+                 * [theta + (theta-1) S^(-1/theta)].
+
+        Parameters
+        ----------
+        u, v : float
+            Uniform inputs in (0,1).
+        param : ndarray, optional
+            [theta], default to self.parameters.
+
+        Returns
+        -------
+        float
+            Copula density value.
+        """
+        if param is None:
+            param = self.parameters
         theta = param[0]
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        log_u = -np.log(u)
-        log_v = -np.log(v)
+        s_u = -np.log(u)
+        s_v = -np.log(v)
+        S = s_u**theta + s_v**theta
+        C = np.exp(-S**(1.0/theta))
 
-        sum_logs_theta = log_u ** theta + log_v ** theta
-        C_uv = np.exp(-sum_logs_theta ** (1 / theta))
+        term1 = C / (u * v)
+        term2 = S**(-2.0 + 2.0/theta)
+        term3 = (s_u * s_v)**(theta - 1.0)
+        term4 = theta + (theta - 1.0) * S**(-1.0/theta)
+        return term1 * term2 * term3 * term4
 
-        term1 = 1 / (u * v)
-        term2 = sum_logs_theta ** (-2 + 2 / theta)
-        term3 = (log_u * log_v) ** (theta - 1)  # Corrigé ici
-        term4 = theta + (theta - 1) * sum_logs_theta ** (-1 / theta)
-
-        return C_uv * term1 * term2 * term3 * term4
-
-    def kendall_tau(self, param):
-        """Kendall's tau for Gumbel copula: tau = 1 - 1/theta"""
-        theta = param[0]
-        return 1 - 1 / theta
-
-    def sample(self, n, param):
+    def kendall_tau(self, param: np.ndarray=None) -> float:
         """
-        Sample from the Gumbel copula using conditional method.
-        Due to complexity, we use an approximation via Marshall–Olkin method.
+        Kendall's tau for Gumbel: 1 - 1/theta.
         """
+        if param is None:
+            param = self.parameters
         theta = param[0]
+        return 1.0 - 1.0/theta
 
-        if theta < 1:
+    def sample(self, n: int, param: np.ndarray=None) -> np.ndarray:
+        """
+        Approximate sampling via Marshall–Olkin method.
+
+        Parameters
+        ----------
+        n : int
+            Number of samples.
+        param : ndarray, optional
+            [theta], default to self.parameters.
+
+        Returns
+        -------
+        ndarray shape (n,2)
+            Pseudo-observations.
+        """
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        if theta < 1.0:
             raise ValueError("Theta must be ≥ 1 for Gumbel copula.")
-        elif theta == 1:
-            return np.random.uniform(size=(n, 2))
+        if theta == 1.0:
+            return np.random.rand(n, 2)
 
-        E = np.random.exponential(1, size=n)
-
+        alpha = 1.0/theta
+        E = np.random.exponential(size=n)
         V = np.random.uniform(0, np.pi, size=n)
-        W = np.random.exponential(1, size=n)
+        W = np.random.exponential(size=n)
 
-        # Stable distribution using CMS method
-        alpha = 1.0 / theta
-        S1 = (np.sin(alpha * V) / (np.cos(V)) ** (1 / alpha)) * \
-             (np.cos((1 - alpha) * V) / W) ** ((1 - alpha) / alpha)
-        S2 = (np.sin(alpha * V) / (np.cos(V)) ** (1 / alpha)) * \
-             (np.cos((1 - alpha) * V) / np.random.exponential(1, size=n)) ** ((1 - alpha) / alpha)
+        S1 = (np.sin(alpha * V) / np.cos(V)**(1.0/alpha)) * \
+             (np.cos((1 - alpha) * V) / W)**((1 - alpha)/alpha)
+        S2 = (np.sin(alpha * V) / np.cos(V)**(1.0/alpha)) * \
+             (np.cos((1 - alpha) * V) / np.random.exponential(size=n))**((1 - alpha)/alpha)
 
-        U = np.exp(-S1 ** (1 / theta) / E)
-        V = np.exp(-S2 ** (1 / theta) / E)
+        u = np.exp(-S1**(1.0/theta) / E)
+        v = np.exp(-S2**(1.0/theta) / E)
+        return np.column_stack((u, v))
 
-        return np.column_stack((U, V))
-
-    def LTDC(self, param):
-        """
-        Computes the lower tail dependence coefficient for the Gumbel copula.
-
-        Gumbel copula has no lower tail dependence:
-            LTDC = 0
-        """
+    def LTDC(self, param: np.ndarray=None) -> float:
+        """Lower-tail dependence (0)."""
         return 0.0
 
-    def UTDC(self, param):
-        """
-        Computes the upper tail dependence coefficient for the Gumbel copula.
-
-        Formula:
-            UTDC = 2 - 2^(1 / theta)
-        """
+    def UTDC(self, param: np.ndarray=None) -> float:
+        """Upper-tail dependence: 2 - 2^(1/theta)."""
+        if param is None:
+            param = self.parameters
         theta = param[0]
+        return 2.0 - 2.0**(1.0/theta)
 
-        return 2 - 2 ** (1 / theta)
-
-    def partial_derivative_C_wrt_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u: float, v: float, param: np.ndarray=None) -> float:
         """
-        Compute the partial derivative ∂C(u,v)/∂v for the Gumbel copula.
-
-        Using the formula:
-            ∂C(u,v)/∂v = [C(u,v)/v] * A^(1/θ - 1) * (-ln v)^(θ - 1),
-        where A = (-ln u)^θ + (-ln v)^θ.
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1) for U.
-        v : float or array-like
-            Values in (0,1) for V.
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The partial derivative ∂C(u,v)/∂v.
+        ∂C(u,v)/∂v for conditional distributions.
         """
+        if param is None:
+            param = self.parameters
         theta = param[0]
-        u = np.asarray(u)
-        v = np.asarray(v)
-        A = (-np.log(u))**theta + (-np.log(v))**theta
-        Cuv = np.exp(-A**(1/theta))
-        return (Cuv / v) * (A)**(1/theta - 1) * ((-np.log(v))**(theta - 1))
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+        s_u = -np.log(u)
+        s_v = -np.log(v)
+        S = s_u**theta + s_v**theta
+        C = np.exp(-S**(1.0/theta))
+        return (C / v) * S**(1.0/theta - 1.0) * s_v**(theta - 1.0)
 
-    def partial_derivative_C_wrt_u(self, u, v, param):
-        """
-        Compute the partial derivative ∂C(u,v)/∂u for the Gumbel copula.
-
-        Using the symmetric formula:
-            ∂C(u,v)/∂u = [C(u,v)/u] * A^(1/θ - 1) * (-ln u)^(θ - 1),
-        where A = (-ln u)^θ + (-ln v)^θ.
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1) for U.
-        v : float or array-like
-            Values in (0,1) for V.
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The partial derivative ∂C(u,v)/∂u.
-        """
+    def partial_derivative_C_wrt_u(self, u: float, v: float, param: np.ndarray=None) -> float:
+        """∂C(u,v)/∂u (symmetric)."""
+        if param is None:
+            param = self.parameters
         theta = param[0]
-        u = np.asarray(u)
-        v = np.asarray(v)
-        A = (-np.log(u))**theta + (-np.log(v))**theta
-        Cuv = np.exp(-A**(1/theta))
-        return (Cuv / u) * (A)**(1/theta - 1) * ((-np.log(u))**(theta - 1))
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+        s_u = -np.log(u)
+        s_v = -np.log(v)
+        S = s_u**theta + s_v**theta
+        C = np.exp(-S**(1.0/theta))
+        return (C / u) * S**(1.0/theta - 1.0) * s_u**(theta - 1.0)
 
-    def conditional_cdf_u_given_v(self, u, v, param):
-        """
-        Compute the conditional CDF P(U ≤ u | V = v) for the Gumbel copula.
-
-        Defined as:
-            F_{U|V}(u|v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v].
-
-        Since C(1,v)=v and therefore ∂C(1,v)/∂v=1,
-        the normalization is automatic—but the division is performed for consistency.
-
-        Parameters
-        ----------
-        u : float or array-like
-            The u-value (in (0,1)) at which the conditional CDF is evaluated.
-        v : float or array-like
-            The fixed v-value (in (0,1)).
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The computed conditional CDF P(U ≤ u | V = v).
-        """
+    def conditional_cdf_u_given_v(self, u: float, v: float, param: np.ndarray=None) -> float:
+        """P(U ≤ u | V=v) = ∂C/∂v normalized."""
+        if param is None:
+            param = self.parameters
         num = self.partial_derivative_C_wrt_v(u, v, param)
         den = self.partial_derivative_C_wrt_v(1.0, v, param)
-        eps = 1e-14
-        den = np.maximum(den, eps)
-        return num / den
+        return num / max(den, 1e-14)
 
-    def conditional_cdf_v_given_u(self, v, u, param):
-        """
-        Compute the conditional CDF P(V ≤ v | U = u) for the Gumbel copula.
-
-        Defined as:
-            F_{V|U}(v|u) = [∂C(u,v)/∂u] / [∂C(u,1)/∂u].
-
-        Since C(u,1)=u and hence ∂C(u,1)/∂u=1,
-        the normalization is automatic—but we include the division for consistency.
-
-        Parameters
-        ----------
-        v : float or array-like
-            The v-value (in (0,1)) at which the conditional CDF is evaluated.
-        u : float or array-like
-            The fixed u-value (in (0,1)).
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The computed conditional CDF P(V ≤ v | U = u).
-        """
+    def conditional_cdf_v_given_u(self, u: float, v: float, param: np.ndarray=None) -> float:
+        """P(V ≤ v | U=u) = ∂C/∂u normalized."""
+        if param is None:
+            param = self.parameters
         num = self.partial_derivative_C_wrt_u(u, v, param)
         den = self.partial_derivative_C_wrt_u(u, 1.0, param)
-        eps = 1e-14
-        den = np.maximum(den, eps)
-        return num / den
-
+        return num / max(den, 1e-14)

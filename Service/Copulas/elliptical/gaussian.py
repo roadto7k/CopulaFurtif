@@ -1,35 +1,34 @@
+"""
+Gaussian Copula implementation following the project coding standard:
+
+Norms:
+ 1. Use private attribute `_parameters` with public `@property parameters` and validation in the setter.
+ 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
+ 3. Docstrings must include **Parameters** and **Returns** sections with types.
+ 4. Parameter bounds are defined in `bounds_param`; setter enforces them.
+ 5. Consistent boundary handling with `eps = 1e-12` and `np.clip`.
+"""
 import numpy as np
 from scipy.special import erfinv
 from scipy.stats import norm, multivariate_normal
-import scipy.stats as st
 
 from Service.Copulas.base import BaseCopula
 
 
 class GaussianCopula(BaseCopula):
     """
-    Gaussian Copula class
+    Gaussian Copula class.
 
     Attributes
     ----------
     family : str
-        Identifier for the copula family. Here, "gaussian".
+        Identifier for the copula family, "gaussian".
     name : str
         Human-readable name for output/logging.
     bounds_param : list of tuple
-        Bounds for the copula parameters, used in optimization.
-        For Gaussian: [(-0.999, 0.999)]
+        Bounds for the copula parameter rho, in (-1,1).
     parameters : np.ndarray
-        Initial guess for the copula parameter(s), passed to the optimizer.
-
-    Methods
-    -------
-    get_cdf(u, v, param)
-        Computes the CDF of the Gaussian copula at (u, v).
-    get_pdf(u, v, param)
-        Computes the PDF of the Gaussian copula at (u, v).
-    sample(n, param)
-        Generates n samples from the copula, in [0,1]^2.
+        Copula parameter [rho].
     """
 
     def __init__(self):
@@ -37,25 +36,65 @@ class GaussianCopula(BaseCopula):
         self.type = "gaussian"
         self.name = "Gaussian Copula"
         self.bounds_param = [(-0.999, 0.999)]
-        self.parameters = np.array([0.0])  # Initial guess for correlation coefficient
-        self.default_optim_method = "SLSQP"  # or "trust-constr"
+        self._parameters = np.array([0.0])
+        self.default_optim_method = "SLSQP"
 
-    def get_cdf(self, u, v, param):
+    @property
+    def parameters(self) -> np.ndarray:
         """
-        Computes the cumulative distribution function of the Gaussian copula.
+        Get the copula parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Current copula parameter [rho].
+        """
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
+        """
+        Set and validate copula parameters against bounds_param.
 
         Parameters
         ----------
-        u, v : float or array-like
-            Pseudo-observations in [0, 1].
-        param : list or array-like
-            Copula parameter(s): param[0] is the correlation coefficient (ρ).
+        param : array-like
+            New copula parameters [rho].
+
+        Raises
+        ------
+        ValueError
+            If parameter is outside its specified bound.
+        """
+        param = np.asarray(param)
+        for idx, (lower, upper) in enumerate(self.bounds_param):
+            val = param[idx]
+            if lower is not None and val <= lower:
+                raise ValueError(f"Parameter at index {idx} must be > {lower}, got {val}")
+            if upper is not None and val >= upper:
+                raise ValueError(f"Parameter at index {idx} must be < {upper}, got {val}")
+        self._parameters = param
+
+    def get_cdf(self, u, v, param: np.ndarray = None):
+        """
+        Compute the Gaussian copula CDF C(u,v).
+
+        Parameters
+        ----------
+        u : float or array-like
+            Pseudo-observations in (0,1).
+        v : float or array-like
+            Pseudo-observations in (0,1).
+        param : ndarray, optional
+            Copula parameter [rho]. If None, uses self.parameters.
 
         Returns
         -------
         float or np.ndarray
-            Copula CDF value(s) at (u, v)
+            CDF value(s) at (u, v).
         """
+        if param is None:
+            param = self.parameters
         rho = param[0]
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -63,32 +102,36 @@ class GaussianCopula(BaseCopula):
 
         y1 = norm.ppf(u)
         y2 = norm.ppf(v)
-        cov = [[1, rho], [rho, 1]]
+        cov = [[1.0, rho], [rho, 1.0]]
 
         if np.isscalar(y1) and np.isscalar(y2):
-            return multivariate_normal.cdf([y1, y2], mean=[0, 0], cov=cov)
+            return multivariate_normal.cdf([y1, y2], mean=[0.0, 0.0], cov=cov)
         else:
             return np.array([
-                multivariate_normal.cdf([a, b], mean=[0, 0], cov=cov)
+                multivariate_normal.cdf([a, b], mean=[0.0, 0.0], cov=cov)
                 for a, b in zip(y1, y2)
             ])
 
-    def get_pdf(self, u, v, param):
+    def get_pdf(self, u, v, param: np.ndarray = None):
         """
-        Computes the probability density function of the Gaussian copula.
+        Compute the Gaussian copula PDF c(u,v).
 
         Parameters
         ----------
-        u, v : float or array-like
-            Pseudo-observations in [0, 1].
-        param : list or array-like
-            Copula parameter(s): param[0] is the correlation coefficient (ρ).
+        u : float or array-like
+            Pseudo-observations in (0,1).
+        v : float or array-like
+            Pseudo-observations in (0,1).
+        param : ndarray, optional
+            Copula parameter [rho]. If None, uses self.parameters.
 
         Returns
         -------
         float or np.ndarray
-            Copula PDF value(s) at (u, v)
+            PDF value(s) at (u, v).
         """
+        if param is None:
+            param = self.parameters
         rho = param[0]
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -96,203 +139,207 @@ class GaussianCopula(BaseCopula):
 
         x = np.sqrt(2) * erfinv(2 * u - 1)
         y = np.sqrt(2) * erfinv(2 * v - 1)
-        det_rho = 1 - rho ** 2
+        det = 1 - rho**2
+        exponent = -((x**2 + y**2) * rho**2 - 2 * x * y * rho) / (2 * det)
+        return (1.0 / np.sqrt(det)) * np.exp(exponent)
 
-        exponent = -((x ** 2 + y ** 2) * rho ** 2 - 2 * x * y * rho) / (2 * det_rho)
-        return (1.0 / np.sqrt(det_rho)) * np.exp(exponent)
+    def kendall_tau(self, param: np.ndarray = None) -> float:
+        """
+        Compute Kendall's tau = (2/π) · arcsin(rho).
 
-    def kendall_tau(self, param):
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameter [rho]. If None, uses self.parameters.
+
+        Returns
+        -------
+        float
+            Kendall's tau.
+        """
+        if param is None:
+            param = self.parameters
         rho = param[0]
-        return (2 / np.pi) * np.arcsin(rho)
+        return (2.0 / np.pi) * np.arcsin(rho)
 
-    def sample(self, n, param):
+    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
         """
         Generate n samples from the Gaussian copula.
 
         Parameters
         ----------
         n : int
-            Number of samples to generate
-        param : list or array-like
-            Copula parameter(s): param[0] is the correlation coefficient (ρ).
+            Number of samples.
+        param : ndarray, optional
+            Copula parameter [rho]. If None, uses self.parameters.
 
         Returns
         -------
         np.ndarray
-            n x 2 array of pseudo-observations (u, v)
+            Shape (n,2) array of pseudo-observations (u, v).
         """
+        if param is None:
+            param = self.parameters
         rho = param[0]
-        cov = np.array([[1, rho], [rho, 1]])
+        cov = np.array([[1.0, rho], [rho, 1.0]])
         L = np.linalg.cholesky(cov)
 
         z = np.random.randn(n, 2)
-        correlated = z @ L.T
-
-        u = norm.cdf(correlated[:, 0])
-        v = norm.cdf(correlated[:, 1])
-
+        corr = z @ L.T
+        u = norm.cdf(corr[:, 0])
+        v = norm.cdf(corr[:, 1])
         return np.column_stack((u, v))
 
-    def LTDC(self, param):
+    def LTDC(self, param: np.ndarray = None) -> float:
         """
-        Computes the lower tail dependence coefficient for the Gaussian copula.
+        Lower tail dependence coefficient (always 0 for Gaussian).
 
-        Gaussian copula has no tail dependence:
-            LTDC = 0
+        Returns
+        -------
+        float
+            0.0
         """
         return 0.0
 
-    def UTDC(self, param):
+    def UTDC(self, param: np.ndarray = None) -> float:
         """
-        Computes the upper tail dependence coefficient for the Gaussian copula.
+        Upper tail dependence coefficient (always 0 for Gaussian).
 
-        Gaussian copula has no tail dependence:
-            UTDC = 0
+        Returns
+        -------
+        float
+            0.0
         """
         return 0.0
 
-    def IAD(self, data):
+    def IAD(self, data) -> float:
         """
-        Skipped IAD computation due to high computational cost for elliptical copulas.
+        Integrated absolute deviation (disabled for elliptical copulas).
+
+        Returns
+        -------
+        float
+            np.nan
         """
         print(f"[INFO] IAD is disabled for {self.name} due to performance limitations.")
         return np.nan
 
-    def AD(self, data):
+    def AD(self, data) -> float:
         """
-        Skipped AD computation due to high computational cost for elliptical copulas.
+        Anderson–Darling test statistic (disabled for elliptical copulas).
+
+        Returns
+        -------
+        float
+            np.nan
         """
         print(f"[INFO] AD is disabled for {self.name} due to performance limitations.")
         return np.nan
 
-    def partial_derivative_C_wrt_v(self, u, v, param):
+    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
         """
-        Compute ∂C(u,v)/∂v for the Gaussian copula.
-
-        This is given by:
-
-          ∂C(u,v)/∂v = Φ((Φ⁻¹(u) - ρ Φ⁻¹(v))/√(1-ρ²)) · φ(Φ⁻¹(v)),
-
-        where Φ is the standard normal CDF and φ is the standard normal PDF.
+        Compute ∂C(u,v)/∂u for conditional CDF.
 
         Parameters
         ----------
         u : float or array-like
-            Values in (0,1) for U.
+            Values in (0,1).
         v : float or array-like
-            Values in (0,1) for V.
-        param : iterable
-            Copula parameter(s) as [ρ].
+            Values in (0,1).
+        param : ndarray, optional
+            Copula parameter [rho].
 
         Returns
         -------
         float or np.ndarray
-            The value of ∂C(u,v)/∂v.
+            ∂C/∂u.
         """
+        if param is None:
+            param = self.parameters
         rho = param[0]
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
         x = norm.ppf(u)
         y = norm.ppf(v)
-        return norm.cdf( (x - rho * y) / np.sqrt(1 - rho**2) )
+        return norm.cdf((y - rho * x) / np.sqrt(1 - rho**2))
 
-    def partial_derivative_C_wrt_u(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
         """
-        Compute ∂C(u,v)/∂u for the Gaussian copula.
-
-        This is given by:
-
-          ∂C(u,v)/∂u = Φ((Φ⁻¹(v) - ρ Φ⁻¹(u))/√(1-ρ²)) · φ(Φ⁻¹(u)),
-
-        where Φ is the standard normal CDF and φ is the standard normal PDF.
+        Compute ∂C(u,v)/∂v for conditional CDF.
 
         Parameters
         ----------
         u : float or array-like
-            Values in (0,1) for U.
+            Values in (0,1).
         v : float or array-like
-            Values in (0,1) for V.
-        param : iterable
-            Copula parameter(s) as [ρ].
+            Values in (0,1).
+        param : ndarray, optional
+            Copula parameter [rho].
 
         Returns
         -------
         float or np.ndarray
-            The value of ∂C(u,v)/∂u.
+            ∂C/∂v.
         """
+        if param is None:
+            param = self.parameters
         rho = param[0]
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
         x = norm.ppf(u)
         y = norm.ppf(v)
-        return norm.cdf( (y - rho * x) / np.sqrt(1 - rho**2) )
+        return norm.cdf((x - rho * y) / np.sqrt(1 - rho**2))
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
         """
-        Compute P(U ≤ u | V = v) for the Gaussian copula.
-
-        This is done by normalizing the partial derivative with respect to v:
-
-            P(U ≤ u | V = v) = (∂C(u,v)/∂v) / [∂C(1,v)/∂v].
-
-        Since for the Gaussian copula, C(1,v)=v and its derivative equals φ(Φ⁻¹(v)),
-        this normalization is explicit.
+        Compute P(U ≤ u | V = v).
 
         Parameters
         ----------
         u : float or array-like
-            The threshold for U (in (0,1)).
+            Threshold for U.
         v : float or array-like
-            The given value for V (in (0,1)).
-        param : iterable
-            Copula parameter(s) as [ρ].
+            Given value for V.
+        param : ndarray, optional
+            Copula parameter [rho].
 
         Returns
         -------
         float or np.ndarray
-            The conditional CDF P(U ≤ u | V = v).
+            Conditional CDF P(U ≤ u | V = v).
         """
+        if param is None:
+            param = self.parameters
         partial = self.partial_derivative_C_wrt_v(u, v, param)
         eps = 1e-12
         v = np.clip(v, eps, 1 - eps)
         y = norm.ppf(v)
-        marginal_pdf_v = norm.pdf(y)
-        return partial / marginal_pdf_v
+        return partial / norm.pdf(y)
 
-    def conditional_cdf_v_given_u(self, u, v, param):
+    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
         """
-        Compute P(V ≤ v | U = u) for the Gaussian copula.
-
-        This is computed by normalizing the partial derivative with respect to u:
-
-            P(V ≤ v | U = u) = (∂C(u,v)/∂u) / [∂C(u,1)/∂u].
-
-        With C(u,1)=u and its derivative equal to φ(Φ⁻¹(u)), this normalization is explicit.
+        Compute P(V ≤ v | U = u).
 
         Parameters
         ----------
-        v : float or array-like
-            The threshold for V (in (0,1)).
         u : float or array-like
-            The given value for U (in (0,1)).
-        param : iterable
-            Copula parameter(s) as [ρ].
+            Given value for U.
+        v : float or array-like
+            Threshold for V.
+        param : ndarray, optional
+            Copula parameter [rho].
 
         Returns
         -------
         float or np.ndarray
-            The conditional CDF P(V ≤ v | U = u).
+            Conditional CDF P(V ≤ v | U = u).
         """
-        # Note: Here, the function signature is (v, u, param) so that the threshold variable is first.
+        if param is None:
+            param = self.parameters
         partial = self.partial_derivative_C_wrt_u(u, v, param)
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         x = norm.ppf(u)
-        marginal_pdf_u = norm.pdf(x)
-        return partial / marginal_pdf_u
-
-
-
-
+        return partial / norm.pdf(x)

@@ -13,8 +13,8 @@ class BaseCopula:
 
         self.type = None
         self.name = None
-        self.parameters = None
-        self.bounds_param = None
+        # self.parameters = None
+        # self.bounds_param = None
         self.log_likelihood_ = None
         self.n_obs = None
 

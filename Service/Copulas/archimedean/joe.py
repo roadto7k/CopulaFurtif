@@ -1,306 +1,257 @@
+from __future__ import annotations
+
 import numpy as np
-from scipy.stats import uniform
 from scipy.integrate import quad
 from scipy.optimize import brentq
-
+from scipy.stats import uniform
 from Service.Copulas.base import BaseCopula
 
 
 class JoeCopula(BaseCopula):
     """
-    Joe Copula class (Archimedean copula)
+    Joe Copula (Archimedean copula).
+
+    Parameters
+    ----------
+    theta : float
+        Dependence parameter (θ ≥ 1). Higher θ increases upper-tail dependence.
 
     Attributes
     ----------
     type : str
-        Identifier for the copula family. Here, 'joe'.
+        Copula family identifier ('joe').
     name : str
         Human-readable name.
-    bounds_param : list of tuple
-        Bounds for the copula parameter(s). For Joe, theta is in [1, ∞).
-    parameters_start : np.ndarray
-        Starting guess for the copula parameter(s).
-    n_obs : int or None
-        Number of observations used in the fit.
+    bounds_param : list[tuple]
+        Parameter bounds: [(1.0, None)].
+    param_names : list[str]
+        Names of copula parameters: ['theta'].
+    _parameters : np.ndarray
+        Internal storage of copula parameters [theta].
     default_optim_method : str
-        Recommended optimizer for fitting.
-
-    Methods
-    -------
-    get_cdf(u, v, param)
-        Computes the CDF of the Joe copula at (u, v).
-    get_pdf(u, v, param)
-        Computes the PDF of the Joe copula at (u, v).
-    kendall_tau(param)
-        Computes Kendall's tau from the Joe parameter.
-    sample(n, param)
-        Generates n samples from the Joe copula.
+        Default optimizer for fitting.
     """
 
     def __init__(self):
         super().__init__()
         self.type = 'joe'
-        self.name = "Joe Copula"
-        self.bounds_param = [(1, None)]
-        self.parameters = np.array([1.5])
-        self.default_optim_method = "Powell"
+        self.name = 'Joe Copula'
+        self.bounds_param = [(1.0, None)]
+        self.param_names = ['theta']
+        self._parameters = np.array([1.5])  # [theta]
+        self.default_optim_method = 'SLSQP'
 
-    def get_cdf(self, u, v, param):
-        """
-        Computes the cumulative distribution function (CDF) of the Joe copula.
+    @property
+    def parameters(self) -> np.ndarray:
+        """Current copula parameters."""
+        return self._parameters
 
-        Formula:
-            u_ = (1 - u) ** theta
-            v_ = (1 - v) ** theta
-            C(u,v) = 1 - (u_ + v_ - u_*v_) ** (1/theta)
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
+        """Validate and set copula parameters."""
+        arr = np.asarray(param, dtype=float)
+        theta = arr[0]
+        if theta < 1.0:
+            raise ValueError("JoeCopula: parameter 'theta' must be >= 1.")
+        self._parameters = arr
+
+    def get_cdf(self,
+                u: float | np.ndarray,
+                v: float | np.ndarray,
+                param: np.ndarray | None = None
+               ) -> float | np.ndarray:
         """
-        theta = param[0]
+        CDF of Joe copula: C(u,v) = 1 - [ (1-u)^θ + (1-v)^θ - (1-u)^θ(1-v)^θ ]^(1/θ).
+
+        Parameters
+        ----------
+        u : float or array-like
+            First uniform margin in (0,1).
+        v : float or array-like
+            Second uniform margin in (0,1).
+        param : np.ndarray, optional
+            Copula parameters [theta]. If None, uses self.parameters.
+
+        Returns
+        -------
+        float or np.ndarray
+            Copula CDF at (u, v).
+        """
+        if param is None:
+            theta = self.parameters[0]
+        else:
+            theta = param[0]
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
+        u_clipped = np.clip(u, eps, 1 - eps)
+        v_clipped = np.clip(v, eps, 1 - eps)
 
-        u_ = (1 - u) ** theta
-        v_ = (1 - v) ** theta
-        return 1 - (u_ + v_ - u_ * v_) ** (1 / theta)
+        u_pow = (1.0 - u_clipped) ** theta
+        v_pow = (1.0 - v_clipped) ** theta
+        base = u_pow + v_pow - u_pow * v_pow
+        return 1.0 - base ** (1.0 / theta)
 
-    def get_pdf(self, u, v, param):
+    def get_pdf(self,
+                u: float | np.ndarray,
+                v: float | np.ndarray,
+                param: np.ndarray | None = None
+               ) -> float | np.ndarray:
         """
-        Computes the probability density function (PDF) of the Joe copula.
+        PDF of Joe copula.
 
-        Formula:
-            u_ = (1 - u) ** theta
-            v_ = (1 - v) ** theta
-            term1 = (u_ + v_ - u_*v_) ** (-2 + 1/theta)
-            term2 = ((1 - u) ** (theta - 1)) * ((1 - v) ** (theta - 1))
-            term3 = theta - 1 + u_ + v_ + u_*v_
-            PDF = term1 * term2 * term3
+        Parameters
+        ----------
+        u : float or array-like
+            First uniform margin in (0,1).
+        v : float or array-like
+            Second uniform margin in (0,1).
+        param : np.ndarray, optional
+            Copula parameters [theta]. If None, uses self.parameters.
+
+        Returns
+        -------
+        float or np.ndarray
+            Copula PDF at (u, v).
         """
-        theta = param[0]
+        if param is None:
+            theta = self.parameters[0]
+        else:
+            theta = param[0]
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
+        u_clipped = np.clip(u, eps, 1 - eps)
+        v_clipped = np.clip(v, eps, 1 - eps)
 
-        u_ = (1 - u) ** theta
-        v_ = (1 - v) ** theta
-        term1 = (u_ + v_ - u_ * v_) ** (-2 + 1 / theta)
-        term2 = ((1 - u) ** (theta - 1)) * ((1 - v) ** (theta - 1))
-        term3 = theta - 1 + u_ + v_ + u_ * v_
+        u_pow = (1.0 - u_clipped) ** theta
+        v_pow = (1.0 - v_clipped) ** theta
+        base = u_pow + v_pow - u_pow * v_pow
+        term1 = base ** (-2.0 + 1.0 / theta)
+        term2 = (1.0 - u_clipped) ** (theta - 1.0) * (1.0 - v_clipped) ** (theta - 1.0)
+        term3 = (theta - 1.0) + u_pow + v_pow + u_pow * v_pow
         return term1 * term2 * term3
 
-    def kendall_tau(self, param):
+    def kendall_tau(self,
+                    param: np.ndarray | None = None
+                   ) -> float:
         """
-        Computes Kendall's tau for the Joe copula.
+        Estimate Kendall's tau via numerical integration of generator ratio.
 
-        For an Archimedean copula with generator φ, a general formula is:
-            tau = 1 + 4 * ∫[0 to 1] (φ(t)/φ'(t)) dt
-        For the Joe copula, the generator is:
-            φ(t) = -log(1 - (1-t)^theta)
-        and its derivative:
-            φ'(t) = theta * (1-t)^(theta-1) / (1 - (1-t)^theta)
-
-        Thus, the integrand becomes:
-            φ(t)/φ'(t) = -log(1 - (1-t)^theta) * (1 - (1-t)^theta) / (theta*(1-t)^(theta-1))
-
-        This method numerically integrates this expression to compute tau.
+        τ = 1 + 4 ∫₀¹ φ(t)/φ'(t) dt
         """
-        theta = param[0]
-        # For theta == 1, Joe copula reduces to the independence copula, hence tau = 0.
-        if theta == 1:
+        if param is None:
+            theta = self.parameters[0]
+        else:
+            theta = param[0]
+        if theta <= 1.0:
             return 0.0
 
-        def integrand(t):
-            # Protect against t=1 by using clipping.
-            t = np.clip(t, 1e-12, 1 - 1e-12)
-            numerator = -np.log(1 - (1 - t) ** theta) * (1 - (1 - t) ** theta)
-            denominator = theta * (1 - t) ** (theta - 1)
-            return numerator / denominator
+        def integrand(t: float) -> float:
+            t_clip = np.clip(t, 1e-12, 1 - 1e-12)
+            numerator = -np.log(1.0 - (1.0 - t_clip) ** theta)
+            numerator *= (1.0 - (1.0 - t_clip) ** theta)
+            denom = theta * (1.0 - t_clip) ** (theta - 1.0)
+            return numerator / denom
 
-        integral, _ = quad(integrand, 0, 1, limit=100)
-        tau = 1 + 4 * integral
-        return tau
+        integral_val, _ = quad(integrand, 0.0, 1.0, limit=100)
+        return 1.0 + 4.0 * integral_val
 
-    def sample(self, n, param):
+    def sample(self,
+               n: int,
+               param: np.ndarray | None = None
+              ) -> np.ndarray:
         """
-        Generates n samples from the Joe copula using conditional inversion.
+        Generate samples via conditional inversion on C_{2|1}.
 
-        The conditional distribution function for V given U = u can be derived by
-        differentiating the copula CDF with respect to u. For the Joe copula, one obtains:
-
-            d/du C(u,v) = (1-u)^(theta-1) * (1 - (1-v)^theta) * ( (1-u)^theta + (1-v)^theta - (1-u)^theta*(1-v)^theta )^(1/theta - 1)
-
-        Since d/du C(u,1) = 1, the conditional CDF is given by:
-
-            F_{V|U}(v|u) = d/du C(u,v)
-
-        For each sample, we:
-            1. Generate u ~ Uniform(0,1)
-            2. Generate w ~ Uniform(0,1)
-            3. Solve for v in [0, 1] such that F_{V|U}(v|u) = w using a root-finding algorithm.
+        1. u ~ Uniform(0,1)
+        2. w ~ Uniform(0,1)
+        3. solve ∂C/∂u(u,v) = w for v.
         """
-        theta = param[0]
+        if param is None:
+            theta = self.parameters[0]
+        else:
+            theta = param[0]
         eps = 1e-12
         u_samples = uniform.rvs(size=n)
         v_samples = np.empty(n)
-
-        # Define the conditional CDF derivative function given u.
-        def cond_cdf(v, u):
-            # Clip to avoid log(0) or division by zero.
-            v = np.clip(v, eps, 1 - eps)
-            A = (1 - u) ** theta
-            B = (1 - v) ** theta
-            inner_term = A + B - A * B
-            # Derivative of C(u,v) with respect to u.
-            deriv = (1 - u) ** (theta - 1) * (1 - B) * inner_term ** (1 / theta - 1)
-            return deriv
-
-        for i, u in enumerate(u_samples):
+        for i, ui in enumerate(u_samples):
             w = uniform.rvs()
-            # We wish to solve f(v) = cond_cdf(v, u) - w = 0 in v in [0, 1].
+            func = lambda vv: self.partial_derivative_C_wrt_u(ui, vv, param) - w
             try:
-                v_solution = brentq(lambda v: cond_cdf(v, u) - w, eps, 1 - eps)
+                v_samples[i] = brentq(func, eps, 1 - eps)
             except ValueError:
-                # In case of numerical issues, default to an independent draw.
-                v_solution = uniform.rvs()
-            v_samples[i] = v_solution
-
+                v_samples[i] = uniform.rvs()
         return np.column_stack((u_samples, v_samples))
 
-    def LTDC(self, param):
-        """
-        Computes the lower tail dependence coefficient for the Joe copula.
-
-        For the Joe copula, there is NO lower tail dependence:
-            LTDC = 0
-        """
+    def LTDC(self,
+             param: np.ndarray | None = None
+            ) -> float:
+        """Lower tail dependence coefficient (always 0)."""
         return 0.0
 
-    def UTDC(self, param):
+    def UTDC(self,
+             param: np.ndarray | None = None
+            ) -> float:
         """
-        Computes the upper tail dependence coefficient for the Joe copula.
-
-        Formula:
-            UTDC = 2 - 2 ** (1 / theta)
-
-        This increases with theta and is in [0, 1).
+        Upper tail dependence λ_U = 2 − 2^(1/θ).
         """
+        if param is None:
+            theta = self.parameters[0]
+        else:
+            theta = param[0]
+        return 2.0 - 2.0 ** (1.0 / theta)
 
-        theta = param[0]
-
-        return 2 - 2 ** (1 / theta)
-
-    def partial_derivative_C_wrt_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self,
+                                   u: float | np.ndarray,
+                                   v: float | np.ndarray,
+                                   param: np.ndarray | None = None
+                                  ) -> float | np.ndarray:
         """
-        Compute the partial derivative ∂C(u,v)/∂v for the Joe copula.
-
-        Given:
-            A(u,v) = (1-u)^θ + (1-v)^θ - (1-u)^θ (1-v)^θ,
-        we have:
-            ∂C(u,v)/∂v = A(u,v)^(1/θ - 1) * (1-v)^(θ - 1) * [1 - (1-u)^θ].
-
-        Parameters
-        ----------
-        u : float or array-like
-            Value(s) of u in (0,1).
-        v : float or array-like
-            Value(s) of v in (0,1).
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The partial derivative ∂C(u,v)/∂v.
+        Partial ∂C/∂v for conditional CDF C_{1|2}.
         """
-        theta = param[0]
-        u = np.asarray(u)
-        v = np.asarray(v)
-        A = (1 - u) ** theta + (1 - v) ** theta - (1 - u) ** theta * (1 - v) ** theta
-        return A ** (1 / theta - 1) * (1 - v) ** (theta - 1) * (1 - (1 - u) ** theta)
+        if param is None:
+            theta = self.parameters[0]
+        else:
+            theta = param[0]
+        eps = 1e-12
+        u_clipped = np.clip(u, eps, 1 - eps)
+        v_clipped = np.clip(v, eps, 1 - eps)
+        A = (1 - u_clipped) ** theta + (1 - v_clipped) ** theta
+        A -= (1 - u_clipped) ** theta * (1 - v_clipped) ** theta
+        return A ** (1.0 / theta - 1.0) * (1 - v_clipped) ** (theta - 1.0) * (1 - (1 - u_clipped) ** theta)
 
-    def partial_derivative_C_wrt_u(self, u, v, param):
+    def partial_derivative_C_wrt_u(self,
+                                   u: float | np.ndarray,
+                                   v: float | np.ndarray,
+                                   param: np.ndarray | None = None
+                                  ) -> float | np.ndarray:
         """
-        Compute the partial derivative ∂C(u,v)/∂u for the Joe copula.
-
-        With
-            A(u,v) = (1-u)^θ + (1-v)^θ - (1-u)^θ (1-v)^θ,
-        we have:
-            ∂C(u,v)/∂u = A(u,v)^(1/θ - 1) * (1-u)^(θ - 1) * [1 - (1-v)^θ].
-
-        Parameters
-        ----------
-        u : float or array-like
-            Value(s) of u in (0,1).
-        v : float or array-like
-            Value(s) of v in (0,1).
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The partial derivative ∂C(u,v)/∂u.
+        Partial ∂C/∂u for conditional CDF C_{2|1}.
         """
-        theta = param[0]
-        u = np.asarray(u)
-        v = np.asarray(v)
-        A = (1 - u) ** theta + (1 - v) ** theta - (1 - u) ** theta * (1 - v) ** theta
-        return A ** (1 / theta - 1) * (1 - u) ** (theta - 1) * (1 - (1 - v) ** theta)
+        if param is None:
+            theta = self.parameters[0]
+        else:
+            theta = param[0]
+        eps = 1e-12
+        u_clipped = np.clip(u, eps, 1 - eps)
+        v_clipped = np.clip(v, eps, 1 - eps)
+        A = (1 - u_clipped) ** theta + (1 - v_clipped) ** theta
+        A -= (1 - u_clipped) ** theta * (1 - v_clipped) ** theta
+        return A ** (1.0 / theta - 1.0) * (1 - u_clipped) ** (theta - 1.0) * (1 - (1 - v_clipped) ** theta)
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def conditional_cdf_u_given_v(self,
+                                  u: float | np.ndarray,
+                                  v: float | np.ndarray,
+                                  param: np.ndarray | None = None
+                                 ) -> float | np.ndarray:
         """
-        Compute the conditional CDF P(U ≤ u | V = v) for the Joe copula.
-
-        Defined as:
-            F_{U|V}(u|v) = [∂C(u,v)/∂v] / [∂C(1,v)/∂v].
-        Since C(1,v)=v and ∂C(1,v)/∂v=1 (by the copula property), this normalization
-        ensures we obtain a proper conditional probability.
-
-        Parameters
-        ----------
-        u : float or array-like
-            Value(s) of u in (0,1).
-        v : float or array-like
-            Value(s) of v in (0,1).
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The conditional CDF P(U ≤ u | V = v).
+        P(U ≤ u | V = v) = ∂C/∂v (since ∂C(1,v)/∂v = 1).
         """
-        num = self.partial_derivative_C_wrt_v(u, v, param)
-        den = self.partial_derivative_C_wrt_v(1.0, v, param)
-        eps = 1e-14
-        den = np.maximum(den, eps)
-        return num / den
+        return self.partial_derivative_C_wrt_v(u, v, param)
 
-    def conditional_cdf_v_given_u(self, v, u, param):
+    def conditional_cdf_v_given_u(self,
+                                  u: float | np.ndarray,
+                                  v: float | np.ndarray,
+                                  param: np.ndarray | None = None
+                                 ) -> float | np.ndarray:
         """
-        Compute the conditional CDF P(V ≤ v | U = u) for the Joe copula.
-
-        Defined as:
-            F_{V|U}(v|u) = [∂C(u,v)/∂u] / [∂C(u,1)/∂u].
-        Since C(u,1)=u (with ∂C(u,1)/∂u=1), this normalizes the derivative.
-
-        Parameters
-        ----------
-        v : float or array-like
-            Value(s) of v in (0,1).
-        u : float or array-like
-            Value(s) of u in (0,1).
-        param : iterable
-            Copula parameter(s) as [theta].
-
-        Returns
-        -------
-        float or np.ndarray
-            The conditional CDF P(V ≤ v | U = u).
+        P(V ≤ v | U = u) = ∂C/∂u (since ∂C(u,1)/∂u = 1).
         """
-        num = self.partial_derivative_C_wrt_u(u, v, param)
-        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
-        eps = 1e-14
-        den = np.maximum(den, eps)
-        return num / den
-
-
+        return self.partial_derivative_C_wrt_u(u, v, param)

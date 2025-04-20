@@ -1,303 +1,242 @@
+"""
+FGM Copula implementation following the project coding standard:
+
+Norms:
+ 1. Use private `_parameters` with public `@property parameters` and bounds-checked setter.
+ 2. Methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
+ 3. Docstrings include **Parameters** and **Returns** with types.
+ 4. Uniform clipping with `eps=1e-12`.
+ 5. Parameter bounds in `bounds_param`.
+"""
 import numpy as np
 from scipy.stats import uniform
 from Service.Copulas.base import BaseCopula
 
+
 class FGMCopula(BaseCopula):
     """
-    Farlie-Gumbel-Morgenstern (FGM) Copula class.
+    Farlie–Gumbel–Morgenstern (FGM) Copula class.
 
-    Attributes
+    Parameters
     ----------
-    type : str
-        Identifier for the copula family. Here, 'fgm'.
-    name : str
-        Human-readable name.
-    bounds_param : list of tuple
-        Bounds for the copula parameter(s). For FGM, theta is in [-1, 1].
-    parameters_start : np.ndarray
-        Starting guess for the copula parameter(s).
-    n_obs : int or None
-        Number of observations used in the fit.
-    default_optim_method : str
-        Recommended optimizer for fitting.
-
-    Methods
-    -------
-    get_cdf(u, v, param)
-        Computes the CDF of the FGM copula at (u, v).
-    get_pdf(u, v, param)
-        Computes the PDF of the FGM copula at (u, v).
-    kendall_tau(param)
-        Computes Kendall's tau from the FGM parameter.
-    sample(n, param)
-        Generates n samples from the FGM copula.
+    theta : float
+        Dependence parameter θ ∈ [-1, 1].
     """
-
     def __init__(self):
         super().__init__()
         self.type = 'fgm'
-        self.name = "FGM Copula"
-        self.bounds_param = [(-1, 1 - 1e-6)]
-        self.parameters = np.array([0.0])
-        self.default_optim_method = "Powell"
+        self.name = 'FGM Copula'
+        # theta ∈ [-1,1]
+        self.bounds_param = [(-1.0, 1.0)]
+        self._parameters = np.array([0.0])  # [theta]
+        self.default_optim_method = 'SLSQP'
 
-    def get_cdf(self, u, v, param):
+    @property
+    def parameters(self) -> np.ndarray:
         """
-        Computes the cumulative distribution function (CDF) of the FGM copula.
-
-        Formula:
-            C(u, v) = u * v * [1 + theta * (1 - u) * (1 - v)]
-
-        Parameters
-        ----------
-        u : array_like
-            First set of uniform marginals.
-        v : array_like
-            Second set of uniform marginals.
-        param : array_like
-            Copula parameter (theta).
+        Get copula parameters [theta].
 
         Returns
         -------
         np.ndarray
-            The CDF evaluated at (u, v).
+            Current parameter array.
         """
-        theta = param[0]
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        return u * v * (1 + theta * (1 - u) * (1 - v))
+        return self._parameters
 
-    def get_pdf(self, u, v, param):
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
         """
-        Computes the probability density function (PDF) of the FGM copula.
-
-        Formula:
-            c(u, v) = 1 + theta * (1 - 2u) * (1 - 2v)
+        Set and validate copula parameter θ.
 
         Parameters
         ----------
-        u : array_like
-            First set of uniform marginals.
-        v : array_like
-            Second set of uniform marginals.
-        param : array_like
-            Copula parameter (theta).
+        param : array-like
+            New parameter array [theta].
+
+        Raises
+        ------
+        ValueError
+            If θ outside [-1,1].
+        """
+        param = np.asarray(param)
+        theta = param[0]
+        lower, upper = self.bounds_param[0]
+        if theta < lower or theta > upper:
+            raise ValueError(f"Parameter 'theta' must be in [{lower}, {upper}], got {theta}")
+        self._parameters = param
+
+    def get_cdf(self, u, v, param: np.ndarray = None):
+        """
+        Compute the FGM copula CDF:
+            C(u,v) = u·v·[1 + θ·(1-u)·(1-v)].
+
+        Parameters
+        ----------
+        u : float or ndarray
+            First pseudo-observation(s) in (0,1).
+        v : float or ndarray
+            Second pseudo-observation(s) in (0,1).
+        param : ndarray, optional
+            Copula parameters [theta].
 
         Returns
         -------
-        np.ndarray
-            The PDF evaluated at (u, v).
+        float or ndarray
+            Copula CDF value(s).
         """
+        if param is None:
+            param = self.parameters
         theta = param[0]
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        return 1 + theta * (1 - 2 * u) * (1 - 2 * v)
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+        return u * v * (1.0 + theta * (1.0 - u) * (1.0 - v))
 
-    def kendall_tau(self, param):
+    def get_pdf(self, u, v, param: np.ndarray = None):
         """
-        Computes Kendall's tau for the FGM copula.
-
-        For FGM, Kendall's tau is given by:
-            tau = 2 * theta / 9
+        Compute the FGM copula PDF:
+            c(u,v) = 1 + θ·(1 - 2u)·(1 - 2v).
 
         Parameters
         ----------
-        param : array_like
-            Copula parameter (theta).
+        u : float or ndarray
+            First pseudo-observation(s) in (0,1).
+        v : float or ndarray
+            Second pseudo-observation(s) in (0,1).
+        param : ndarray, optional
+            Copula parameters [theta].
+
+        Returns
+        -------
+        float or ndarray
+            Copula PDF value(s).
+        """
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+        return 1.0 + theta * (1.0 - 2.0*u) * (1.0 - 2.0*v)
+
+    def kendall_tau(self, param: np.ndarray = None) -> float:
+        """
+        Compute Kendall's tau: τ = 2θ/9.
+
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta].
 
         Returns
         -------
         float
             Kendall's tau.
         """
+        if param is None:
+            param = self.parameters
         theta = param[0]
-        return 2 * theta / 9
+        return 2.0 * theta / 9.0
 
-    def sample(n, param):
+    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
         """
-        Generates n samples from the Farlie-Gumbel-Morgenstern (FGM) copula
-        using conditional inversion.
-
-        The conditional CDF of V given U = u is:
-            F_{V|U}(v|u) = v + theta * (1 - 2u) * (v - v^2)
-
-        To sample from this copula:
-        - Generate u ~ Uniform(0,1)
-        - For each u, generate w ~ Uniform(0,1)
-        - Solve the quadratic equation for v:
-            A * v^2 - (1 + A) * v + w = 0
-          where A = theta * (1 - 2u)
+        Generate samples via conditional inversion.
 
         Parameters
         ----------
         n : int
-            Number of samples to generate.
-        param : array_like
-            Copula parameter array, where param[0] = theta ∈ [-1, 1]
+            Number of samples.
+        param : ndarray, optional
+            Copula parameters [theta].
 
         Returns
         -------
-        np.ndarray
-            A (n, 2) array of samples from the FGM copula.
+        ndarray of shape (n,2)
+            Pseudo-observations in [0,1]^2.
         """
+        if param is None:
+            param = self.parameters
         theta = param[0]
-        eps = 1e-12  # numerical tolerance
-
+        eps = 1e-12
+        # generate uniforms
         u = uniform.rvs(size=n)
         w = uniform.rvs(size=n)
-        A = theta * (1 - 2 * u)
-
-        # Initialize v with fallback (independent copula)
+        A = theta * (1.0 - 2.0*u)
         v = np.copy(w)
-
-        # Identify where A is not close to 0 (i.e., non-independent case)
         mask = np.abs(A) > eps
-        A_masked = A[mask]
-        w_masked = w[mask]
-
-        # Quadratic coefficients: A * v^2 - (1 + A) * v + w = 0
-        a = A_masked
-        b = -(1 + A_masked)
-        c = w_masked
-
-        discriminant = b ** 2 - 4 * a * c
-
-        # Handle cases where discriminant is positive
-        valid = discriminant >= -1e-14  # tolerance to avoid numerical errors
-        sqrt_D = np.sqrt(np.maximum(discriminant, 0))
-
-        v1 = (-b - sqrt_D) / (2 * a)
-        v2 = (-b + sqrt_D) / (2 * a)
-
-        # Select valid roots in [0, 1]
-        chosen_v = np.where((0 <= v1) & (v1 <= 1), v1,
-                            np.where((0 <= v2) & (v2 <= 1), v2, w_masked))
-
-        v[mask] = chosen_v
+        a = A[mask]
+        b = -(1.0 + A[mask])
+        c = w[mask]
+        disc = b**2 - 4.0*a*c
+        sqrtD = np.sqrt(np.maximum(disc, 0.0))
+        v1 = (-b - sqrtD) / (2.0*a)
+        v2 = (-b + sqrtD) / (2.0*a)
+        valid = (v1>=0)&(v1<=1)
+        v[mask] = np.where(valid, v1, np.where((v2>=0)&(v2<=1), v2, w[mask]))
         return np.column_stack((u, v))
 
-    def LTDC(self, param):
+    def LTDC(self, param: np.ndarray = None) -> float:
         """
-        Computes the lower tail dependence coefficient for the fgm copula.
+        Lower tail dependence (0 for FGM).
 
-        Gumbel copula has no lower tail dependence:
-            LTDC = 0
+        Returns
+        -------
+        float
         """
         return 0.0
 
-    def UTDC(self, param):
+    def UTDC(self, param: np.ndarray = None) -> float:
         """
-        Computes the upper tail dependence coefficient for the fgm copula.
-
-        Formula:
-            0
-        """
-        return 0
-
-    def partial_derivative_C_wrt_v(self, u, v, param=None):
-        """
-        Compute the partial derivative ∂C(u,v)/∂v for the FGM copula.
-
-        For the FGM copula
-            C(u,v) = u*v + θ*u*v*(1-u)*(1-v),
-        the derivative with respect to v is:
-            ∂C(u,v)/∂v = u + θ * u*(1-u)*(1-2v).
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1) for U.
-        v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like, optional
-            Copula parameter(s) as [theta]. If None, self.parameters is used.
+        Upper tail dependence (0 for FGM).
 
         Returns
         -------
-        float or np.ndarray
-            The partial derivative ∂C(u,v)/∂v.
+        float
+        """
+        return 0.0
+
+    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
+        """
+        ∂C/∂v = u + θ·u·(1-u)·(1-2v).
+
+        Parameters
+        ----------
+        u : float or ndarray
+        v : float or ndarray
+        param : ndarray, optional
+            Copula parameters [theta].
+
+        Returns
+        -------
+        float or ndarray
+            Partial derivative.
         """
         if param is None:
             param = self.parameters
         theta = param[0]
         u = np.asarray(u)
         v = np.asarray(v)
-        return u + theta * u * (1 - u) * (1 - 2 * v)
+        return u + theta * u * (1.0 - u) * (1.0 - 2.0*v)
 
-    def partial_derivative_C_wrt_u(self, u, v, param=None):
+    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
         """
-        Compute the partial derivative ∂C(u,v)/∂u for the FGM copula.
-
-        For the FGM copula, with
-            C(u,v) = u*v + θ*u*v*(1-u)*(1-v),
-        the derivative with respect to u is:
-            ∂C(u,v)/∂u = v + θ * v*(1-v)*(1-2u).
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1) for U.
-        v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like, optional
-            Copula parameter(s) as [theta]. If None, self.parameters is used.
-
-        Returns
-        -------
-        float or np.ndarray
-            The partial derivative ∂C(u,v)/∂u.
+        ∂C/∂u = v + θ·v·(1-v)·(1-2u).
         """
         if param is None:
             param = self.parameters
         theta = param[0]
         u = np.asarray(u)
         v = np.asarray(v)
-        return v + theta * v * (1 - v) * (1 - 2 * u)
+        return v + theta * v * (1.0 - v) * (1.0 - 2.0*u)
 
-    def conditional_cdf_u_given_v(self, u, v, param=None):
+    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
         """
-        Compute the conditional probability P(U ≤ u | V = v) for the FGM copula.
-
-        Since for a copula the margins are uniform (C(1,v)=v and f_V(v)=1), we have:
-            P(U ≤ u | V = v) = ∂C(u,v)/∂v.
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1) for U.
-        v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like, optional
-            Copula parameter(s) as [theta]. If None, self.parameters is used.
-
-        Returns
-        -------
-        float or np.ndarray
-            The conditional probability P(U ≤ u | V = v).
+        P(U ≤ u | V = v) = ∂C/∂v.
         """
         return self.partial_derivative_C_wrt_v(u, v, param)
 
-    def conditional_cdf_v_given_u(self, v, u, param=None):
+    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
         """
-        Compute the conditional probability P(V ≤ v | U = u) for the FGM copula.
-
-        By symmetry, since C(u,1)=u and f_U(u)=1, we have:
-            P(V ≤ v | U = u) = ∂C(u,v)/∂u.
-
-        Parameters
-        ----------
-        v : float or array-like
-            Values in (0,1) for V.
-        u : float or array-like
-            Values in (0,1) for U.
-        param : list or array-like, optional
-            Copula parameter(s) as [theta]. If None, self.parameters is used.
-
-        Returns
-        -------
-        float or np.ndarray
-            The conditional probability P(V ≤ v | U = u).
+        P(V ≤ v | U = u) = ∂C/∂u.
         """
         return self.partial_derivative_C_wrt_u(u, v, param)

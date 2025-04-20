@@ -1,258 +1,315 @@
+"""
+BB1 Copula implementation following the project coding standard:
+
+Norms:
+ 1. Use private attribute `_parameters` with public `@property parameters` and validation in the setter.
+ 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
+ 3. Docstrings must include **Parameters** and **Returns** sections with types.
+ 4. Parameter bounds are defined in `bounds_param`; setter enforces them.
+ 5. Consistent boundary handling with `eps=1e-12` and `np.clip`.
+ 6. In `__init__`, name each parameter in the docstring to clarify order.
+"""
 import numpy as np
-from scipy.special import beta  # Used in Kendall's tau calculation
+from scipy.special import beta
+
 from Service.Copulas.base import BaseCopula
+
 
 class BB1Copula(BaseCopula):
     """
-    BB1 Copula (Two-parameter Archimedean Copula)
+    BB1 Copula (Two-parameter Archimedean copula).
+
+    Parameters
+    ----------
+    theta : float
+        Copula parameter controlling dependence strength (θ > 0).
+    delta : float
+        Copula parameter controlling tail heaviness (δ ≥ 1).
 
     Defined by:
-        C(u,v) = [1 + { (u^(-theta) - 1)^delta + (v^(-theta) - 1)^delta }^(1/delta)]^(-1/theta)
-
-    with theta > 0 and delta >= 1. When delta = 1, this reduces to the Clayton copula.
-
-    Attributes
-    ----------
-    type : str
-        Copula identifier.
-    name : str
-        Human-readable name of the copula.
-    bounds_param : list of tuple
-        Parameter bounds. For BB1: theta > 0, delta ≥ 1.
-    parameters_start : np.ndarray
-        Initial parameter guesses.
-    n_obs : int or None
-        Number of observations, populated during fitting.
-    default_optim_method : str
-        Default optimization method.
-
-    Methods
-    -------
-    get_cdf(u, v, param):
-        Cumulative distribution function of the BB1 copula.
-    get_pdf(u, v, param):
-        Probability density function of the BB1 copula.
-    kendall_tau(param):
-        Computes Kendall's tau for the copula.
-    sample(n, param):
-        Generates n pseudo-observations using a Marshall–Olkin-type method.
-    LTDC(param):
-        Lower tail dependence coefficient.
-    UTDC(param):
-        Upper tail dependence coefficient.
+        C(u,v) = [1 + ({u**(-θ) - 1}**δ + {v**(-θ) - 1}**δ)**(1/δ)]**(-1/θ)
     """
 
     def __init__(self):
         super().__init__()
-        self.type = "BB1"
+        self.type = "bb1"
         self.name = "BB1 Copula"
-        self.bounds_param = [(1e-6, None), (1, None)]
-        self.parameters = np.array([0.5, 1.5])
+        # theta > 0, delta >= 1
+        self.bounds_param = [(1e-6, None), (1.0, None)]
+        self._parameters = np.array([0.5, 1.5])  # [theta, delta]
         self.default_optim_method = "Powell"
 
-    def get_cdf(self, u, v, param):
-        theta = param[0]
-        delta = param[1]
+    @property
+    def parameters(self) -> np.ndarray:
+        """
+        Get the copula parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Current parameters [theta, delta].
+        """
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
+        """
+        Set and validate copula parameters against bounds_param.
+
+        Parameters
+        ----------
+        param : array-like
+            New parameters [theta, delta].
+
+        Raises
+        ------
+        ValueError
+            If any parameter is outside its specified bound.
+        """
+        param = np.asarray(param)
+        for idx, (lower, upper) in enumerate(self.bounds_param):
+            val = param[idx]
+            if lower is not None and val <= lower:
+                raise ValueError(f"Parameter '{['theta','delta'][idx]}' must be > {lower}, got {val}")
+            if upper is not None and val < upper and False:
+                pass  # upper is None or no upper bound for theta, but delta has lower bound only
+        self._parameters = param
+
+    def get_cdf(self, u, v, param: np.ndarray = None):
+        """
+        Compute the BB1 copula CDF C(u,v).
+
+        Parameters
+        ----------
+        u : float or array-like
+            Pseudo-observations in (0,1).
+        v : float or array-like
+            Pseudo-observations in (0,1).
+        param : ndarray, optional
+            Copula parameters [theta, delta]. If None, uses self.parameters.
+
+        Returns
+        -------
+        float or np.ndarray
+            Copula CDF value(s).
+        """
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
         term1 = (u ** (-theta) - 1) ** delta
         term2 = (v ** (-theta) - 1) ** delta
         inner = term1 + term2
-        return (1 + inner ** (1 / delta)) ** (-1 / theta)
+        return (1 + inner ** (1.0 / delta)) ** (-1.0 / theta)
 
-    def get_pdf(self, u, v, param):
+    def get_pdf(self, u, v, param: np.ndarray = None):
         """
-        Computes the BB1 copula density function (PDF) using the closed-form expression.
+        Compute the BB1 copula PDF c(u,v) via closed-form expression.
 
-        Based on:
-            Joe (1997) - Multivariate Models and Dependence Concepts
-            Hofert et al. (2012) - Sampling Archimedean Copulas
+        Parameters
+        ----------
+        u : float or array-like
+            Pseudo-observations in (0,1).
+        v : float or array-like
+            Pseudo-observations in (0,1).
+        param : ndarray, optional
+            Copula parameters [theta, delta]. If None, uses self.parameters.
 
-        This form avoids partial derivatives and simplifies numerical evaluation.
+        Returns
+        -------
+        float or np.ndarray
+            Copula PDF value(s).
         """
-        theta, delta = param[0], param[1]
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-
         x = (u ** (-theta) - 1) ** delta
         y = (v ** (-theta) - 1) ** delta
         S = x + y
-
-        term1 = (1 + S ** (1 / delta)) ** (-1 / theta - 2)
-        term2 = S ** (1 / delta - 2)
-        term3 = theta * (delta - 1) + (theta * delta + 1) * S ** (1 / delta)
-        term4 = (x * y) ** (1 - 1 / delta) * (u * v) ** (-theta - 1)
-
+        term1 = (1 + S ** (1.0 / delta)) ** (-1.0 / theta - 2)
+        term2 = S ** (1.0 / delta - 2)
+        term3 = theta * (delta - 1) + (theta * delta + 1) * S ** (1.0 / delta)
+        term4 = (x * y) ** (1 - 1.0 / delta) * (u * v) ** (-theta - 1)
         return term1 * term2 * term3 * term4
 
-    def kendall_tau(self, param):
+    def kendall_tau(self, param: np.ndarray = None) -> float:
         """
-        Computes Kendall's tau using the beta function.
+        Compute Kendall's tau for BB1 copula:
 
-        For BB1 copula:
-            tau = 1 - (2 / delta) * (1 - 1 / theta) * B(1 - 1 / theta, 2 / delta + 1)
+            τ = 1 - (2/δ)*(1 - 1/θ)*B(1 - 1/θ, 2/δ + 1)
+
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta, delta]. If None, uses self.parameters.
+
+        Returns
+        -------
+        float
+            Kendall's tau.
         """
-        theta = param[0]
-        delta = param[1]
-        return 1 - (2 / delta) * (1 - 1 / theta) * beta(1 - 1 / theta, 2 / delta + 1)
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        return 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * beta(1.0 - 1.0 / theta, 2.0 / delta + 1.0)
 
-    def sample(self, n, param):
+    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
         """
-        Samples from the BB1 copula using a generalized Marshall–Olkin approach,
-        as described by Hofert et al. (2012).
+        Generate samples via Marshall–Olkin-type method.
 
-        This method uses a latent Gamma variable and two independent exponential draws.
+        Parameters
+        ----------
+        n : int
+            Number of samples.
+        param : ndarray, optional
+            Copula parameters [theta, delta]. If None, uses self.parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (n,2) array of pseudo-observations.
         """
-        theta = param[0]
-        delta = param[1]
-
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         if theta <= 0 or delta < 1:
-            raise ValueError("Invalid parameters: theta must be > 0 and delta ≥ 1.")
-
-        # Step 1: Draw V ~ Gamma(1/delta, 1)
+            raise ValueError("Parameters must satisfy theta > 0 and delta >= 1.")
         V = np.random.gamma(1.0 / delta, 1.0, size=n)
-
-        # Step 2: Draw independent exponentials
         E1 = np.random.exponential(scale=1.0, size=n)
         E2 = np.random.exponential(scale=1.0, size=n)
-
-        # Step 3: Transform into uniform margins
-        U = (1 + (E1 / V) ** (1 / delta)) ** (-1 / theta)
-        W = (1 + (E2 / V) ** (1 / delta)) ** (-1 / theta)
-
+        U = (1 + (E1 / V) ** (1.0 / delta)) ** (-1.0 / theta)
+        W = (1 + (E2 / V) ** (1.0 / delta)) ** (-1.0 / theta)
         return np.column_stack((U, W))
 
-    def LTDC(self, param):
+    def LTDC(self, param: np.ndarray = None) -> float:
         """
-        Computes the lower tail dependence coefficient (LTDC).
+        Compute lower tail dependence λ_L = 2^(-1/(δ·θ)).
 
-        For small u:
-            C(u, u) ~ 2^(-1 / (delta * theta)) * u  → LTDC = 2^(-1 / (delta * theta))
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float
+            Lower-tail dependence.
         """
-        theta = param[0]
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        return 2.0 ** (-1.0 / (delta * theta))
+
+    def UTDC(self, param: np.ndarray = None) -> float:
+        """
+        Compute upper tail dependence λ_U = 2 - 2^(1/δ).
+
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float
+            Upper-tail dependence.
+        """
+        if param is None:
+            param = self.parameters
         delta = param[1]
-        return 2 ** (-1 / (delta * theta))
+        return 2.0 - 2.0 ** (1.0 / delta)
 
-    def UTDC(self, param):
+    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
         """
-        Computes the upper tail dependence coefficient (UTDC).
-
-        As u → 1, the asymptotic behavior gives:
-            lambda_U = 2 - 2^(1 / delta)
-        """
-        delta = param[1]
-        return 2 - 2 ** (1 / delta)
-
-    def partial_derivative_C_wrt_v(self, u, v, param):
-        """
-        Compute the partial derivative ∂C(u,v)/∂v for the BB1 copula.
-
-        The BB1 copula is defined as:
-            C(u,v) = [ 1 + { (u^(-θ) - 1)^δ + (v^(-θ) - 1)^δ }^(1/δ) ]^(-1/θ),
-        where we set:
-            T = (u^(-θ) - 1)^δ + (v^(-θ) - 1)^δ.
-
-        Then,
-            ∂C(u,v)/∂v = [1 + T^(1/δ)]^(-1/θ - 1) * T^(1/δ - 1)
-                           * (v^(-θ) - 1)^(δ - 1) * v^(-θ - 1).
+        Compute ∂C/∂v for BB1 copula.
 
         Parameters
         ----------
         u : float or array-like
-            Values in (0,1) for U.
+            Pseudo-observations.
         v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like
-            Parameters [θ, δ] of the BB1 copula.
+            Pseudo-observations.
+        param : ndarray, optional
+            Copula parameters [theta, delta].
 
         Returns
         -------
         float or np.ndarray
-            The partial derivative ∂C(u,v)/∂v.
+            Partial derivative ∂C/∂v.
         """
-        theta, delta = param[0], param[1]
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         u = np.asarray(u)
         v = np.asarray(v)
         T = (u ** (-theta) - 1) ** delta + (v ** (-theta) - 1) ** delta
-        factor = (1 + T ** (1 / delta)) ** (-1 / theta - 1)
-        return factor * T ** (1 / delta - 1) * (v ** (-theta) - 1) ** (delta - 1) * v ** (-theta - 1)
+        factor = (1 + T ** (1.0 / delta)) ** (-1.0 / theta - 1)
+        return factor * T ** (1.0 / delta - 1) * (v ** (-theta) - 1) ** (delta - 1) * v ** (-theta - 1)
 
-    def partial_derivative_C_wrt_u(self, u, v, param):
+    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
         """
-        Compute the partial derivative ∂C(u,v)/∂u for the BB1 copula.
-
-        With T defined as:
-            T = (u^(-θ) - 1)^δ + (v^(-θ) - 1)^δ,
-        the derivative with respect to u is given by:
-            ∂C(u,v)/∂u = [1 + T^(1/δ)]^(-1/θ - 1) * T^(1/δ - 1)
-                           * (u^(-θ) - 1)^(δ - 1) * u^(-θ - 1).
+        Compute ∂C/∂u for BB1 copula.
 
         Parameters
         ----------
-        v : float or array-like
-            Values in (0,1) for V.
         u : float or array-like
-            Values in (0,1) for U.
-        param : list or array-like
-            Parameters [θ, δ] of the BB1 copula.
+            Pseudo-observations.
+        v : float or array-like
+            Pseudo-observations.
+        param : ndarray, optional
+            Copula parameters [theta, delta].
 
         Returns
         -------
         float or np.ndarray
-            The partial derivative ∂C(u,v)/∂u.
+            Partial derivative ∂C/∂u.
         """
-        theta, delta = param[0], param[1]
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         u = np.asarray(u)
         v = np.asarray(v)
         T = (u ** (-theta) - 1) ** delta + (v ** (-theta) - 1) ** delta
-        factor = (1 + T ** (1 / delta)) ** (-1 / theta - 1)
-        return factor * T ** (1 / delta - 1) * (u ** (-theta) - 1) ** (delta - 1) * u ** (-theta - 1)
+        factor = (1 + T ** (1.0 / delta)) ** (-1.0 / theta - 1)
+        return factor * T ** (1.0 / delta - 1) * (u ** (-theta) - 1) ** (delta - 1) * u ** (-theta - 1)
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
         """
-        Compute the conditional probability P(U ≤ u | V = v) for the BB1 copula.
-
-        Since the margins are uniform (C(1,v)=v and ∂C(1,v)/∂v=1), we have:
-            P(U ≤ u | V = v) = ∂C(u,v)/∂v.
+        Compute P(U ≤ u | V = v) = ∂C/∂v.
 
         Parameters
         ----------
         u : float or array-like
-            Values in (0,1) for U.
         v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like
-            Parameters [θ, δ] of the BB1 copula.
+        param : ndarray, optional
+            Copula parameters [theta, delta].
 
         Returns
         -------
         float or np.ndarray
-            The conditional probability P(U ≤ u | V = v).
+            Conditional CDF.
         """
-        # Since f_V(v) = ∂C(1,v)/∂v = 1, the conditional CDF equals the partial derivative.
         return self.partial_derivative_C_wrt_v(u, v, param)
 
-    def conditional_cdf_v_given_u(self, u, v, param):
+    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
         """
-        Compute the conditional probability P(V ≤ v | U = u) for the BB1 copula.
-
-        Similarly, since C(u,1)=u and ∂C(u,1)/∂u=1, we have:
-            P(V ≤ v | U = u) = ∂C(u,v)/∂u.
+        Compute P(V ≤ v | U = u) = ∂C/∂u.
 
         Parameters
         ----------
-        v : float or array-like
-            Values in (0,1) for V.
         u : float or array-like
-            Values in (0,1) for U.
-        param : list or array-like
-            Parameters [θ, δ] of the BB1 copula.
+        v : float or array-like
+        param : ndarray, optional
+            Copula parameters [theta, delta].
 
         Returns
         -------
         float or np.ndarray
-            The conditional probability P(V ≤ v | U = u).
+            Conditional CDF.
         """
         return self.partial_derivative_C_wrt_u(u, v, param)

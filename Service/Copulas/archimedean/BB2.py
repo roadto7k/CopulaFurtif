@@ -1,256 +1,305 @@
+"""
+BB2 Copula implementation following the project coding standard:
+
+Norms:
+ 1. Use private attribute `_parameters` with public `@property parameters` and validation in the setter.
+ 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
+ 3. Docstrings must include **Parameters** and **Returns** sections with types.
+ 4. Parameter bounds are defined in `bounds_param`; setter enforces them.
+ 5. Consistent boundary handling with `eps=1e-12` and `np.clip`.
+ 6. In `__init__`, name each parameter in the docstring to clarify order.
+"""
 import numpy as np
-from scipy.special import beta  # used in kendall_tau
+from scipy.special import beta
 
 from Service.Copulas.archimedean.BB1 import BB1Copula
 from Service.Copulas.base import BaseCopula
 
+
 class BB2Copula(BaseCopula):
     """
-    BB2 Copula (Survival Version of the BB1 Copula)
+    BB2 Copula (survival version of BB1 Copula).
 
-    The BB2 copula is defined as the survival copula of the BB1 copula:
-        C_{BB2}(u,v) = u + v - 1 + C_{BB1}(1-u, 1-v),
-    where the BB1 copula is given by:
-        C_{BB1}(u,v) = [1 + {(u^(-theta) - 1)^delta + (v^(-theta) - 1)^delta}^{1/delta}]^(-1/theta).
-
-    This construction exchanges the lower and upper tail behavior compared to BB1.
-
-    Attributes
+    Parameters
     ----------
-    type : str
-        Copula identifier.
-    name : str
-        Human-readable name.
-    bounds_param : list of tuple
-        Parameter bounds; for BB2, theta > 0 and delta ≥ 1.
-    parameters_start : np.ndarray
-        Initial parameter guesses.
-    n_obs : int or None
-        Number of observations (set during fitting).
-    default_optim_method : str
-        Default optimization method.
-
-    Methods
-    -------
-    get_cdf(u, v, param):
-        Cumulative distribution function of the BB2 copula.
-    get_pdf(u, v, param):
-        Probability density function of the BB2 copula.
-    kendall_tau(param):
-        Computes Kendall's tau (remains the same as BB1).
-    sample(n, param):
-        Generates n pseudo-observations using the BB1 sampling method with a survival transformation.
-    LTDC(param):
-        Lower tail dependence coefficient (equal to BB1's upper tail dependence).
-    UTDC(param):
-        Upper tail dependence coefficient (equal to BB1's lower tail dependence).
+    theta : float
+        Copula parameter controlling dependence strength (θ > 0).
+    delta : float
+        Copula parameter controlling tail heaviness (δ ≥ 1).
     """
 
     def __init__(self):
         super().__init__()
-        self.type = "BB2"
+        self.type = "bb2"
         self.name = "BB2 Copula"
-        self.bounds_param = [(1e-6, None), (1e-6, None)]
-        self.parameters = np.array([1, 1])
+        # theta > 0, delta >= 1
+        self.bounds_param = [(1e-6, None), (1.0, None)]
+        self._parameters = np.array([0.5, 1.5])  # [theta, delta]
         self.default_optim_method = "Powell"
 
-    def get_cdf(self, u, v, param):
+    @property
+    def parameters(self) -> np.ndarray:
         """
-        Computes the cumulative distribution function (CDF) of the BB2 copula
-        using the survival transform:
-            C_{BB2}(u,v) = u + v - 1 + C_{BB1}(1-u,1-v).
-        """
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        theta, delta = param[0], param[1]
-        U_bar = 1 - u
-        V_bar = 1 - v
-        # Compute BB1 CDF at (1-u,1-v)
-        term1 = (U_bar ** (-theta) - 1) ** delta
-        term2 = (V_bar ** (-theta) - 1) ** delta
-        inner = term1 + term2
-        C_BB1 = (1 + inner ** (1 / delta)) ** (-1 / theta)
-        return u + v - 1 + C_BB1
+        Get the copula parameters.
 
-    def get_pdf(self, u, v, param):
+        Returns
+        -------
+        np.ndarray
+            Current parameters [theta, delta].
         """
-        Computes the probability density function (PDF) of the BB2 copula.
-        Since BB2 is the survival copula of BB1, its density is given by:
-            c_{BB2}(u,v) = c_{BB1}(1-u,1-v),
-        using the closed-form density for BB1.
-        """
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        theta, delta = param[0], param[1]
-        U_bar = 1 - u
-        V_bar = 1 - v
-        # Compute BB1 density at (1-u,1-v)
-        x = (U_bar ** (-theta) - 1) ** delta
-        y = (V_bar ** (-theta) - 1) ** delta
-        S = x + y
-        term1 = (1 + S ** (1 / delta)) ** (-1 / theta - 2)
-        term2 = S ** (1 / delta - 2)
-        term3 = theta * (delta - 1) + (theta * delta + 1) * S ** (1 / delta)
-        term4 = (x * y) ** (1 - 1 / delta) * (U_bar * V_bar) ** (-theta - 1)
-        return term1 * term2 * term3 * term4
+        return self._parameters
 
-    def kendall_tau(self, param):
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
         """
-        Computes Kendall's tau for the BB2 copula.
-        Since the survival transform does not change Kendall's tau,
-        the formula remains the same as for BB1:
-            tau = 1 - (2 / delta) * (1 - 1/theta) * B(1 - 1/theta, 2/delta + 1).
-        """
-        theta, delta = param[0], param[1]
-        return 1 - (2 / delta) * (1 - 1 / theta) * beta(1 - 1 / theta, 2 / delta + 1)
+        Set and validate copula parameters against bounds_param.
 
-    def sample(self, n, param):
-        """
-        Generates n pseudo-observations from the BB2 copula.
-        This is achieved by sampling from the BB1 copula using its Marshall–Olkin-type method
-        and then applying the survival transformation:
-            (u,v) ~ BB2  if and only if  (1-u, 1-v) ~ BB1.
-        """
-        theta, delta = param[0], param[1]
-        if theta <= 0 or delta < 1:
-            raise ValueError("Invalid parameters: theta must be > 0 and delta ≥ 1.")
+        Parameters
+        ----------
+        param : array-like
+            New parameters [theta, delta].
 
-        # BB1 sampling
-        V = np.random.gamma(1.0 / delta, 1.0, size=n)
-        E1 = np.random.exponential(scale=1.0, size=n)
-        E2 = np.random.exponential(scale=1.0, size=n)
-        U_BB1 = (1 + (E1 / V) ** (1 / delta)) ** (-1 / theta)
-        W_BB1 = (1 + (E2 / V) ** (1 / delta)) ** (-1 / theta)
-        # Apply survival transformation: (u,v) = (1 - U_BB1, 1 - W_BB1)
-        u_samples = 1 - U_BB1
-        v_samples = 1 - W_BB1
-        return np.column_stack((u_samples, v_samples))
+        Raises
+        ------
+        ValueError
+            If any parameter is outside its specified bound.
+        """
+        param = np.asarray(param)
+        for idx, (lower, upper) in enumerate(self.bounds_param):
+            val = param[idx]
+            if lower is not None and val <= lower:
+                raise ValueError(f"Parameter '{['theta','delta'][idx]}' must be > {lower}, got {val}")
+            if upper is not None and val < upper and False:
+                pass
+        self._parameters = param
 
-    def LTDC(self, param):
+    def get_cdf(self, u, v, param: np.ndarray = None):
         """
-        Computes the lower tail dependence coefficient (LTDC) for BB2.
-        For the survival copula BB2, the lower tail dependence equals the upper tail dependence of BB1:
-            LTDC = 2 - 2^(1/delta).
-        """
-        theta, delta = param[0], param[1]
-        return 2 - 2 ** (1 / delta)
+        Compute the BB2 copula CDF via survival transform of BB1:
 
-    def UTDC(self, param):
-        """
-        Computes the upper tail dependence coefficient (UTDC) for BB2.
-        For the survival copula BB2, the upper tail dependence equals the lower tail dependence of BB1:
-            UTDC = 2^(-1/(theta*delta)).
-        """
-        theta, delta = param[0], param[1]
-        return 2 ** (-1 / (theta * delta))
-
-    def partial_derivative_C_wrt_v(self, u, v, param):
-        """
-        Compute the partial derivative ∂C(u,v)/∂v for the BB2 copula.
-
-        For BB2 defined via the survival transform of BB1:
-            C^{BB2}(u,v) = u + v - 1 + C^{BB1}(1-u, 1-v),
-        on a alors (par chaîne) :
-            ∂C^{BB2}(u,v)/∂v = 1 - ∂C^{BB1}(1-u, 1-v)/∂(1-v).
+            C_BB2(u,v) = u + v - 1 + C_BB1(1-u,1-v).
 
         Parameters
         ----------
         u : float or array-like
-            Values in (0,1) for U.
+            Pseudo-observations in (0,1).
         v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like
-            Parameters [θ, δ] for the BB1 (et donc BB2) copula.
+            Pseudo-observations in (0,1).
+        param : ndarray, optional
+            Copula parameters [theta, delta].
 
         Returns
         -------
         float or np.ndarray
-            The partial derivative ∂C^{BB2}(u,v)/∂v.
+            Copula CDF value(s).
         """
-
-        # Ensure param is an array (flattened)
-        param = np.asarray(param).flatten()
-        # Create an instance of BB1 to use its conditional CDFs.
-        bb1 = BB1Copula()
-        bb1.parameters = param  # using the same two parameters [theta, delta]
-        return 1 - bb1.partial_derivative_C_wrt_v(1 - u, 1 - v, param)
-
-    def partial_derivative_C_wrt_u(self, u, v, param):
-        """
-        Compute the partial derivative ∂C(u,v)/∂u for the BB2 copula.
-
-        With the survival transform:
-            C^{BB2}(u,v) = u + v - 1 + C^{BB1}(1-u, 1-v),
-        we have:
-            ∂C^{BB2}(u,v)/∂u = 1 - ∂C^{BB1}(1-u, 1-v)/∂(1-u).
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1) for U.
-        v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like
-            Parameters [θ, δ] for the BB1/BB2 copula.
-
-        Returns
-        -------
-        float or np.ndarray
-            The partial derivative ∂C^{BB2}(u,v)/∂u.
-        """
-
-        param = np.asarray(param).flatten()
+        if param is None:
+            param = self.parameters
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+        theta, delta = param
+        # survival transform
+        U_bar = 1.0 - u
+        V_bar = 1.0 - v
         bb1 = BB1Copula()
         bb1.parameters = param
-        return 1 - bb1.partial_derivative_C_wrt_u(1 - u, 1 - v, param)
+        C1 = bb1.get_cdf(U_bar, V_bar, param)
+        return u + v - 1.0 + C1
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def get_pdf(self, u, v, param: np.ndarray = None):
         """
-        Compute the conditional probability P(U ≤ u | V = v) for the BB2 copula.
+        Compute the BB2 copula PDF via survival transform:
 
-        Using the survival transformation of the BB1 conditional CDF:
-            F_{U|V}^{BB2}(u|v) = 1 - F_{U|V}^{BB1}(1-u | 1-v).
-        Since the copula margins are uniform, this is equal to
-            ∂C^{BB2}(u,v)/∂v.
+            c_BB2(u,v) = c_BB1(1-u,1-v).
 
         Parameters
         ----------
         u : float or array-like
-            Values in (0,1) for U.
+            Pseudo-observations in (0,1).
         v : float or array-like
-            Values in (0,1) for V.
-        param : list or array-like
-            Parameters [θ, δ] for the BB2 copula.
+            Pseudo-observations in (0,1).
+        param : ndarray, optional
+            Copula parameters [theta, delta].
 
         Returns
         -------
         float or np.ndarray
-            The conditional probability P(U ≤ u | V = v) for BB2.
+            Copula PDF value(s).
+        """
+        if param is None:
+            param = self.parameters
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+        U_bar = 1.0 - u
+        V_bar = 1.0 - v
+        bb1 = BB1Copula()
+        bb1.parameters = param
+        return bb1.get_pdf(U_bar, V_bar, param)
+
+    def kendall_tau(self, param: np.ndarray = None) -> float:
+        """
+        Compute Kendall's tau (same as BB1).
+
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float
+            Kendall's tau.
+        """
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        return 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * beta(1.0 - 1.0 / theta, 2.0 / delta + 1.0)
+
+    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
+        """
+        Generate samples via survival-transform of BB1 sampling.
+
+        Parameters
+        ----------
+        n : int
+            Number of samples.
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        np.ndarray
+            Shape (n,2) array of pseudo-observations.
+        """
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        # BB1 sampling
+        bb1 = BB1Copula()
+        bb1.parameters = param
+        samples = bb1.sample(n, param)
+        return 1.0 - samples
+
+    def LTDC(self, param: np.ndarray = None) -> float:
+        """
+        Lower-tail dependence λ_L = UTDC_BB1 = 2 - 2^(1/δ).
+
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float
+            Lower-tail dependence.
+        """
+        if param is None:
+            param = self.parameters
+        delta = param[1]
+        return 2.0 - 2.0 ** (1.0 / delta)
+
+    def UTDC(self, param: np.ndarray = None) -> float:
+        """
+        Upper-tail dependence λ_U = LTDC_BB1 = 2^(-1/(δ·θ)).
+
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float
+            Upper-tail dependence.
+        """
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        return 2.0 ** (-1.0 / (delta * theta))
+
+    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
+        """
+        Compute ∂C/∂v via survival of BB1.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Pseudo-observations.
+        v : float or array-like
+            Pseudo-observations.
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or np.ndarray
+            Partial derivative ∂C/∂v.
+        """
+        if param is None:
+            param = self.parameters
+        bb1 = BB1Copula()
+        bb1.parameters = param
+        return 1.0 - bb1.partial_derivative_C_wrt_v(1.0 - u, 1.0 - v, param)
+
+    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
+        """
+        Compute ∂C/∂u via survival of BB1.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Pseudo-observations.
+        v : float or array-like
+            Pseudo-observations.
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or np.ndarray
+            Partial derivative ∂C/∂u.
+        """
+        if param is None:
+            param = self.parameters
+        bb1 = BB1Copula()
+        bb1.parameters = param
+        return 1.0 - bb1.partial_derivative_C_wrt_u(1.0 - u, 1.0 - v, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
+        """
+        Compute P(U ≤ u | V = v) = ∂C/∂v.
+
+        Parameters
+        ----------
+        u : float or array-like
+        v : float or array-like
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or np.ndarray
+            Conditional CDF.
         """
         return self.partial_derivative_C_wrt_v(u, v, param)
 
-    def conditional_cdf_v_given_u(self, u, v, param):
+    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
         """
-        Compute the conditional probability P(V ≤ v | U = u) for the BB2 copula.
-
-        Using the survival transformation:
-            F_{V|U}^{BB2}(v|u) = 1 - F_{V|U}^{BB1}(1-v | 1-u),
-        which equals the partial derivative ∂C^{BB2}(u,v)/∂u.
+        Compute P(V ≤ v | U = u) = ∂C/∂u.
 
         Parameters
         ----------
-        v : float or array-like
-            Values in (0,1) for V.
         u : float or array-like
-            Values in (0,1) for U.
-        param : list or array-like
-            Parameters [θ, δ] for the BB2 copula.
+        v : float or array-like
+        param : ndarray, optional
+            Copula parameters [theta, delta].
 
         Returns
         -------
         float or np.ndarray
-            The conditional probability P(V ≤ v | U = u) for BB2.
+            Conditional CDF.
         """
         return self.partial_derivative_C_wrt_u(u, v, param)

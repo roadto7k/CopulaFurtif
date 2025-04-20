@@ -1,41 +1,30 @@
+"""
+BB7 Copula (Joe–Clayton) implementation following project coding standard:
+
+Norms:
+ 1. Use private `_parameters` with public `@property parameters` and validation in setter.
+ 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
+ 3. Docstrings include **Parameters** and **Returns** with types.
+ 4. Parameter bounds in `bounds_param`; setter enforces them.
+ 5. Uniform clipping with `eps=1e-12`.
+ 6. Document parameter names (`theta`, `delta`) in `__init__`.
+"""
 import numpy as np
 from scipy.optimize import brentq
 
 from Service.Copulas.base import BaseCopula
 
+
 class BB7Copula(BaseCopula):
     """
-    BB7 Copula class (Joe-Clayton)
+    BB7 Copula (Joe–Clayton) Archimedean generator φ(t) = φ_C(φ_J(t)).
 
     Parameters
     ----------
     theta : float
-        Joe parameter (θ > 0)
+        Joe parameter (θ > 0) controlling upper tail.
     delta : float
-        Clayton parameter (δ > 0)
-
-    The BB7 copula is defined via an Archimedean generator:
-
-        φ(t) = φ_C(φ_J(t)),
-    where
-        φ_J(t) = -ln(1 - (1 - t)**θ)  (Joe generator),
-        φ_C(s) = (s**(-δ) - 1)/δ       (Clayton generator).
-
-    Thus:
-        φ(t) = ((-ln(1 - (1 - t)**θ))**(-δ) - 1)/δ,
-    and its pseudo-inverse:
-        φ^{-1}(s) = 1 - (1 - exp(-(1 + δ s)**(-1/δ)))**(1/θ).
-
-    Methods
-    -------
-    get_cdf(u, v, param)
-        CDF via φ^{-1}(φ(u) + φ(v)).
-    get_pdf(u, v, param)
-        PDF via finite-difference approximation of ∂²C/∂u∂v.
-    sample(n, param)
-        Conditional inversion sampling.
-    LTDC(param), UTDC(param)
-        Numeric tail-dependence estimates.
+        Clayton parameter (δ > 0) controlling lower tail.
     """
     def __init__(self):
         super().__init__()
@@ -43,121 +32,257 @@ class BB7Copula(BaseCopula):
         self.name = "BB7 Copula"
         # theta > 0, delta > 0
         self.bounds_param = [(1e-6, None), (1e-6, None)]
-        self.parameters = np.array([1.0, 1.0])
-        self.default_optim_method = "SLSQP"
+        self._parameters = np.array([1.0, 1.0])  # [theta, delta]
+        self.default_optim_method = "Powell"
 
-    def _phi(self, t, param):
+    @property
+    def parameters(self) -> np.ndarray:
         """
-        φ(t) = φ_C(φ_J(t)), where
-          φ_J(t) = 1 - (1 - t)**θ      (non‑strict Joe generator)
-          φ_C(s) = (s**(-δ) - 1)/δ     (strict Clayton generator)
+        Get copula parameters [theta, delta].
+
+        Returns
+        -------
+        np.ndarray
+            Current parameters.
         """
-        theta, delta = param
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
+        """
+        Set and validate copula parameters.
+
+        Parameters
+        ----------
+        param : array-like
+            New parameters [theta, delta].
+
+        Raises
+        ------
+        ValueError
+            If any parameter outside its bound.
+        """
+        param = np.asarray(param)
+        names = ['theta', 'delta']
+        for i, (lower, upper) in enumerate(self.bounds_param):
+            val = param[i]
+            name = names[i]
+            if lower is not None and val < lower:
+                raise ValueError(f"Parameter '{name}' must be >= {lower}, got {val}")
+        self._parameters = param
+
+    def _phi(self, t: np.ndarray, theta: float, delta: float) -> np.ndarray:
+        """
+        Archimedean generator φ(t) = (φ_J(t)^(-delta) - 1)/delta,
+        φ_J(t) = 1 - (1 - t)**theta.
+
+        Parameters
+        ----------
+        t : float or ndarray
+        theta : float
+        delta : float
+
+        Returns
+        -------
+        float or ndarray
+            Generator value(s).
+        """
         eps = 1e-12
         t = np.clip(t, eps, 1 - eps)
-        phiJ = 1 - (1 - t)**theta
-        return (phiJ**(-delta) - 1) / delta
+        phiJ = 1.0 - (1.0 - t)**theta
+        return (phiJ**(-delta) - 1.0) / delta
 
-    def _phi_inv(self, s, param):
+    def _phi_inv(self, s: np.ndarray, theta: float, delta: float) -> np.ndarray:
         """
-        φ⁻¹(s) = φ_J⁻¹(φ_C⁻¹(s)), where
-          φ_C⁻¹(s) = (1 + δ s)**(-1/δ)
-          φ_J⁻¹(u) = 1 - (1 - u)**(1/θ)
+        Inverse generator φ^{-1}(s) = 1 - (1 - (1 + delta s)^{-1/delta})^{1/theta}.
+
+        Parameters
+        ----------
+        s : float or ndarray
+        theta : float
+        delta : float
+
+        Returns
+        -------
+        float or ndarray
+            Inverse generator value(s).
         """
+        s = np.maximum(s, 0.0)
+        phiC_inv = (1.0 + delta * s)**(-1.0 / delta)
+        return 1.0 - (1.0 - phiC_inv)**(1.0 / theta)
+
+    def get_cdf(self, u, v, param: np.ndarray = None):
+        """
+        Copula CDF: C(u,v) = φ^{-1}(φ(u) + φ(v)).
+
+        Parameters
+        ----------
+        u : float or ndarray
+        v : float or ndarray
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or ndarray
+            Copula CDF value(s).
+        """
+        if param is None:
+            param = self.parameters
         theta, delta = param
-        s = np.maximum(s, 0)
-        phiC_inv = (1 + delta * s)**(-1.0 / delta)
-        return 1 - (1 - phiC_inv)**(1.0 / theta)
+        phi_u = self._phi(u, theta, delta)
+        phi_v = self._phi(v, theta, delta)
+        return self._phi_inv(phi_u + phi_v, theta, delta)
 
-    def get_cdf(self, u, v, param):
+    def get_pdf(self, u, v, param: np.ndarray = None):
         """
-        Compute C(u,v) = φ^{-1}(φ(u) + φ(v)).
-        """
-        phi_u = self._phi(u, param)
-        phi_v = self._phi(v, param)
-        return self._phi_inv(phi_u + phi_v, param)
+        Approximate PDF by central finite-difference ∂²C/∂u∂v.
 
-    def get_pdf(self, u, v, param):
+        Parameters
+        ----------
+        u : float or ndarray
+        v : float or ndarray
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or ndarray
+            PDF approximation.
         """
-        PDF via finite-difference approximation of the mixed derivative ∂²C/∂u∂v.
-        """
+        if param is None:
+            param = self.parameters
         eps = 1e-6
         c = self.get_cdf
-        # central difference approximation
         return (
-            c(u + eps, v + eps, param)
-            - c(u + eps, v - eps, param)
-            - c(u - eps, v + eps, param)
-            + c(u - eps, v - eps, param)
-        ) / (4 * eps**2)
+            c(u+eps, v+eps, param)
+            - c(u+eps, v-eps, param)
+            - c(u-eps, v+eps, param)
+            + c(u-eps, v-eps, param)
+        ) / (4.0 * eps**2)
 
-    def partial_derivative_C_wrt_u(self, u, v, param):
+    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
         """
-        ∂C/∂u via central difference.
+        Approximate ∂C/∂u by central difference.
+
+        Parameters
+        ----------
+        u : float or ndarray
+        v : float or ndarray
+        param : ndarray, optional
+            Copula parameters.
+
+        Returns
+        -------
+        float or ndarray
         """
+        if param is None:
+            param = self.parameters
         eps = 1e-6
         c = self.get_cdf
-        return (c(u + eps, v, param) - c(u - eps, v, param)) / (2 * eps)
+        return (c(u+eps, v, param) - c(u-eps, v, param)) / (2.0 * eps)
 
-    def partial_derivative_C_wrt_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
         """
-        ∂C/∂v via central difference.
+        Approximate ∂C/∂v by central difference.
+
+        Returns
+        -------
+        float or ndarray
         """
+        if param is None:
+            param = self.parameters
         eps = 1e-6
         c = self.get_cdf
-        return (c(u, v + eps, param) - c(u, v - eps, param)) / (2 * eps)
+        return (c(u, v+eps, param) - c(u, v-eps, param)) / (2.0 * eps)
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
         """
-        P(U ≤ u | V = v) = ∂C/∂v / ∂C(1,v)/∂v.
+        P(U ≤ u | V = v) = ∂C/∂v(u,v) / ∂C/∂v(1,v).
+
+        Returns
+        -------
+        float or ndarray
         """
+        if param is None:
+            param = self.parameters
         num = self.partial_derivative_C_wrt_v(u, v, param)
         den = self.partial_derivative_C_wrt_v(1.0, v, param)
         return num / den
 
-    def conditional_cdf_v_given_u(self, u, v, param):
+    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
         """
-        P(V ≤ v | U = u) = ∂C/∂u / ∂C(u,1)/∂u.
+        P(V ≤ v | U = u) = ∂C/∂u(u,v) / ∂C/∂u(u,1).
+
+        Returns
+        -------
+        float or ndarray
         """
+        if param is None:
+            param = self.parameters
         num = self.partial_derivative_C_wrt_u(u, v, param)
         den = self.partial_derivative_C_wrt_u(u, 1.0, param)
         return num / den
 
-    def sample(self, n, param):
+    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
         """
-        Generate samples by conditional inversion: for each u ~ U(0,1),
-        find v s.t. P(V ≤ v | U = u) = p.
+        Generate samples via conditional inversion.
+
+        Parameters
+        ----------
+        n : int
+            Number of samples.
+        param : ndarray, optional
+            Copula parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (n,2) samples.
         """
+        if param is None:
+            param = self.parameters
         samples = np.empty((n, 2))
+        eps = 1e-6
         for i in range(n):
             u = np.random.rand()
             p = np.random.rand()
             root = brentq(
-                lambda v: self.conditional_cdf_v_given_u(u, v, param) - p,
-                1e-6,
-                1 - 1e-6,
+                lambda vv: self.conditional_cdf_v_given_u(u, vv, param) - p,
+                eps, 1.0 - eps
             )
-            samples[i, 0] = u
-            samples[i, 1] = root
+            samples[i] = [u, root]
         return samples
 
-    def LTDC(self, param):
+    def LTDC(self, param: np.ndarray = None) -> float:
         """
         Approximate lower tail dependence λ_L = lim_{u→0} C(u,u)/u.
+
+        Returns
+        -------
+        float
         """
+        if param is None:
+            param = self.parameters
         eps = 1e-6
         return self.get_cdf(eps, eps, param) / eps
 
-    def UTDC(self, param):
+    def UTDC(self, param: np.ndarray = None) -> float:
         """
-        Approximate upper tail dependence λ_U = 2 - lim_{u→1} (1 - 2u + C(u,u))/(1 - u).
-        """
-        eps = 1e-6
-        u = 1 - eps
-        return 2 - (1 - 2 * u + self.get_cdf(u, u, param)) / eps
+        Approximate upper tail dependence λ_U = 2 - lim_{u→1} (1-2u+C(u,u))/(1-u).
 
-    def kendall_tau(self, param):
+        Returns
+        -------
+        float
         """
-        Kendall's tau not implemented for BB7.
+        if param is None:
+            param = self.parameters
+        eps = 1e-6
+        u = 1.0 - eps
+        return 2.0 - (1.0 - 2*u + self.get_cdf(u, u, param)) / eps
+
+    def kendall_tau(self, param: np.ndarray = None):
+        """
+        Not implemented for BB7.
         """
         raise NotImplementedError("Kendall's tau not implemented for BB7.")
