@@ -283,112 +283,68 @@ class StudentCopula(BaseCopula):
         print(f"[INFO] AD is disabled for {self.name}.")
         return np.nan
 
-    def partial_derivative_C_wrt_v(self, u: float, v: float, param: np.ndarray=None):
+    def partial_derivative_C_wrt_v(self, u: float, v: float, param: np.ndarray = None) -> float:
         """
-        Compute ∂C/∂v for Student-t copula.
-
-        Parameters
-        ----------
-        u : float
-            Pseudo-observation.
-        v : float
-            Pseudo-observation.
-        param : ndarray, optional
-            Copula parameters [rho, nu].
-
-        Returns
-        -------
-        float
-            Partial derivative ∂C/∂v.
+        Compute ∂C(u,v)/∂v = P(U ≤ u | V = v) * t_pdf(v|ν)
+        for the Student‑t copula.
         """
         if param is None:
-            param = self.parameters
-        rho, nu = param
+            rho, nu = self.parameters
+        else:
+            rho, nu = param
+
         eps = 1e-12
-        u = np.clip(u, eps, 1-eps)
-        v = np.clip(v, eps, 1-eps)
-        x = t.ppf(u, df=nu)
-        y = t.ppf(v, df=nu)
-        scale = sqrt((1-rho**2)*(nu+y**2)/(nu+1))
-        z = (x - rho*y)/scale
-        pdf_std = t.pdf(z, df=nu+1)
-        return pdf_std/scale
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
 
-    def partial_derivative_C_wrt_u(self, u: float, v: float, param: np.ndarray=None):
+        # transform to t‑quantiles
+        tx = t.ppf(u, df=nu)
+        ty = t.ppf(v, df=nu)
+
+        # conditional parameters
+        df_c = nu + 1
+        scale = sqrt((1 - rho**2) * (nu + ty**2) / df_c)
+        loc = rho * ty
+
+        # density of conditional t at tx
+        z = (tx - loc) / scale
+        return t.pdf(z, df=df_c) / scale
+
+    def partial_derivative_C_wrt_u(self, u: float, v: float, param: np.ndarray = None) -> float:
         """
-        Compute ∂C/∂u for Student-t copula.
+        Compute ∂C(u,v)/∂u = P(V ≤ v | U = u) * t_pdf(u|ν)
+        for the Student‑t copula.
+        """
+        # by symmetry, swap roles of u and v
+        return self.partial_derivative_C_wrt_v(v, u, param)
 
-        Parameters
-        ----------
-        u : float
-            Pseudo-observation.
-        v : float
-            Pseudo-observation.
-        param : ndarray, optional
-            Copula parameters [rho, nu].
-
-        Returns
-        -------
-        float
-            Partial derivative ∂C/∂u.
+    def conditional_cdf_u_given_v(self, u: float, v: float, param: np.ndarray = None) -> float:
+        """
+        Compute P(U ≤ u | V = v) via the closed‑form conditional t‑distribution.
         """
         if param is None:
-            param = self.parameters
-        rho, nu = param
+            rho, nu = self.parameters
+        else:
+            rho, nu = param
+
         eps = 1e-12
-        u = np.clip(u, eps, 1-eps)
-        v = np.clip(v, eps, 1-eps)
-        x = t.ppf(u, df=nu)
-        y = t.ppf(v, df=nu)
-        scale = sqrt((1-rho**2)*(nu+x**2)/(nu+1))
-        z = (y - rho*x)/scale
-        pdf_std = t.pdf(z, df=nu+1)
-        return pdf_std/scale
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
 
-    def conditional_cdf_u_given_v(self, u: float, v: float, param: np.ndarray=None) -> float:
+        # marginal t quantiles
+        tx = t.ppf(u, df=nu)
+        ty = t.ppf(v, df=nu)
+
+        # conditional Student‑t parameters
+        df_c = nu + 1
+        loc_c = rho * ty
+        scale_c = sqrt((nu + ty**2) * (1 - rho**2) / df_c)
+
+        # return the conditional CDF
+        return t.cdf((tx - loc_c) / scale_c, df=df_c)
+
+    def conditional_cdf_v_given_u(self, u: float, v: float, param: np.ndarray = None) -> float:
         """
-        Compute P(U ≤ u|V=v) for Student-t.
-
-        Parameters
-        ----------
-        u : float
-            Threshold for U.
-        v : float
-            Given V.
-        param : ndarray, optional
-            Copula parameters [rho, nu].
-
-        Returns
-        -------
-        float
-            Conditional CDF.
+        Compute P(V ≤ v | U = u) by symmetry of the bivariate Student‑t.
         """
-        if param is None:
-            param = self.parameters
-        num = self.partial_derivative_C_wrt_v(u, v, param)
-        den = self.partial_derivative_C_wrt_v(1.0, v, param)
-        return num / max(den, 1e-14)
-
-    def conditional_cdf_v_given_u(self, u: float, v: float, param: np.ndarray=None) -> float:
-        """
-        Compute P(V ≤ v|U=u) for Student-t.
-
-        Parameters
-        ----------
-        u : float
-            Given U.
-        v : float
-            Threshold for V.
-        param : ndarray, optional
-            Copula parameters [rho, nu].
-
-        Returns
-        -------
-        float
-            Conditional CDF.
-        """
-        if param is None:
-            param = self.parameters
-        num = self.partial_derivative_C_wrt_u(u, v, param)
-        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
-        return num / max(den, 1e-14)
+        return self.conditional_cdf_u_given_v(v, u, param)

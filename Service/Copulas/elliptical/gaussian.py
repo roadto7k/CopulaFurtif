@@ -237,109 +237,28 @@ class GaussianCopula(BaseCopula):
         return np.nan
 
     def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
-        """
-        Compute ∂C(u,v)/∂u for conditional CDF.
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1).
-        v : float or array-like
-            Values in (0,1).
-        param : ndarray, optional
-            Copula parameter [rho].
-
-        Returns
-        -------
-        float or np.ndarray
-            ∂C/∂u.
-        """
+        """Compute ∂C(u,v)/∂u = P(V ≤ v | U = u)"""
         if param is None:
             param = self.parameters
-        rho = param[0]
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        x = norm.ppf(u)
-        y = norm.ppf(v)
-        return norm.cdf((y - rho * x) / np.sqrt(1 - rho**2))
+        u = np.clip(u, 1e-12, 1 - 1e-12)
+        v = np.clip(v, 1e-12, 1 - 1e-12)
+        x, y = norm.ppf(u), norm.ppf(v)
+        return norm.cdf((y - param[0] * x) / np.sqrt(1 - param[0]**2))
 
     def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
-        """
-        Compute ∂C(u,v)/∂v for conditional CDF.
-
-        Parameters
-        ----------
-        u : float or array-like
-            Values in (0,1).
-        v : float or array-like
-            Values in (0,1).
-        param : ndarray, optional
-            Copula parameter [rho].
-
-        Returns
-        -------
-        float or np.ndarray
-            ∂C/∂v.
-        """
-        if param is None:
-            param = self.parameters
-        rho = param[0]
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        x = norm.ppf(u)
-        y = norm.ppf(v)
-        return norm.cdf((x - rho * y) / np.sqrt(1 - rho**2))
+        """Compute ∂C(u,v)/∂v = P(U ≤ u | V = v) via symmetry"""
+        # For a symmetric copula, ∂C/∂v(u,v) = ∂C/∂u(v,u)
+        return self.partial_derivative_C_wrt_u(v, u, param)
 
     def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
-        """
-        Compute P(U ≤ u | V = v).
-
-        Parameters
-        ----------
-        u : float or array-like
-            Threshold for U.
-        v : float or array-like
-            Given value for V.
-        param : ndarray, optional
-            Copula parameter [rho].
-
-        Returns
-        -------
-        float or np.ndarray
-            Conditional CDF P(U ≤ u | V = v).
-        """
+        """P(U ≤ u | V = v) = ∂C/∂v"""
         if param is None:
             param = self.parameters
-        partial = self.partial_derivative_C_wrt_v(u, v, param)
-        eps = 1e-12
-        v = np.clip(v, eps, 1 - eps)
-        y = norm.ppf(v)
-        return partial / norm.pdf(y)
+        return self.partial_derivative_C_wrt_v(u, v, param)
 
     def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
-        """
-        Compute P(V ≤ v | U = u).
-
-        Parameters
-        ----------
-        u : float or array-like
-            Given value for U.
-        v : float or array-like
-            Threshold for V.
-        param : ndarray, optional
-            Copula parameter [rho].
-
-        Returns
-        -------
-        float or np.ndarray
-            Conditional CDF P(V ≤ v | U = u).
-        """
+        """P(V ≤ v | U = u) = ∂C/∂u"""
         if param is None:
             param = self.parameters
-        partial = self.partial_derivative_C_wrt_u(u, v, param)
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        x = norm.ppf(u)
-        return partial / norm.pdf(x)
+        return self.partial_derivative_C_wrt_u(u, v, param)
+

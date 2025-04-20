@@ -29,7 +29,7 @@ from Service.Copulas.tests.validation import test_partial_derivative_C_wrt_u, te
     test_partial_derivative_C_wrt_v_order4, test_partial_derivative_C_wrt_u_order4
 
 copulas_to_test = [
-    (AMHCopula, [1.0]),
+    (AMHCopula, [0.5]),
     (MarshallOlkinCopula, [0.5, 0.5]),
     (HuslerReissCopula, [1.0]),
     (BB1Copula, [2.0, 3.0]),
@@ -39,7 +39,7 @@ copulas_to_test = [
     (BB5Copula, [2.0, 3.0]),
     (BB6Copula, [2.0, 3.0]),
     (BB7Copula, [2.0, 3.0]),
-    (BB8Copula, [2.0, 3.0]),
+    (BB8Copula, [2.0, 0.7]),
     (TawnCopula, [2.0, 0.5, 0.5]),
     (TawnT1Copula, [2.0, 0.5]),
     (TawnT2Copula, [2.0, 0.5]),

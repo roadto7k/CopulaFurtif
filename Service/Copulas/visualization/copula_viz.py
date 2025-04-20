@@ -1,110 +1,266 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from scipy.optimize import brentq
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+__all__ = [
+    'plot_bivariate_3d',
+    'plot_bivariate_contour',
+    'plot_cdf',
+    'plot_pdf',
+    'plot_mpdf',
+    'plot_arbitrage_frontiers',
+]
 
 
-def plot_bivariate_3d(copula, Nsplit=50, **kwargs):
+def plot_bivariate_3d(X, Y, Z, bounds, title, **kwargs):
     """
-    Plot the 3D surface of the bivariate PDF of a copula using its internal parameters.
+    Plot a 3D surface with flexible axis bounds.
 
     Parameters
     ----------
-    copula : object
-        Instance of a copula with method get_pdf(u, v, param) and attributes `name` and `parameters`.
-    Nsplit : int, optional
-        Number of grid points per axis (default=50).
-    **kwargs :
-        Extra parameters passed to ax.plot_surface.
+    X, Y, Z : array_like
+        Meshgrid arrays of shape (N, N) representing the surface.
+    bounds : tuple of length 2 or 4
+        If len=2: (min, max) applies to both axes;
+        if len=4: (xmin, xmax, ymin, ymax).
+    title : str
+        Plot title.
+    **kwargs
+        Keyword arguments for ax.plot_surface (e.g., cmap='viridis').
     """
-    u = np.linspace(0.01, 0.99, Nsplit)
-    U, V = np.meshgrid(u, u)
-    # Compute pdf on grid using internal parameters
-    Z = np.array([copula.get_pdf(ui, vi, copula.parameters) for ui, vi in zip(U.ravel(), V.ravel())]).reshape(U.shape)
-
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.plot_surface(U, V, Z, **kwargs)
-    ax.set_xlabel('u')
-    ax.set_ylabel('v')
-    ax.set_zlabel('PDF')
-    plt.title(f'{copula.name} Copula PDF (3D)')
+    # parse bounds
+    if len(bounds) == 2:
+        xmin, xmax, ymin, ymax = bounds[0], bounds[1], bounds[0], bounds[1]
+    else:
+        xmin, xmax, ymin, ymax = bounds
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_xticks(np.linspace(xmin, xmax, 6))
+    ax.set_yticks(np.linspace(ymin, ymax, 6))
+    ax.plot_surface(X, Y, Z, **kwargs)
+    ax.set_title(title)
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('Z')
+    plt.tight_layout()
     plt.show()
 
 
-def plot_bivariate_contour(copula, Nsplit=50, levels=10, **kwargs):
+def plot_bivariate_contour(X, Y, Z, bounds, title, levels=10, **kwargs):
     """
-    Plot the contour lines of the bivariate PDF of a copula using its internal parameters.
+    Plot contour lines only (no fill), with flexible axis bounds.
+
+    Parameters
+    ----------
+    X, Y, Z : array_like
+        Meshgrid arrays of shape (N, N).
+    bounds : tuple of length 2 or 4
+        If len=2: (min, max) applies to both axes;
+        if len=4: (xmin, xmax, ymin, ymax).
+    title : str
+        Plot title.
+    levels : int or array-like
+        Number of contour levels or specific list of levels.
+    **kwargs
+        Additional keyword args for plt.contour (e.g., cmap, linestyles).
+    """
+    fig, ax = plt.subplots()
+    # choose color argument: if cmap provided, let user define colors, else use black lines
+    contour_kwargs = kwargs.copy()
+    if 'cmap' in contour_kwargs and 'colors' not in contour_kwargs:
+        cs = ax.contour(X, Y, Z, levels=levels, **contour_kwargs)
+    else:
+        cs = ax.contour(X, Y, Z, levels=levels, colors='k', linewidths=1.0, **contour_kwargs)
+    ax.clabel(cs, inline=True, fontsize=8)
+    # set bounds
+    if len(bounds) == 2:
+        xmin, xmax, ymin, ymax = bounds[0], bounds[1], bounds[0], bounds[1]
+    else:
+        xmin, xmax, ymin, ymax = bounds
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_title(title)
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_cdf(copula, plot_type: str, Nsplit: int = 50, **kwargs):
+    """
+    Plot the bivariate CDF of a copula, either as a 3D surface or contour lines.
 
     Parameters
     ----------
     copula : object
-        Instance of a copula with method get_pdf(u, v, param) and attributes `name` and `parameters`.
-    Nsplit : int, optional
-        Number of grid points per axis (default=50).
-    levels : int or list, optional
-        Contour levels (default=10 levels).
-    **kwargs :
-        Extra parameters passed to plt.contour.
+        Instance with .get_cdf(u, v, param) and .parameters.
+    plot_type : {'3d', 'contour'}
+    Nsplit : int
+        Number of grid points per axis.
+    **kwargs
+        For '3d': passed to plot_surface; for 'contour': passed to plt.contour.
     """
-    u = np.linspace(0.01, 0.99, Nsplit)
-    U, V = np.meshgrid(u, u)
-    Z = np.array([copula.get_pdf(ui, vi, copula.parameters) for ui, vi in zip(U.ravel(), V.ravel())]).reshape(U.shape)
+    # define grid bounds within (0,1)
+    if plot_type == '3d':
+        lo, hi = 1e-2, 1 - 1e-2
+    elif plot_type == 'contour':
+        lo, hi = 1e-3, 1 - 1e-3
+    else:
+        raise ValueError("plot_type must be '3d' or 'contour'.")
 
-    CS = plt.contour(U, V, Z, levels=levels, **kwargs)
-    plt.clabel(CS, inline=1, fontsize=8)
-    plt.xlabel('u')
-    plt.ylabel('v')
-    plt.title(f'{copula.name} Copula PDF (contour)')
-    plt.show()
+    U, V = np.meshgrid(np.linspace(lo, hi, Nsplit), np.linspace(lo, hi, Nsplit))
+    Z = np.array([
+        copula.get_cdf(u, v, copula.parameters)
+        for u, v in zip(U.ravel(), V.ravel())
+    ]).reshape(U.shape)
+    title = f"{copula.name} Copula CDF ({plot_type})"
+
+    if plot_type == '3d':
+        plot_bivariate_3d(U, V, Z, (lo, hi), title, **kwargs)
+    else:
+        plot_bivariate_contour(U, V, Z, (lo, hi), title, **kwargs)
 
 
-def plot_conditional_contours(copula, Nsplit=50, levels=None, scatter=None, **kwargs):
+def plot_pdf(copula, plot_type: str, Nsplit: int = 50, levels=None, log_scale: bool = False, **kwargs):
     """
-    Plot both conditional contours: P(U ≤ u | V = v) and P(V ≤ v | U = u) using copula's methods.
+    Plot the bivariate PDF of a copula with optional log-scaled contours.
 
     Parameters
     ----------
     copula : object
-        Instance of a copula with methods conditional_cdf_u_given_v(u,v) and conditional_cdf_v_given_u(u,v), and attribute `name`.
-    Nsplit : int, optional
-        Number of grid points per axis (default=50).
-    levels : list or None
-        Contour levels for the conditional probabilities (default [0.1,...,0.9]).
-    scatter : tuple (x_points, y_points) or None
-        If provided, overlay these observation points.
-    **kwargs :
-        Extra parameters passed to plt.contour.
+        Instance with .get_pdf(u, v, param) and .parameters.
+    plot_type : {'3d', 'contour'}
+    Nsplit : int
+        Grid resolution.
+    levels : int or array-like, optional
+        For contour: number or list of levels.
+    log_scale : bool
+        If True, use logarithmic spacing for levels.
+    **kwargs
+        For '3d': passed to plot_surface;
+        for 'contour': passed to contourf/contour (e.g., cmap).
     """
-    u = np.linspace(0.01, 0.99, Nsplit)
-    v = np.linspace(0.01, 0.99, Nsplit)
-    U, V = np.meshgrid(u, v)
+    # grid bounds
+    if plot_type == '3d':
+        lo, hi = 1e-2, 1 - 1e-2
+    elif plot_type == 'contour':
+        lo, hi = 1e-3, 1 - 1e-3
+    else:
+        raise ValueError("plot_type must be '3d' or 'contour'.")
 
-    # Compute conditional CDF grids directly using copula methods
-    Z_uv = np.array([copula.conditional_cdf_u_given_v(ui, vi) for ui, vi in zip(U.ravel(), V.ravel())]).reshape(U.shape)
-    Z_vu = np.array([copula.conditional_cdf_v_given_u(ui, vi) for ui, vi in zip(U.ravel(), V.ravel())]).reshape(U.shape)
+    U, V = np.meshgrid(np.linspace(lo, hi, Nsplit), np.linspace(lo, hi, Nsplit))
+    Z = np.array([
+        copula.get_pdf(u, v, copula.parameters)
+        for u, v in zip(U.ravel(), V.ravel())
+    ]).reshape(U.shape)
+    title = f"{copula.name} Copula PDF ({plot_type})"
 
-    if levels is None:
-        levels = np.linspace(0.1, 0.9, 9)
+    if plot_type == '3d':
+        plot_bivariate_3d(U, V, Z, (lo, hi), title, **kwargs)
+    else:
+        # auto-levels if not provided or integer
+        if levels is None or isinstance(levels, int):
+            zmin, zmax = np.percentile(Z, 5), np.percentile(Z, 95)
+            if log_scale:
+                levels = np.logspace(np.log10(zmin), np.log10(zmax), levels or 10)
+            else:
+                levels = np.linspace(zmin, zmax, levels or 10)
+        fig, ax = plt.subplots()
+        cf = ax.contour(U, V, Z, levels=levels, **kwargs)
+        cs = ax.contour(U, V, Z, levels=levels, colors='k', linewidths=0.5)
+        ax.clabel(cs, inline=True, fontsize=8)
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
+        ax.set_title(title)
+        ax.set_xlabel('u')
+        ax.set_ylabel('v')
+        plt.tight_layout()
+        plt.show()
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    # P(U ≤ u | V = v)
-    cs1 = axes[0].contour(U, V, Z_uv, levels=levels, **kwargs)
-    axes[0].clabel(cs1, inline=1, fontsize=8)
-    axes[0].set_xlabel('u')
-    axes[0].set_ylabel('v')
-    axes[0].set_title(f'P(U ≤ u | V = v) for {copula.name}')
 
-    # P(V ≤ v | U = u)
-    cs2 = axes[1].contour(U, V, Z_vu, levels=levels, **kwargs)
-    axes[1].clabel(cs2, inline=1, fontsize=8)
-    axes[1].set_xlabel('u')
-    axes[1].set_ylabel('v')
-    axes[1].set_title(f'P(V ≤ v | U = u) for {copula.name}')
+def plot_mpdf(copula, margins, plot_type: str, Nsplit: int = 50, bounds=None, **kwargs):
+    """
+    Plot the joint PDF with specified marginal distributions.
 
+    If bounds is None, compute (1%%,99%%) percentiles for each margin.
+    """
+    # unpack margins
+    m1, m2 = margins
+    dist1, loc1, scale1 = m1['distribution'], m1['loc'], m1['scale']
+    dist2, loc2, scale2 = m2['distribution'], m2['loc'], m2['scale']
+
+    # determine original-space bounds
+    if bounds is None:
+        x_min, x_max = dist1.ppf([0.01, 0.99], loc=loc1, scale=scale1)
+        y_min, y_max = dist2.ppf([0.01, 0.99], loc=loc2, scale=scale2)
+    else:
+        x_min, x_max, y_min, y_max = bounds
+
+    x = np.linspace(x_min, x_max, Nsplit)
+    y = np.linspace(y_min, y_max, Nsplit)
+    X, Y = np.meshgrid(x, y)
+
+    # map to copula space and compute joint PDF
+    U = dist1.cdf(X, loc=loc1, scale=scale1)
+    V = dist2.cdf(Y, loc=loc2, scale=scale2)
+    Zc = np.array([
+        copula.get_pdf(u, v, copula.parameters)
+        for u, v in zip(U.ravel(), V.ravel())
+    ]).reshape(U.shape)
+    f1 = dist1.pdf(X, loc=loc1, scale=scale1)
+    f2 = dist2.pdf(Y, loc=loc2, scale=scale2)
+    Z = Zc * f1 * f2
+
+    title = f"{copula.name} joint PDF ({plot_type})"
+    if plot_type == '3d':
+        plot_bivariate_3d(X, Y, Z, (x_min, x_max, y_min, y_max), title, **kwargs)
+    else:
+        plot_bivariate_contour(X, Y, Z, (x_min, x_max, y_min, y_max), title, **kwargs)
+
+
+def plot_arbitrage_frontiers(
+    copula,
+    alpha_low: float = 0.05,
+    alpha_high: float = 0.95,
+    levels: int = 200,
+    scatter: tuple = None,
+    scatter_alpha: float = 0.3,
+):
+    """
+    Plot conditional quantile frontiers for arbitrage detection.
+    """
+    # style
+    plt.rcParams.update({
+        'figure.figsize': (7, 7),
+        'axes.facecolor': '#f7f7f7',
+        'axes.grid': True,
+        'grid.color': '#dddddd'
+    })
+    u_min, u_max = 1e-6, 1 - 1e-6
+    v_grid = np.linspace(u_min, u_max, levels)
+    Q_low, Q_high = [], []
+    for v in v_grid:
+        c_min = copula.conditional_cdf_u_given_v(u_min, v)
+        c_max = copula.conditional_cdf_u_given_v(u_max, v)
+        u_l = u_min if c_min >= alpha_low else (u_max if c_max <= alpha_low else brentq(lambda u: copula.conditional_cdf_u_given_v(u, v) - alpha_low, u_min, u_max))
+        u_h = u_min if c_min >= alpha_high else (u_max if c_max <= alpha_high else brentq(lambda u: copula.conditional_cdf_u_given_v(u, v) - alpha_high, u_min, u_max))
+        Q_low.append(u_l); Q_high.append(u_h)
+
+    fig, ax = plt.subplots()
     if scatter is not None:
-        xs, ys = scatter
-        axes[0].scatter(xs, ys, c='red', edgecolors='k')
-        axes[1].scatter(xs, ys, c='red', edgecolors='k')
-
+        u_s, v_s = scatter
+        ax.scatter(u_s, v_s, c='gray', alpha=scatter_alpha, s=40, marker='o', label='Data')
+        p_uv = np.array([copula.conditional_cdf_u_given_v(u, v) for u, v in zip(u_s, v_s)])
+        ax.scatter(u_s[p_uv < alpha_low], v_s[p_uv < alpha_low], c='#2a9d8f', edgecolors='k', s=60, label=f'p < {alpha_low:.2f}')
+        ax.scatter(u_s[p_uv > alpha_high], v_s[p_uv > alpha_high], c='#e76f51', edgecolors='k', s=60, label=f'p > {alpha_high:.2f}')
+    ax.plot(Q_low, v_grid, ls='-', color='#264653', lw=2.5, label=f'Low frontier ({alpha_low:.2f})')
+    ax.plot(Q_high, v_grid, ls='-', color='#e76f51', lw=2.5, label=f'High frontier ({alpha_high:.2f})')
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    ax.set_xlabel('u'); ax.set_ylabel('v')
+    ax.set_title('Arbitrage Frontiers', pad=20)
+    ax.legend(loc='lower right', fontsize=12)
     plt.tight_layout()
     plt.show()
