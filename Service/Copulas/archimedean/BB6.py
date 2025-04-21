@@ -1,189 +1,327 @@
+"""
+BB6 Copula implementation following the project coding standard:
+
+Norms:
+ 1. Use private `_parameters` with public `@property parameters` and validation in setter.
+ 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
+ 3. Docstrings include **Parameters** and **Returns** with types.
+ 4. Parameter bounds in `bounds_param`; setter enforces them.
+ 5. Uniform boundary clipping with `eps=1e-12` and `np.clip`.
+ 6. Document parameter names (`theta`, `delta`) in `__init__` docstring.
+"""
 import numpy as np
 from scipy.optimize import root_scalar
-from scipy.integrate import quad
+from scipy.integrate import trapz
 
 from Service.Copulas.base import BaseCopula
 
 
 class BB6Copula(BaseCopula):
     """
-    BB6 Copula class (Archimedean with generator φ(t) = [-ln(1 − (1−t)^θ)]^{1/δ})
+    BB6 Copula (Archimedean with generator φ(t) = [-ln(1−(1−t)^θ)]^(1/δ)).
 
-    Attributes
+    Parameters
     ----------
-    family : str
-        Identifier for the copula family. Here, "bb6".
-    name : str
-        Human-readable name for output/logging.
-    bounds_param : list of tuple
-        Bounds for the copula parameters (θ ≥ 1, δ ≥ 1).
-    parameters : np.ndarray
-        Initial guess for the copula parameters [θ, δ].
-    default_optim_method : str
-        Default optimizer to use.
+    theta : float
+        Degree parameter (θ ≥ 1).
+    delta : float
+        Tail-shape parameter (δ ≥ 1).
     """
-
     def __init__(self):
         super().__init__()
         self.type = "bb6"
         self.name = "BB6 Copula"
-        self.bounds_param = [(1.0, None), (1.0, None)]  # θ ≥ 1, δ ≥ 1
-        self.parameters = np.array([2.0, 2.0])          # [θ, δ]
-        self.default_optim_method = "SLSQP"
+        # θ ≥ 1, δ ≥ 1
+        self.bounds_param = [(1.0, None), (1.0, None)]
+        self._parameters = np.array([2.0, 2.0])  # [theta, delta]
+        self.default_optim_method = "Powell"
 
-    def _phi(self, t, θ, δ):
-        """Archimedean generator φ(t)."""
-        return (-np.log(1 - (1 - t)**θ))**(1.0/δ)
+    @property
+    def parameters(self) -> np.ndarray:
+        """
+        Get the copula parameters.
 
-    def _phi_prime(self, t, θ, δ):
-        """Derivative φ'(t) of the generator."""
-        # g(t) = 1 - (1 - t)^θ
-        g = 1 - (1 - t)**θ
-        # g'(t) = θ (1 - t)^(θ - 1)
-        gp = θ * (1 - t)**(θ - 1)
-        # L(t) = -ln(g(t)), L'(t) = -g'(t)/g(t)
+        Returns
+        -------
+        np.ndarray
+            Current parameters [theta, delta].
+        """
+        return self._parameters
+
+    @parameters.setter
+    def parameters(self, param: np.ndarray):
+        """
+        Set and validate copula parameters against bounds_param.
+
+        Parameters
+        ----------
+        param : array-like
+            New parameters [theta, delta].
+
+        Raises
+        ------
+        ValueError
+            If any value is outside its specified bound.
+        """
+        param = np.asarray(param)
+        names = ['theta', 'delta']
+        for idx, (lower, upper) in enumerate(self.bounds_param):
+            val = param[idx]
+            name = names[idx]
+            if lower is not None and val < lower:
+                raise ValueError(f"Parameter '{name}' must be >= {lower}, got {val}")
+        self._parameters = param
+
+    def _phi(self, t: np.ndarray, theta: float, delta: float) -> np.ndarray:
+        """
+        Archimedean generator φ(t) = [-ln(1-(1-t)^θ)]^(1/δ).
+
+        Parameters
+        ----------
+        t : float or ndarray
+        theta : float
+        delta : float
+
+        Returns
+        -------
+        float or ndarray
+        """
+        return (-np.log(1.0 - (1.0 - t)**theta))**(1.0 / delta)
+
+    def _phi_prime(self, t: np.ndarray, theta: float, delta: float) -> np.ndarray:
+        """
+        Derivative φ'(t) of the generator.
+
+        Parameters
+        ----------
+        t : float or ndarray
+        theta : float
+        delta : float
+
+        Returns
+        -------
+        float or ndarray
+        """
+        g = 1.0 - (1.0 - t)**theta
+        gp = theta * (1.0 - t)**(theta - 1)
         L = -np.log(g)
         Lp = -gp / g
-        # φ(t) = [L(t)]^(1/δ) => φ'(t) = (1/δ) L^(1/δ - 1) · L'
-        return (1.0/δ) * L**(1.0/δ - 1) * Lp
+        return (1.0 / delta) * L**(1.0 / delta - 1.0) * Lp
 
-    def get_cdf(self, u, v, param):
+    def get_cdf(self, u, v, param: np.ndarray = None):
         """
-        C(u,v) = 1 − [1 − w]^{1/θ},  where
-          w = exp( − [ x^δ + y^δ ]^{1/δ} )
-          x = −log(1 − (1−u)^θ),  y = −log(1 − (1−v)^θ)
+        Compute BB6 copula CDF: C(u,v) = 1 - [1-w]^(1/θ).
+
+        Parameters
+        ----------
+        u : float or ndarray
+        v : float or ndarray
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or ndarray
+            Copula CDF values.
         """
-        θ, δ = param
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-
-        ubar, vbar = 1 - u, 1 - v
-        x = -np.log(1 - ubar**θ)
-        y = -np.log(1 - vbar**θ)
-        sm = x**δ + y**δ
-        tem = sm**(1.0/δ)
+        ubar, vbar = 1.0 - u, 1.0 - v
+        x = -np.log(1.0 - ubar**theta)
+        y = -np.log(1.0 - vbar**theta)
+        sm = x**delta + y**delta
+        tem = sm**(1.0 / delta)
         w = np.exp(-tem)
+        return 1.0 - (1.0 - w)**(1.0 / theta)
 
-        return 1.0 - (1.0 - w)**(1.0/θ)
+    def get_pdf(self, u, v, param: np.ndarray = None):
+        """
+        Compute BB6 copula PDF by differentiating C.
 
-    def get_pdf(self, u, v, param):
+        Parameters
+        ----------
+        u : float or ndarray
+        v : float or ndarray
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or ndarray
+            Copula PDF values.
         """
-        PDF c(u,v) by differentiating C:
-          prefac = (1−w)^{1/θ−2} · w · (tem/sm^2) · (x^δ/x) · (y^δ/y)
-          bracket = ( (θ−w)·tem + θ(δ−1)(1−w) )
-          jac    = (1−zu)(1−zv)/(zu·zv·ū·v̄)
-        """
-        θ, δ = param
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-
-        ubar, vbar = 1 - u, 1 - v
-        zu = 1 - ubar**θ
-        zv = 1 - vbar**θ
-        x, y = -np.log(zu), -np.log(zv)
-
-        xd, yd = x**δ, y**δ
+        ubar, vbar = 1.0 - u, 1.0 - v
+        zu = 1.0 - ubar**theta
+        zv = 1.0 - vbar**theta
+        x = -np.log(zu)
+        y = -np.log(zv)
+        xd, yd = x**delta, y**delta
         sm = xd + yd
-        tem = sm**(1.0/δ)
+        tem = sm**(1.0 / delta)
         w = np.exp(-tem)
-
-        prefac = (1 - w)**(1.0/θ - 2) * w * (tem / (sm**2)) * (xd / x) * (yd / y)
-        bracket = ( (θ - w) * tem + θ * (δ - 1) * (1 - w) )
-        jac = (1 - zu) * (1 - zv) / (zu * zv * ubar * vbar)
-
+        prefac = (1.0 - w)**(1.0/theta - 2.0) * w * (tem / sm**2) * (xd / x) * (yd / y)
+        bracket = (theta - w) * tem + theta * (delta - 1.0) * (1.0 - w)
+        jac = (1.0 - zu) * (1.0 - zv) / (zu * zv * ubar * vbar)
         return prefac * bracket * jac
 
-    def partial_derivative_C_wrt_u(self, u, v, param):
+    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
         """
-        ∂C/∂u via chain‑rule for BB6:
-          C = 1 - (1-w)^(1/θ),
-          w = exp(- [ x^δ + y^δ ]^(1/δ) ),
-          x = -ln(1-(1-u)^θ), y = -ln(1-(1-v)^θ).
+        Compute ∂C/∂u via chain rule.
+
+        Parameters
+        ----------
+        u : float or ndarray
+        v : float or ndarray
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        float or ndarray
+            ∂C/∂u values.
         """
-        θ, δ = param
+        if param is None:
+            param = self.parameters
+        theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-
-        # build w
-        ubar, vbar = 1 - u, 1 - v
-        x = -np.log(1 - ubar ** θ)
-        y = -np.log(1 - vbar ** θ)
-        xd = x ** δ
-        yd = y ** δ
+        ubar, vbar = 1.0 - u, 1.0 - v
+        x = -np.log(1.0 - ubar**theta)
+        y = -np.log(1.0 - vbar**theta)
+        xd, yd = x**delta, y**delta
         sm = xd + yd
-        tem = sm ** (1.0 / δ)
+        tem = sm**(1.0 / delta)
         w = np.exp(-tem)
-
-        # **correct** dC/dw for C=1-(1-w)^(1/θ)
-        dC_dw = (1.0 / θ) * (1 - w) ** (1.0 / θ - 1)
-        dw_dtem = -w
-        dC_dtem = dC_dw * dw_dtem
-
-        # dtem/dsm and dsm/dx
-        dtem_dsm = (1.0 / δ) * sm ** (1.0 / δ - 1)
-        dsm_dx = δ * x ** (δ - 1)
+        C = 1.0 - (1.0 - w)**(1.0 / theta)
+        dC_dw = (1.0 / theta) * (1.0 - w)**(1.0 / theta - 1.0)
+        dC_dtem = dC_dw * (-w)
+        dtem_dsm = (1.0 / delta) * sm**(1.0 / delta - 1.0)
+        dsm_dx = delta * x**(delta - 1.0)
         dC_dx = dC_dtem * dtem_dsm * dsm_dx
-
-        # dx/du for x = -ln(1-ubar^θ)
-        dx_du = -θ * ubar ** (θ - 1) / (1 - ubar ** θ)
-
-        # ∂C/∂u
+        dx_du = -theta * ubar**(theta - 1.0) / (1.0 - ubar**theta)
         return dC_dx * dx_du
 
-    def partial_derivative_C_wrt_v(self, u, v, param):
+    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
         """
-        ∂C/∂v via symmetry: swap u<->v.
+        Compute ∂C/∂v by symmetry (swap u/v).
+
+        Returns same shape/type as ∂C/∂u.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def conditional_cdf_v_given_u(self, u, v, param):
+    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
         """
-        P(V ≤ v | U = u) = ∂C/∂u ÷ ∂C/∂u at v=1.
+        Compute P(V ≤ v | U = u) = ∂C/∂u(u,v) / ∂C/∂u(u,1).
+
+        Returns
+        -------
+        float or ndarray
         """
         num = self.partial_derivative_C_wrt_u(u, v, param)
-        denom = self.partial_derivative_C_wrt_u(u, 1.0, param)
-        return num / denom
+        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
+        return num / den
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
         """
-        P(U ≤ u | V = v) = ∂C/∂v ÷ ∂C/∂v at u=1.
+        Compute P(U ≤ u | V = v) = ∂C/∂v(u,v) / ∂C/∂v(1,v).
+
+        Returns
+        -------
+        float or ndarray
         """
         num = self.partial_derivative_C_wrt_v(u, v, param)
-        denom = self.partial_derivative_C_wrt_v(1.0, v, param)
-        return num / denom
+        den = self.partial_derivative_C_wrt_v(1.0, v, param)
+        return num / den
 
-    def sample(self, n, param):
+    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
         """
-        Generate n samples via conditional inversion:
-          u ~ Uniform(0,1)
-          For each u, solve C_{2|1}(v|u) = U' by bisection.
+        Generate samples via conditional inversion.
+
+        Parameters
+        ----------
+        n : int
+            Number of samples.
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+
+        Returns
+        -------
+        np.ndarray
+            Shape (n,2) array of samples.
         """
-        θ, δ = param
+        if param is None:
+            param = self.parameters
         eps = 1e-6
         u = np.random.rand(n)
         v = np.empty(n)
         for i in range(n):
             p = np.random.rand()
-            sol = root_scalar(
+            root = root_scalar(
                 lambda vi: self.conditional_cdf_v_given_u(u[i], vi, param) - p,
-                bracket=[eps, 1 - eps],
-                method="bisect", xtol=1e-6
+                bracket=[eps, 1 - eps], method='bisect', xtol=1e-6
             )
-            v[i] = sol.root
+            v[i] = root.root
         return np.column_stack((u, v))
 
-    def kendall_tau(self, param):
+    def kendall_tau(self, param: np.ndarray = None, n: int = 1001) -> float:
         """
-        Compute Kendall's tau via
-          τ = 1 + 4 ∫₀¹ φ(t) / φ'(t) dt,
-        using numerical integration.
+        Estimate Kendall's tau by numerical integration of φ/φ'.
+
+        Parameters
+        ----------
+        param : ndarray, optional
+            Copula parameters [theta, delta].
+        n : int
+            Number of grid points for trapz.
+
+        Returns
+        -------
+        float
+            Estimated Kendall's tau.
         """
-        θ, δ = param
-        integral, _ = quad(
-            lambda t: self._phi(t, θ, δ) / self._phi_prime(t, θ, δ),
-            0.0, 1.0
-        )
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        t = np.linspace(0.0, 1.0, n)
+        t = t[1:-1]
+        phi_vals = self._phi(t, theta, delta)
+        phi_p_vals = self._phi_prime(t, theta, delta)
+        integrand = phi_vals / phi_p_vals
+        integral = trapz(integrand, t)
         return 1.0 + 4.0 * integral
+
+    def LTDC(self, param: np.ndarray = None) -> float:
+        """
+        Lower-tail dependence λ_L = 0 for BB6.
+
+        Returns
+        -------
+        float
+            0.0
+        """
+        return 0.0
+
+    def UTDC(self, param: np.ndarray = None) -> float:
+        """
+        Upper-tail dependence λ_U = 2 - 2^(1/δ).
+
+        Returns
+        -------
+        float
+            Upper-tail dependence.
+        """
+        if param is None:
+            param = self.parameters
+        delta = param[1]
+        return 2.0 - 2.0 ** (1.0 / delta)
