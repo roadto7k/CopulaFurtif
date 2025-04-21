@@ -155,11 +155,20 @@ class BB3Copula(BaseCopula):
         if param is None:
             param = self.parameters
         d, q = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
+        # domain clipping
+        eps_dom = 1e-12
+        u = np.clip(u, eps_dom, 1 - eps_dom)
+        v = np.clip(v, eps_dom, 1 - eps_dom)
+        # threshold clipping uses a larger epsilon to bound exp argument
+        eps_max = 1e-3
+        max_exp = d * (-np.log(eps_max)) ** q
+        # compute generator inputs
+        lu = -np.log(u)
+        lv = -np.log(v)
+        arg_u = np.minimum(d * lu ** q, max_exp)
+        arg_v = np.minimum(d * lv ** q, max_exp)
+        s_u = np.expm1(arg_u)
+        s_v = np.expm1(arg_v)
         s = s_u + s_v
         return np.exp(-self._h(s, param))
 
@@ -184,18 +193,29 @@ class BB3Copula(BaseCopula):
         if param is None:
             param = self.parameters
         d, q = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
+        # domain clipping
+        eps_dom = 1e-12
+        u = np.clip(u, eps_dom, 1 - eps_dom)
+        v = np.clip(v, eps_dom, 1 - eps_dom)
+        # threshold clipping uses larger epsilon
+        eps_max = 1e-3
+        max_exp = d * (-np.log(eps_max)) ** q
+        # logs
+        lu = -np.log(u)
+        lv = -np.log(v)
+        arg_u = np.minimum(d * lu ** q, max_exp)
+        arg_v = np.minimum(d * lv ** q, max_exp)
+        s_u = np.expm1(arg_u)
+        s_v = np.expm1(arg_v)
         s = s_u + s_v
+        # generator derivatives
         h = self._h(s, param)
         h1 = self._h_prime(s, param)
         h2 = self._h_double(s, param)
         phi_dd = np.exp(-h) * (h1 ** 2 - h2)
-        phi_inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (((-np.log(u)) ** (q - 1)) / u)
-        phi_inv_v_prime = -d * q * np.exp(d * (-np.log(v)) ** q) * (((-np.log(v)) ** (q - 1)) / v)
+        # inverse generator derivatives
+        phi_inv_u_prime = -d * q * np.exp(np.minimum(d * lu ** q, max_exp)) * (lu ** (q - 1) / u)
+        phi_inv_v_prime = -d * q * np.exp(np.minimum(d * lv ** q, max_exp)) * (lv ** (q - 1) / v)
         return phi_dd * phi_inv_u_prime * phi_inv_v_prime
 
     def kendall_tau(self, param: np.ndarray = None, n: int = 201) -> float:
@@ -303,15 +323,25 @@ class BB3Copula(BaseCopula):
         if param is None:
             param = self.parameters
         d, q = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
+        # domain clipping
+        eps_dom = 1e-12
+        u = np.clip(u, eps_dom, 1 - eps_dom)
+        v = np.clip(v, eps_dom, 1 - eps_dom)
+        # threshold clipping
+        eps_max = 1e-3
+        max_exp = d * (-np.log(eps_max)) ** q
+        # logs
+        lu = -np.log(u)
+        lv = -np.log(v)
+        arg_u = np.minimum(d * lu ** q, max_exp)
+        arg_v = np.minimum(d * lv ** q, max_exp)
+        s_u = np.expm1(arg_u)
+        s_v = np.expm1(arg_v)
         s = s_u + s_v
+        # derivative
         h1 = self._h_prime(s, param)
         phi_p = -h1 * np.exp(-self._h(s, param))
-        phi_inv_v_prime = -d * q * np.exp(d * (-np.log(v)) ** q) * (((-np.log(v)) ** (q - 1)) / v)
+        phi_inv_v_prime = -d * q * np.exp(arg_v) * (lv ** (q - 1) / v)
         return phi_p * phi_inv_v_prime
 
     def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
@@ -333,15 +363,25 @@ class BB3Copula(BaseCopula):
         if param is None:
             param = self.parameters
         d, q = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
+        # domain clipping
+        eps_dom = 1e-12
+        u = np.clip(u, eps_dom, 1 - eps_dom)
+        v = np.clip(v, eps_dom, 1 - eps_dom)
+        # threshold clipping
+        eps_max = 1e-3
+        max_exp = d * (-np.log(eps_max)) ** q
+        # logs
+        lu = -np.log(u)
+        lv = -np.log(v)
+        arg_u = np.minimum(d * lu ** q, max_exp)
+        arg_v = np.minimum(d * lv ** q, max_exp)
+        s_u = np.expm1(arg_u)
+        s_v = np.expm1(arg_v)
         s = s_u + s_v
+        # derivative
         h1 = self._h_prime(s, param)
         phi_p = -h1 * np.exp(-self._h(s, param))
-        phi_inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (((-np.log(u)) ** (q - 1)) / u)
+        phi_inv_u_prime = -d * q * np.exp(arg_u) * (lu ** (q - 1) / u)
         return phi_p * phi_inv_u_prime
 
     def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
