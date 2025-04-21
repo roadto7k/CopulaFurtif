@@ -1,3 +1,4 @@
+[![codecov](https://codecov.io/gh/roadto7k/CopulaFurtif/branch/main/graph/badge.svg)](https://codecov.io/gh/roadto7k/CopulaFurtif)
 # CopulaFurtif
 
 Un projet modulaire de copules bivariées suivant l'architecture hexagonale avec support complet du fitting, des diagnostics, des visualisations et des tests.
