@@ -1,18 +1,18 @@
 .. _extending:
 
-Étendre le pipeline : ajouter une copule
-========================================
+Extending the Pipeline: Adding a Copula
+=======================================
 
-Cette section vous montre comment intégrer une nouvelle copule dans le pipeline CopulaFurtif selon l'architecture hexagonale.
+This section shows you how to integrate a new copula into the CopulaFurtif pipeline following the hexagonal architecture.
 
 
-🧱 Étapes pour ajouter une copule
-----------------------------------
+🧱 Steps to Add a Copula
+------------------------
 
-1. **Créer la classe de la copule**
+1. **Create the copula class**
 
-   - Héritez de `CopulaModel` (et `ModelSelectionMixin`, `SupportsTailDependence` si applicable)
-   - Implémentez les méthodes : `get_cdf`, `get_pdf`, `sample`, `kendall_tau`, etc.
+   - Inherit from `CopulaModel` (and `ModelSelectionMixin`, `SupportsTailDependence` if applicable)
+   - Implement the methods: `get_cdf`, `get_pdf`, `sample`, `kendall_tau`, etc.
 
 .. code-block:: python
 
@@ -38,7 +38,7 @@ Cette section vous montre comment intégrer une nouvelle copule dans le pipeline
        def kendall_tau(self, param=None):
            ...
 
-2. **Ajouter dans la factory**
+2. **Add to the factory**
 
 .. code-block:: python
 
@@ -48,29 +48,29 @@ Cette section vous montre comment intégrer une nouvelle copule dans le pipeline
    CopulaFactory.register("mycopula", MyCopula)
 
 
-3. **Écrire un test unitaire**
+3. **Write a unit test**
 
-   - Testez tous les comportements : paramètres, PDF, CDF, dérivées, etc.
-   - Placez le fichier dans `tests/units/test_my_model.py`
-
-
-4. **(Facultatif) Ajouter une visualisation**
-
-   Si besoin, ajoutez une fonction dans `copula_viz_adapter.py`
+   - Test all behaviors: parameters, PDF, CDF, derivatives, etc.
+   - Place the file in `tests/units/test_my_model.py`
 
 
-🧪 Exemple complet
-------------------
+4. **(Optional) Add a visualization**
 
-Un exemple d’intégration complète (copule Joe ou Gumbel) est disponible dans `tests/` et `domain/models/`.
-
-
-📌 Bonnes pratiques
--------------------
-
-- Utilisez `np.clip` pour les bornes (éviter les log(0), division par 0)
-- Ajoutez `@property parameters` avec setter validant `bounds_param`
-- Implémentez `__str__` si utile pour debug ou logs
+   If needed, add a function in `copula_viz_adapter.py`
 
 
-📚 Voir aussi : `copula_factory.py`, `test_factory_and_archimedean.py`, `diagnostics_service.py`
+🧪 Full Example
+----------------
+
+A complete integration example (Joe or Gumbel copula) is available in `tests/` and `domain/models/`.
+
+
+📌 Best Practices
+-----------------
+
+- Use `np.clip` for bounds (to avoid log(0), division by 0)
+- Add `@property parameters` with a setter validating `bounds_param`
+- Implement `__str__` if useful for debugging or logs
+
+
+📚 See also: `copula_factory.py`, `test_factory_and_archimedean.py`, `diagnostics_service.py`

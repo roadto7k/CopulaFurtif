@@ -3,18 +3,18 @@
 Installation
 ============
 
-Voici comment installer et configurer CopulaFurtif dans votre environnement local.
+Here's how to install and configure CopulaFurtif in your local environment.
 
 
-⚙️ Prérequis
-------------
+⚙️ Prerequisites
+----------------
 
 - Python >= 3.9
-- `poetry` (recommandé) ou `pip`
-- Unix-like OS recommandé (Linux/macOS)
+- `poetry` (recommended) or `pip`
+- Unix-like OS recommended (Linux/macOS)
 
 
-📦 Installation avec Poetry (recommandée)
+📦 Installation with Poetry (recommended)
 -----------------------------------------
 
 .. code-block:: bash
@@ -25,8 +25,8 @@ Voici comment installer et configurer CopulaFurtif dans votre environnement loca
    poetry shell
 
 
-📦 Installation avec pip (alternatif)
--------------------------------------
+📦 Installation with pip (alternative)
+--------------------------------------
 
 .. code-block:: bash
 
@@ -35,38 +35,38 @@ Voici comment installer et configurer CopulaFurtif dans votre environnement loca
    pip install -r requirements.txt
 
 
-💡 (Optionnel) : installer `pre-commit`
-----------------------------------------
+💡 (Optional): install `pre-commit`
+-----------------------------------
 
 .. code-block:: bash
 
    pre-commit install
 
-Cela active le lint automatique avant chaque commit (PEP8, isort, black, etc).
+This enables automatic linting before each commit (PEP8, isort, black, etc).
 
 
-🧪 Lancer les tests
--------------------
+🧪 Run the tests
+----------------
 
 .. code-block:: bash
 
-   make test         # ou: pytest tests/
-   make coverage-html  # et ouvrir htmlcov/index.html
+   make test         # or: pytest tests/
+   make coverage-html  # then open htmlcov/index.html
 
 
-📚 Générer la documentation
-----------------------------
+📚 Generate the documentation
+-----------------------------
 
 .. code-block:: bash
 
    cd docs
    make html
 
-La documentation est ensuite accessible dans `docs/_build/html/index.html`
+The documentation will then be available in `docs/_build/html/index.html`
 
 
-📂 Arborescence simplifiée
---------------------------
+📂 Simplified folder structure
+------------------------------
 
 .. code-block:: text
 
@@ -81,4 +81,4 @@ La documentation est ensuite accessible dans `docs/_build/html/index.html`
    └── pyproject.toml
 
 
-✅ Et voilà, vous êtes prêt à explorer le monde fascinant des copules !
+✅ And that’s it — you're ready to explore the fascinating world of copulas!
