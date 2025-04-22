@@ -1,15 +1,15 @@
 .. _usage:
 
-Utilisation de base
-===================
+Basic Usage
+===========
 
-Cette section vous guide dans l'utilisation du pipeline `CopulaFurtif` pour créer, manipuler et diagnostiquer des copules bivariées.
+This section guides you through using the `CopulaFurtif` pipeline to create, manipulate, and diagnose bivariate copulas.
 
 
-🧱 Création de copules
-----------------------
+🧱 Creating Copulas
+-------------------
 
-Toutes les copules sont accessibles via la `CopulaFactory` :
+All copulas are accessible via the `CopulaFactory`:
 
 .. code-block:: python
 
@@ -18,18 +18,18 @@ Toutes les copules sont accessibles via la `CopulaFactory` :
    copula = CopulaFactory.create("gaussian")
    print(copula.name)  # Gaussian Copula
 
-Copules disponibles : `gaussian`, `student`, `clayton`, `frank`, `joe`, `gumbel`, `amh`, `tawn3`, `galambos`, `plackett`, `fgm`, etc.
+Available copulas: `gaussian`, `student`, `clayton`, `frank`, `joe`, `gumbel`, `amh`, `tawn3`, `galambos`, `plackett`, `fgm`, etc.
 
 
-📊 Données d'entrée
--------------------
+📊 Input Data
+-------------
 
-Le pipeline attend généralement :
+The pipeline generally expects:
 
-- **Raw data** : données originales pour Kendall's tau (`[[X1, Y1], [X2, Y2], ...]`)
-- **Pseudo-observations** : données uniformisées `u, v ∈ (0,1)` via les marges
+- **Raw data**: original data for Kendall's tau (`[[X1, Y1], [X2, Y2], ...]`)
+- **Pseudo-observations**: data transformed to uniform scale `u, v ∈ (0,1)` using marginals
 
-Générer des pseudo-observations :
+Generate pseudo-observations:
 
 .. code-block:: python
 
@@ -38,12 +38,12 @@ Générer des pseudo-observations :
    u, v = pseudo_obs(data)  # data = [[X1, Y1], [X2, Y2], ...]
 
 
-📈 Accès aux méthodes de base
------------------------------
+📈 Accessing Basic Methods
+--------------------------
 
 .. code-block:: python
 
-   copula.parameters = [0.5]       # ou [rho, nu] pour Student
+   copula.parameters = [0.5]       # or [rho, nu] for Student
    print(copula.get_cdf(0.4, 0.8))
    print(copula.get_pdf(0.4, 0.8))
    print(copula.kendall_tau())
@@ -51,8 +51,8 @@ Générer des pseudo-observations :
    samples = copula.sample(100)
 
 
-🔬 Diagnostic
--------------
+🔬 Diagnostics
+--------------
 
 .. code-block:: python
 
@@ -62,7 +62,7 @@ Générer des pseudo-observations :
    scores = diag.evaluate(data, copula)
    print(scores)
 
-Résultat : dict avec `LogLik`, `AIC`, `BIC`, `Kendall Tau Error`, etc.
+Result: a dict with `LogLik`, `AIC`, `BIC`, `Kendall Tau Error`, etc.
 
 
-📌 À venir : fitting & visualisation
+📌 Coming Soon: Fitting & Visualization

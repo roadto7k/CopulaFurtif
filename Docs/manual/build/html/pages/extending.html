@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Étendre le pipeline : ajouter une copule &mdash; CopulaFurtif 1.0.0 documentation</title>
+  <title>Extending the Pipeline: Adding a Copula &mdash; CopulaFurtif 1.0.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/bullets.css" />
@@ -20,7 +20,8 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="prev" title="Visualisation" href="visualization.html" /> 
+    <link rel="next" title="core" href="../api/modules.html" />
+    <link rel="prev" title="Visualization" href="visualization.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -45,15 +46,18 @@
               <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Utilisation de base</a></li>
-<li class="toctree-l1"><a class="reference internal" href="fitting.html">Ajustement de copules (fitting)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="visualization.html">Visualisation</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Étendre le pipeline : ajouter une copule</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#etapes-pour-ajouter-une-copule">🧱 Étapes pour ajouter une copule</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#exemple-complet">🧪 Exemple complet</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#bonnes-pratiques">📌 Bonnes pratiques</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Basic Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fitting.html">Copula Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="visualization.html">Visualization</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Extending the Pipeline: Adding a Copula</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#steps-to-add-a-copula">🧱 Steps to Add a Copula</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#full-example">🧪 Full Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#best-practices">📌 Best Practices</a></li>
 </ul>
 </li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api/modules.html">core</a></li>
 </ul>
 
         </div>
@@ -70,7 +74,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Étendre le pipeline : ajouter une copule</li>
+      <li class="breadcrumb-item active">Extending the Pipeline: Adding a Copula</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/pages/extending.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -80,16 +84,16 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="etendre-le-pipeline-ajouter-une-copule">
-<span id="extending"></span><h1>Étendre le pipeline : ajouter une copule<a class="headerlink" href="#etendre-le-pipeline-ajouter-une-copule" title="Link to this heading"></a></h1>
-<p>Cette section vous montre comment intégrer une nouvelle copule dans le pipeline CopulaFurtif selon l’architecture hexagonale.</p>
-<section id="etapes-pour-ajouter-une-copule">
-<h2>🧱 Étapes pour ajouter une copule<a class="headerlink" href="#etapes-pour-ajouter-une-copule" title="Link to this heading"></a></h2>
+  <section id="extending-the-pipeline-adding-a-copula">
+<span id="extending"></span><h1>Extending the Pipeline: Adding a Copula<a class="headerlink" href="#extending-the-pipeline-adding-a-copula" title="Link to this heading"></a></h1>
+<p>This section shows you how to integrate a new copula into the CopulaFurtif pipeline following the hexagonal architecture.</p>
+<section id="steps-to-add-a-copula">
+<h2>🧱 Steps to Add a Copula<a class="headerlink" href="#steps-to-add-a-copula" title="Link to this heading"></a></h2>
 <ol class="arabic simple">
-<li><p><strong>Créer la classe de la copule</strong></p>
+<li><p><strong>Create the copula class</strong></p>
 <ul class="simple">
-<li><p>Héritez de <cite>CopulaModel</cite> (et <cite>ModelSelectionMixin</cite>, <cite>SupportsTailDependence</cite> si applicable)</p></li>
-<li><p>Implémentez les méthodes : <cite>get_cdf</cite>, <cite>get_pdf</cite>, <cite>sample</cite>, <cite>kendall_tau</cite>, etc.</p></li>
+<li><p>Inherit from <cite>CopulaModel</cite> (and <cite>ModelSelectionMixin</cite>, <cite>SupportsTailDependence</cite> if applicable)</p></li>
+<li><p>Implement the methods: <cite>get_cdf</cite>, <cite>get_pdf</cite>, <cite>sample</cite>, <cite>kendall_tau</cite>, etc.</p></li>
 </ul>
 </li>
 </ol>
@@ -117,7 +121,7 @@
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">
-<li><p><strong>Ajouter dans la factory</strong></p></li>
+<li><p><strong>Add to the factory</strong></p></li>
 </ol>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.domain.factories.copula_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">CopulaFactory</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.domain.models.archimedean.mycopula</span><span class="w"> </span><span class="kn">import</span> <span class="n">MyCopula</span>
@@ -126,29 +130,29 @@
 </pre></div>
 </div>
 <ol class="arabic" start="3">
-<li><p><strong>Écrire un test unitaire</strong></p>
+<li><p><strong>Write a unit test</strong></p>
 <ul class="simple">
-<li><p>Testez tous les comportements : paramètres, PDF, CDF, dérivées, etc.</p></li>
-<li><p>Placez le fichier dans <cite>tests/units/test_my_model.py</cite></p></li>
+<li><p>Test all behaviors: parameters, PDF, CDF, derivatives, etc.</p></li>
+<li><p>Place the file in <cite>tests/units/test_my_model.py</cite></p></li>
 </ul>
 </li>
-<li><p><strong>(Facultatif) Ajouter une visualisation</strong></p>
-<p>Si besoin, ajoutez une fonction dans <cite>copula_viz_adapter.py</cite></p>
+<li><p><strong>(Optional) Add a visualization</strong></p>
+<p>If needed, add a function in <cite>copula_viz_adapter.py</cite></p>
 </li>
 </ol>
 </section>
-<section id="exemple-complet">
-<h2>🧪 Exemple complet<a class="headerlink" href="#exemple-complet" title="Link to this heading"></a></h2>
-<p>Un exemple d’intégration complète (copule Joe ou Gumbel) est disponible dans <cite>tests/</cite> et <cite>domain/models/</cite>.</p>
+<section id="full-example">
+<h2>🧪 Full Example<a class="headerlink" href="#full-example" title="Link to this heading"></a></h2>
+<p>A complete integration example (Joe or Gumbel copula) is available in <cite>tests/</cite> and <cite>domain/models/</cite>.</p>
 </section>
-<section id="bonnes-pratiques">
-<h2>📌 Bonnes pratiques<a class="headerlink" href="#bonnes-pratiques" title="Link to this heading"></a></h2>
+<section id="best-practices">
+<h2>📌 Best Practices<a class="headerlink" href="#best-practices" title="Link to this heading"></a></h2>
 <ul class="simple">
-<li><p>Utilisez <cite>np.clip</cite> pour les bornes (éviter les log(0), division par 0)</p></li>
-<li><p>Ajoutez <cite>&#64;property parameters</cite> avec setter validant <cite>bounds_param</cite></p></li>
-<li><p>Implémentez <cite>__str__</cite> si utile pour debug ou logs</p></li>
+<li><p>Use <cite>np.clip</cite> for bounds (to avoid log(0), division by 0)</p></li>
+<li><p>Add <cite>&#64;property parameters</cite> with a setter validating <cite>bounds_param</cite></p></li>
+<li><p>Implement <cite>__str__</cite> if useful for debugging or logs</p></li>
 </ul>
-<p>📚 Voir aussi : <cite>copula_factory.py</cite>, <cite>test_factory_and_archimedean.py</cite>, <cite>diagnostics_service.py</cite></p>
+<p>📚 See also: <cite>copula_factory.py</cite>, <cite>test_factory_and_archimedean.py</cite>, <cite>diagnostics_service.py</cite></p>
 </section>
 </section>
 
@@ -156,7 +160,8 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="visualization.html" class="btn btn-neutral float-left" title="Visualisation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="visualization.html" class="btn btn-neutral float-left" title="Visualization" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../api/modules.html" class="btn btn-neutral float-right" title="core" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

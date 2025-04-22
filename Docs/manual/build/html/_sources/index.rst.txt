@@ -7,11 +7,11 @@ Welcome to CopulaFurtif's documentation!
    :align: center
    :scale: 50 %
 
-CopulaFurtif est un pipeline modulaire pour la modélisation, le fitting et l’analyse de copules bivariées.
+CopulaFurtif is a modular pipeline for modeling, fitting, and analyzing bivariate copulas.
 
 ---
 
-📚 Sections disponibles :
+📚 Available Sections:
 
 .. toctree::
    :maxdepth: 2
@@ -25,7 +25,7 @@ CopulaFurtif est un pipeline modulaire pour la modélisation, le fitting et l’
 
 .. toctree::
    :maxdepth: 1
-   :caption: Références API
+   :caption: API References
 
 .. toctree::
    :maxdepth: 2
@@ -38,18 +38,15 @@ CopulaFurtif est un pipeline modulaire pour la modélisation, le fitting et l’
 🚀 Quickstart
 -------------
 
-Voici un exemple rapide :
+Here's a quick example:
 
 .. code-block:: python
 
    from CopulaFurtif import CopulaFactory
    from CopulaFurtif.core.copulas.application.use_cases.fit_copula import FitCopulaUseCase
 
-   copula = CopulaFactory.create(\"gaussian\")
-   data = [[0.1, 0.2], [0.4, 0.5], [0.8, 0.9]]  # exemple
+   copula = CopulaFactory.create("gaussian")
+   data = [[0.1, 0.2], [0.4, 0.5], [0.8, 0.9]]  # example
 
    fit_result = FitCopulaUseCase().fit_cmle(data, copula)
-   print(\"Params:\", copula.parameters)
-
-
-
+   print("Params:", copula.parameters)

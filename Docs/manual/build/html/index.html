@@ -45,10 +45,10 @@
               <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="pages/installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pages/usage.html">Utilisation de base</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pages/fitting.html">Ajustement de copules (fitting)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pages/visualization.html">Visualisation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pages/extending.html">Étendre le pipeline : ajouter une copule</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/usage.html">Basic Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/fitting.html">Copula Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/visualization.html">Visualization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/extending.html">Extending the Pipeline: Adding a Copula</a></li>
 </ul>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="api/modules.html">core</a></li>
@@ -82,50 +82,50 @@
 <h1>Welcome to CopulaFurtif’s documentation!<a class="headerlink" href="#welcome-to-copulafurtif-s-documentation" title="Link to this heading"></a></h1>
 <a class="reference internal image-reference" href="_images/saucisson.jpg"><img alt="_images/saucisson.jpg" class="align-center" src="_images/saucisson.jpg" style="width: 186.5px; height: 260.5px;" />
 </a>
-<p>CopulaFurtif est un pipeline modulaire pour la modélisation, le fitting et l’analyse de copules bivariées.</p>
+<p>CopulaFurtif is a modular pipeline for modeling, fitting, and analyzing bivariate copulas.</p>
 <p>—</p>
-<p>📚 Sections disponibles :</p>
+<p>📚 Available Sections:</p>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="pages/installation.html">Installation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#prerequis">⚙️ Prérequis</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#installation-avec-poetry-recommandee">📦 Installation avec Poetry (recommandée)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#installation-avec-pip-alternatif">📦 Installation avec pip (alternatif)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#optionnel-installer-pre-commit">💡 (Optionnel) : installer <cite>pre-commit</cite></a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#lancer-les-tests">🧪 Lancer les tests</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#generer-la-documentation">📚 Générer la documentation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#arborescence-simplifiee">📂 Arborescence simplifiée</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#prerequisites">⚙️ Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#installation-with-poetry-recommended">📦 Installation with Poetry (recommended)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#installation-with-pip-alternative">📦 Installation with pip (alternative)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#optional-install-pre-commit">💡 (Optional): install <cite>pre-commit</cite></a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#run-the-tests">🧪 Run the tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#generate-the-documentation">📚 Generate the documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#simplified-folder-structure">📂 Simplified folder structure</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="pages/usage.html">Utilisation de base</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#creation-de-copules">🧱 Création de copules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#donnees-d-entree">📊 Données d’entrée</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#acces-aux-methodes-de-base">📈 Accès aux méthodes de base</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#diagnostic">🔬 Diagnostic</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/usage.html">Basic Usage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#creating-copulas">🧱 Creating Copulas</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#input-data">📊 Input Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#accessing-basic-methods">📈 Accessing Basic Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/usage.html#diagnostics">🔬 Diagnostics</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="pages/fitting.html">Ajustement de copules (fitting)</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#objectif">🧪 Objectif</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#outils-disponibles">⚙️ Outils disponibles</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#exemple-cmle">🚀 Exemple : CMLE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#exemple-mle-avec-marges">📦 Exemple : MLE avec marges</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#exemple-ifm">🔁 Exemple : IFM</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#options-d-optimisation">🔍 Options d’optimisation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#conseils">📌 Conseils</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/fitting.html">Copula Fitting</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#goal">🧪 Goal</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#available-tools">⚙️ Available Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#example-cmle">🚀 Example: CMLE</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#example-mle-with-marginals">📦 Example: MLE with marginals</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#example-ifm">🔁 Example: IFM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#optimization-options">🔍 Optimization Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/fitting.html#tips">📌 Tips</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="pages/visualization.html">Visualisation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#heatmap-des-residus-empirical-model">🌡️ Heatmap des résidus (Empirical - Model)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#courbes-conditionnelles">📈 Courbes conditionnelles</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#benchmark-entre-copules">📊 Benchmark entre copules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#resume-visuel-integre">🎯 Résumé visuel intégré</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/visualization.html">Visualization</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#residual-heatmap-empirical-model">🌡️ Residual Heatmap (Empirical - Model)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#conditional-curves">📈 Conditional Curves</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#copula-benchmarking">📊 Copula Benchmarking</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/visualization.html#integrated-visual-summary">🎯 Integrated Visual Summary</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="pages/extending.html">Étendre le pipeline : ajouter une copule</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="pages/extending.html#etapes-pour-ajouter-une-copule">🧱 Étapes pour ajouter une copule</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/extending.html#exemple-complet">🧪 Exemple complet</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pages/extending.html#bonnes-pratiques">📌 Bonnes pratiques</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/extending.html">Extending the Pipeline: Adding a Copula</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/extending.html#steps-to-add-a-copula">🧱 Steps to Add a Copula</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/extending.html#full-example">🧪 Full Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/extending.html#best-practices">📌 Best Practices</a></li>
 </ul>
 </li>
 </ul>
@@ -143,15 +143,15 @@
 <p>—</p>
 <section id="quickstart">
 <h2>🚀 Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading"></a></h2>
-<p>Voici un exemple rapide :</p>
+<p>Here’s a quick example:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif</span><span class="w"> </span><span class="kn">import</span> <span class="n">CopulaFactory</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.application.use_cases.fit_copula</span><span class="w"> </span><span class="kn">import</span> <span class="n">FitCopulaUseCase</span>
 
-<span class="n">copula</span> <span class="o">=</span> <span class="n">CopulaFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>\<span class="s2">&quot;gaussian</span><span class="se">\&quot;</span><span class="s2">)</span>
-<span class="n">data</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">]]</span>  <span class="c1"># exemple</span>
+<span class="n">copula</span> <span class="o">=</span> <span class="n">CopulaFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">&quot;gaussian&quot;</span><span class="p">)</span>
+<span class="n">data</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">]]</span>  <span class="c1"># example</span>
 
 <span class="n">fit_result</span> <span class="o">=</span> <span class="n">FitCopulaUseCase</span><span class="p">()</span><span class="o">.</span><span class="n">fit_cmle</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copula</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span>\<span class="s2">&quot;Params:</span><span class="se">\&quot;</span><span class="s2">, copula.parameters)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Params:&quot;</span><span class="p">,</span> <span class="n">copula</span><span class="o">.</span><span class="n">parameters</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>

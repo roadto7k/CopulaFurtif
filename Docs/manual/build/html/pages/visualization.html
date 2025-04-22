@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualisation &mdash; CopulaFurtif 1.0.0 documentation</title>
+  <title>Visualization &mdash; CopulaFurtif 1.0.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/bullets.css" />
@@ -20,8 +20,8 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Étendre le pipeline : ajouter une copule" href="extending.html" />
-    <link rel="prev" title="Ajustement de copules (fitting)" href="fitting.html" /> 
+    <link rel="next" title="Extending the Pipeline: Adding a Copula" href="extending.html" />
+    <link rel="prev" title="Copula Fitting" href="fitting.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -46,16 +46,19 @@
               <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Utilisation de base</a></li>
-<li class="toctree-l1"><a class="reference internal" href="fitting.html">Ajustement de copules (fitting)</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Visualisation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#heatmap-des-residus-empirical-model">🌡️ Heatmap des résidus (Empirical - Model)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#courbes-conditionnelles">📈 Courbes conditionnelles</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#benchmark-entre-copules">📊 Benchmark entre copules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#resume-visuel-integre">🎯 Résumé visuel intégré</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Basic Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fitting.html">Copula Fitting</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Visualization</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#residual-heatmap-empirical-model">🌡️ Residual Heatmap (Empirical - Model)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#conditional-curves">📈 Conditional Curves</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#copula-benchmarking">📊 Copula Benchmarking</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#integrated-visual-summary">🎯 Integrated Visual Summary</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="extending.html">Étendre le pipeline : ajouter une copule</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extending.html">Extending the Pipeline: Adding a Copula</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api/modules.html">core</a></li>
 </ul>
 
         </div>
@@ -72,7 +75,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Visualisation</li>
+      <li class="breadcrumb-item active">Visualization</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/pages/visualization.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -82,29 +85,29 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="visualisation">
-<span id="visualization"></span><h1>Visualisation<a class="headerlink" href="#visualisation" title="Link to this heading"></a></h1>
-<p>CopulaFurtif propose plusieurs outils pour visualiser la qualité d’ajustement des copules.</p>
-<section id="heatmap-des-residus-empirical-model">
-<h2>🌡️ Heatmap des résidus (Empirical - Model)<a class="headerlink" href="#heatmap-des-residus-empirical-model" title="Link to this heading"></a></h2>
+  <section id="visualization">
+<span id="id1"></span><h1>Visualization<a class="headerlink" href="#visualization" title="Link to this heading"></a></h1>
+<p>CopulaFurtif provides several tools to visualize the quality of copula fitting.</p>
+<section id="residual-heatmap-empirical-model">
+<h2>🌡️ Residual Heatmap (Empirical - Model)<a class="headerlink" href="#residual-heatmap-empirical-model" title="Link to this heading"></a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.infrastructure.visualization.copula_viz_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_residual_heatmap</span>
 
 <span class="n">u</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">pseudo_obs</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 <span class="n">plot_residual_heatmap</span><span class="p">(</span><span class="n">copula</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Cela produit une carte des écarts entre la CDF empirique et celle du modèle.</p>
+<p>This produces a map of differences between the empirical CDF and the model CDF.</p>
 </section>
-<section id="courbes-conditionnelles">
-<h2>📈 Courbes conditionnelles<a class="headerlink" href="#courbes-conditionnelles" title="Link to this heading"></a></h2>
+<section id="conditional-curves">
+<h2>📈 Conditional Curves<a class="headerlink" href="#conditional-curves" title="Link to this heading"></a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.infrastructure.visualization.copula_viz_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_conditional_curves</span>
 
 <span class="n">plot_conditional_curves</span><span class="p">(</span><span class="n">copula</span><span class="p">,</span> <span class="n">fixed_values</span><span class="o">=</span><span class="p">[</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">],</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;u_given_v&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
-<section id="benchmark-entre-copules">
-<h2>📊 Benchmark entre copules<a class="headerlink" href="#benchmark-entre-copules" title="Link to this heading"></a></h2>
+<section id="copula-benchmarking">
+<h2>📊 Copula Benchmarking<a class="headerlink" href="#copula-benchmarking" title="Link to this heading"></a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.infrastructure.visualization.copula_viz_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_copula_comparison</span>
 
 <span class="n">copulas</span> <span class="o">=</span> <span class="p">[</span><span class="n">CopulaFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">&quot;gaussian&quot;</span><span class="p">),</span> <span class="n">CopulaFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">&quot;gumbel&quot;</span><span class="p">)]</span>
@@ -115,8 +118,8 @@
 </pre></div>
 </div>
 </section>
-<section id="resume-visuel-integre">
-<h2>🎯 Résumé visuel intégré<a class="headerlink" href="#resume-visuel-integre" title="Link to this heading"></a></h2>
+<section id="integrated-visual-summary">
+<h2>🎯 Integrated Visual Summary<a class="headerlink" href="#integrated-visual-summary" title="Link to this heading"></a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.infrastructure.visualization.copula_viz_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">full_copula_summary</span>
 
 <span class="n">full_copula_summary</span><span class="p">(</span><span class="n">copula</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">40</span><span class="p">)</span>
@@ -129,8 +132,8 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="fitting.html" class="btn btn-neutral float-left" title="Ajustement de copules (fitting)" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="extending.html" class="btn btn-neutral float-right" title="Étendre le pipeline : ajouter une copule" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="fitting.html" class="btn btn-neutral float-left" title="Copula Fitting" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="extending.html" class="btn btn-neutral float-right" title="Extending the Pipeline: Adding a Copula" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

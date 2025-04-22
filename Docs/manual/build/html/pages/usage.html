@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Utilisation de base &mdash; CopulaFurtif 1.0.0 documentation</title>
+  <title>Basic Usage &mdash; CopulaFurtif 1.0.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/bullets.css" />
@@ -20,7 +20,7 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Ajustement de copules (fitting)" href="fitting.html" />
+    <link rel="next" title="Copula Fitting" href="fitting.html" />
     <link rel="prev" title="Installation" href="installation.html" /> 
 </head>
 
@@ -46,16 +46,19 @@
               <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Utilisation de base</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#creation-de-copules">🧱 Création de copules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#donnees-d-entree">📊 Données d’entrée</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#acces-aux-methodes-de-base">📈 Accès aux méthodes de base</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#diagnostic">🔬 Diagnostic</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Basic Usage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#creating-copulas">🧱 Creating Copulas</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#input-data">📊 Input Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#accessing-basic-methods">📈 Accessing Basic Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#diagnostics">🔬 Diagnostics</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="fitting.html">Ajustement de copules (fitting)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="visualization.html">Visualisation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extending.html">Étendre le pipeline : ajouter une copule</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fitting.html">Copula Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="visualization.html">Visualization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extending.html">Extending the Pipeline: Adding a Copula</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api/modules.html">core</a></li>
 </ul>
 
         </div>
@@ -72,7 +75,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Utilisation de base</li>
+      <li class="breadcrumb-item active">Basic Usage</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/pages/usage.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -82,37 +85,37 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="utilisation-de-base">
-<span id="usage"></span><h1>Utilisation de base<a class="headerlink" href="#utilisation-de-base" title="Link to this heading"></a></h1>
-<p>Cette section vous guide dans l’utilisation du pipeline <cite>CopulaFurtif</cite> pour créer, manipuler et diagnostiquer des copules bivariées.</p>
-<section id="creation-de-copules">
-<h2>🧱 Création de copules<a class="headerlink" href="#creation-de-copules" title="Link to this heading"></a></h2>
-<p>Toutes les copules sont accessibles via la <cite>CopulaFactory</cite> :</p>
+  <section id="basic-usage">
+<span id="usage"></span><h1>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h1>
+<p>This section guides you through using the <cite>CopulaFurtif</cite> pipeline to create, manipulate, and diagnose bivariate copulas.</p>
+<section id="creating-copulas">
+<h2>🧱 Creating Copulas<a class="headerlink" href="#creating-copulas" title="Link to this heading"></a></h2>
+<p>All copulas are accessible via the <cite>CopulaFactory</cite>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.domain.factories.copula_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">CopulaFactory</span>
 
 <span class="n">copula</span> <span class="o">=</span> <span class="n">CopulaFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">&quot;gaussian&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">copula</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>  <span class="c1"># Gaussian Copula</span>
 </pre></div>
 </div>
-<p>Copules disponibles : <cite>gaussian</cite>, <cite>student</cite>, <cite>clayton</cite>, <cite>frank</cite>, <cite>joe</cite>, <cite>gumbel</cite>, <cite>amh</cite>, <cite>tawn3</cite>, <cite>galambos</cite>, <cite>plackett</cite>, <cite>fgm</cite>, etc.</p>
+<p>Available copulas: <cite>gaussian</cite>, <cite>student</cite>, <cite>clayton</cite>, <cite>frank</cite>, <cite>joe</cite>, <cite>gumbel</cite>, <cite>amh</cite>, <cite>tawn3</cite>, <cite>galambos</cite>, <cite>plackett</cite>, <cite>fgm</cite>, etc.</p>
 </section>
-<section id="donnees-d-entree">
-<h2>📊 Données d’entrée<a class="headerlink" href="#donnees-d-entree" title="Link to this heading"></a></h2>
-<p>Le pipeline attend généralement :</p>
+<section id="input-data">
+<h2>📊 Input Data<a class="headerlink" href="#input-data" title="Link to this heading"></a></h2>
+<p>The pipeline generally expects:</p>
 <ul class="simple">
-<li><p><strong>Raw data</strong> : données originales pour Kendall’s tau (<cite>[[X1, Y1], [X2, Y2], …]</cite>)</p></li>
-<li><p><strong>Pseudo-observations</strong> : données uniformisées <cite>u, v ∈ (0,1)</cite> via les marges</p></li>
+<li><p><strong>Raw data</strong>: original data for Kendall’s tau (<cite>[[X1, Y1], [X2, Y2], …]</cite>)</p></li>
+<li><p><strong>Pseudo-observations</strong>: data transformed to uniform scale <cite>u, v ∈ (0,1)</cite> using marginals</p></li>
 </ul>
-<p>Générer des pseudo-observations :</p>
+<p>Generate pseudo-observations:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.domain.estimation.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">pseudo_obs</span>
 
 <span class="n">u</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">pseudo_obs</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>  <span class="c1"># data = [[X1, Y1], [X2, Y2], ...]</span>
 </pre></div>
 </div>
 </section>
-<section id="acces-aux-methodes-de-base">
-<h2>📈 Accès aux méthodes de base<a class="headerlink" href="#acces-aux-methodes-de-base" title="Link to this heading"></a></h2>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">copula</span><span class="o">.</span><span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span>       <span class="c1"># ou [rho, nu] pour Student</span>
+<section id="accessing-basic-methods">
+<h2>📈 Accessing Basic Methods<a class="headerlink" href="#accessing-basic-methods" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">copula</span><span class="o">.</span><span class="n">parameters</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span>       <span class="c1"># or [rho, nu] for Student</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">copula</span><span class="o">.</span><span class="n">get_cdf</span><span class="p">(</span><span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">copula</span><span class="o">.</span><span class="n">get_pdf</span><span class="p">(</span><span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">copula</span><span class="o">.</span><span class="n">kendall_tau</span><span class="p">())</span>
@@ -121,8 +124,8 @@
 </pre></div>
 </div>
 </section>
-<section id="diagnostic">
-<h2>🔬 Diagnostic<a class="headerlink" href="#diagnostic" title="Link to this heading"></a></h2>
+<section id="diagnostics">
+<h2>🔬 Diagnostics<a class="headerlink" href="#diagnostics" title="Link to this heading"></a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.application.services.diagnostics_service</span><span class="w"> </span><span class="kn">import</span> <span class="n">DiagnosticService</span>
 
 <span class="n">diag</span> <span class="o">=</span> <span class="n">DiagnosticService</span><span class="p">()</span>
@@ -130,8 +133,8 @@
 <span class="nb">print</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Résultat : dict avec <cite>LogLik</cite>, <cite>AIC</cite>, <cite>BIC</cite>, <cite>Kendall Tau Error</cite>, etc.</p>
-<p>📌 À venir : fitting &amp; visualisation</p>
+<p>Result: a dict with <cite>LogLik</cite>, <cite>AIC</cite>, <cite>BIC</cite>, <cite>Kendall Tau Error</cite>, etc.</p>
+<p>📌 Coming Soon: Fitting &amp; Visualization</p>
 </section>
 </section>
 
@@ -140,7 +143,7 @@
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="fitting.html" class="btn btn-neutral float-right" title="Ajustement de copules (fitting)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="fitting.html" class="btn btn-neutral float-right" title="Copula Fitting" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

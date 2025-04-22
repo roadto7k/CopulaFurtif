@@ -1,28 +1,29 @@
 .. _fitting:
 
-Ajustement de copules (fitting)
-================================
+Copula Fitting
+==============
 
-Cette page décrit comment ajuster une copule à vos données à l'aide du pipeline CopulaFurtif.
-
-
-🧪 Objectif
-----------
-Trouver les meilleurs paramètres de la copule qui maximisent la vraisemblance des données.
+This page describes how to fit a copula to your data using the CopulaFurtif pipeline.
 
 
-⚙️ Outils disponibles
----------------------
+🧪 Goal
+-------
 
-Trois méthodes principales d'ajustement sont supportées :
-
-- `CMLE` : Canonical Maximum Likelihood Estimation (avec pseudo-observations)
-- `MLE`  : Maximum Likelihood sur données brutes + marges
-- `IFM`  : Inference Function for Margins (deux étapes)
+Find the best copula parameters that maximize the likelihood of the data.
 
 
-🚀 Exemple : CMLE
+⚙️ Available Tools
 ------------------
+
+Three main fitting methods are supported:
+
+- `CMLE`: Canonical Maximum Likelihood Estimation (with pseudo-observations)
+- `MLE` : Maximum Likelihood on raw data + marginals
+- `IFM` : Inference Function for Margins (two-step approach)
+
+
+🚀 Example: CMLE
+----------------
 
 .. code-block:: python
 
@@ -30,15 +31,15 @@ Trois méthodes principales d'ajustement sont supportées :
    from CopulaFurtif.core.copulas.application.use_cases.fit_copula import FitCopulaUseCase
 
    copula = CopulaFactory.create("gumbel")
-   data = [[0.2, 0.3], [0.5, 0.6], [0.9, 0.8], ...]  # liste de paires (X, Y)
+   data = [[0.2, 0.3], [0.5, 0.6], [0.9, 0.8], ...]  # list of (X, Y) pairs
 
    result = FitCopulaUseCase().fit_cmle(data, copula)
-   print("Paramètres optimaux :", copula.parameters)
-   print("Log-vraisemblance :", copula.log_likelihood_)
+   print("Optimal parameters:", copula.parameters)
+   print("Log-likelihood:", copula.log_likelihood_)
 
 
-📦 Exemple : MLE avec marges
------------------------------
+📦 Example: MLE with marginals
+------------------------------
 
 .. code-block:: python
 
@@ -49,8 +50,8 @@ Trois méthodes principales d'ajustement sont supportées :
    result = FitCopulaUseCase().fit_mle(data, copula, marginals)
 
 
-🔁 Exemple : IFM
-----------------
+🔁 Example: IFM
+---------------
 
 .. code-block:: python
 
@@ -61,16 +62,16 @@ Trois méthodes principales d'ajustement sont supportées :
    result = FitCopulaUseCase().fit_ifm(data, copula, marginals)
 
 
-🔍 Options d'optimisation
---------------------------
+🔍 Optimization Options
+------------------------
 
-- Méthodes utilisées : `SLSQP`, `Powell`, `L-BFGS-B`, etc.
-- Les options peuvent être passées via `FitCopulaUseCase(..., options={...})`
+- Supported methods: `SLSQP`, `Powell`, `L-BFGS-B`, etc.
+- Options can be passed via `FitCopulaUseCase(..., options={...})`
 
 
-📌 Conseils
------------
+📌 Tips
+-------
 
-- Vérifiez que la copule est bien "fittée" (`copula.log_likelihood_` non nul)
-- Adaptez le choix de la méthode selon la nature des données (brutes ou uniformisées)
-- Vérifiez les bornes des paramètres (`copula.bounds_param`)
+- Make sure the copula is properly fitted (`copula.log_likelihood_` is not zero)
+- Choose the fitting method based on the nature of your data (raw or transformed to uniform)
+- Check the parameter bounds (`copula.bounds_param`)

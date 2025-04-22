@@ -1,13 +1,13 @@
 .. _visualization:
 
-Visualisation
+Visualization
 =============
 
-CopulaFurtif propose plusieurs outils pour visualiser la qualité d'ajustement des copules.
+CopulaFurtif provides several tools to visualize the quality of copula fitting.
 
 
-🌡️ Heatmap des résidus (Empirical - Model)
-------------------------------------------
+🌡️ Residual Heatmap (Empirical - Model)
+---------------------------------------
 
 .. code-block:: python
 
@@ -16,15 +16,15 @@ CopulaFurtif propose plusieurs outils pour visualiser la qualité d'ajustement d
    u, v = pseudo_obs(data)
    plot_residual_heatmap(copula, u, v, bins=50)
 
-Cela produit une carte des écarts entre la CDF empirique et celle du modèle.
+This produces a map of differences between the empirical CDF and the model CDF.
 
 .. .. image:: ../_static/heatmap_example.png
 ..    :align: center
 ..    :scale: 60 %
 
 
-📈 Courbes conditionnelles
---------------------------
+📈 Conditional Curves
+---------------------
 
 .. code-block:: python
 
@@ -37,8 +37,8 @@ Cela produit une carte des écarts entre la CDF empirique et celle du modèle.
 ..    :scale: 60 %
 
 
-📊 Benchmark entre copules
---------------------------
+📊 Copula Benchmarking
+-----------------------
 
 .. code-block:: python
 
@@ -55,8 +55,8 @@ Cela produit une carte des écarts entre la CDF empirique et celle du modèle.
 ..    :scale: 60 %
 
 
-🎯 Résumé visuel intégré
-------------------------
+🎯 Integrated Visual Summary
+----------------------------
 
 .. code-block:: python
 

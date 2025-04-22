@@ -20,7 +20,7 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Utilisation de base" href="usage.html" />
+    <link rel="next" title="Basic Usage" href="usage.html" />
     <link rel="prev" title="Welcome to CopulaFurtif’s documentation!" href="../index.html" /> 
 </head>
 
@@ -46,19 +46,22 @@
               <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#prerequis">⚙️ Prérequis</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#installation-avec-poetry-recommandee">📦 Installation avec Poetry (recommandée)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#installation-avec-pip-alternatif">📦 Installation avec pip (alternatif)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#optionnel-installer-pre-commit">💡 (Optionnel) : installer <cite>pre-commit</cite></a></li>
-<li class="toctree-l2"><a class="reference internal" href="#lancer-les-tests">🧪 Lancer les tests</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#generer-la-documentation">📚 Générer la documentation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#arborescence-simplifiee">📂 Arborescence simplifiée</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">⚙️ Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation-with-poetry-recommended">📦 Installation with Poetry (recommended)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation-with-pip-alternative">📦 Installation with pip (alternative)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#optional-install-pre-commit">💡 (Optional): install <cite>pre-commit</cite></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#run-the-tests">🧪 Run the tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#generate-the-documentation">📚 Generate the documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#simplified-folder-structure">📂 Simplified folder structure</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Utilisation de base</a></li>
-<li class="toctree-l1"><a class="reference internal" href="fitting.html">Ajustement de copules (fitting)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="visualization.html">Visualisation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extending.html">Étendre le pipeline : ajouter une copule</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Basic Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fitting.html">Copula Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="visualization.html">Visualization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extending.html">Extending the Pipeline: Adding a Copula</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../api/modules.html">core</a></li>
 </ul>
 
         </div>
@@ -87,17 +90,17 @@
              
   <section id="installation">
 <span id="id1"></span><h1>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h1>
-<p>Voici comment installer et configurer CopulaFurtif dans votre environnement local.</p>
-<section id="prerequis">
-<h2>⚙️ Prérequis<a class="headerlink" href="#prerequis" title="Link to this heading"></a></h2>
+<p>Here’s how to install and configure CopulaFurtif in your local environment.</p>
+<section id="prerequisites">
+<h2>⚙️ Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Python &gt;= 3.9</p></li>
-<li><p><cite>poetry</cite> (recommandé) ou <cite>pip</cite></p></li>
-<li><p>Unix-like OS recommandé (Linux/macOS)</p></li>
+<li><p><cite>poetry</cite> (recommended) or <cite>pip</cite></p></li>
+<li><p>Unix-like OS recommended (Linux/macOS)</p></li>
 </ul>
 </section>
-<section id="installation-avec-poetry-recommandee">
-<h2>📦 Installation avec Poetry (recommandée)<a class="headerlink" href="#installation-avec-poetry-recommandee" title="Link to this heading"></a></h2>
+<section id="installation-with-poetry-recommended">
+<h2>📦 Installation with Poetry (recommended)<a class="headerlink" href="#installation-with-poetry-recommended" title="Link to this heading"></a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/roadto7k/CopulaFurtif.git
 <span class="nb">cd</span><span class="w"> </span>CopulaFurtif
 poetry<span class="w"> </span>install
@@ -105,38 +108,38 @@ poetry<span class="w"> </span>shell
 </pre></div>
 </div>
 </section>
-<section id="installation-avec-pip-alternatif">
-<h2>📦 Installation avec pip (alternatif)<a class="headerlink" href="#installation-avec-pip-alternatif" title="Link to this heading"></a></h2>
+<section id="installation-with-pip-alternative">
+<h2>📦 Installation with pip (alternative)<a class="headerlink" href="#installation-with-pip-alternative" title="Link to this heading"></a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/roadto7k/CopulaFurtif.git
 <span class="nb">cd</span><span class="w"> </span>CopulaFurtif
 pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
 </pre></div>
 </div>
 </section>
-<section id="optionnel-installer-pre-commit">
-<h2>💡 (Optionnel) : installer <cite>pre-commit</cite><a class="headerlink" href="#optionnel-installer-pre-commit" title="Link to this heading"></a></h2>
+<section id="optional-install-pre-commit">
+<h2>💡 (Optional): install <cite>pre-commit</cite><a class="headerlink" href="#optional-install-pre-commit" title="Link to this heading"></a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>install
 </pre></div>
 </div>
-<p>Cela active le lint automatique avant chaque commit (PEP8, isort, black, etc).</p>
+<p>This enables automatic linting before each commit (PEP8, isort, black, etc).</p>
 </section>
-<section id="lancer-les-tests">
-<h2>🧪 Lancer les tests<a class="headerlink" href="#lancer-les-tests" title="Link to this heading"></a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span><span class="nb">test</span><span class="w">         </span><span class="c1"># ou: pytest tests/</span>
-make<span class="w"> </span>coverage-html<span class="w">  </span><span class="c1"># et ouvrir htmlcov/index.html</span>
+<section id="run-the-tests">
+<h2>🧪 Run the tests<a class="headerlink" href="#run-the-tests" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span><span class="nb">test</span><span class="w">         </span><span class="c1"># or: pytest tests/</span>
+make<span class="w"> </span>coverage-html<span class="w">  </span><span class="c1"># then open htmlcov/index.html</span>
 </pre></div>
 </div>
 </section>
-<section id="generer-la-documentation">
-<h2>📚 Générer la documentation<a class="headerlink" href="#generer-la-documentation" title="Link to this heading"></a></h2>
+<section id="generate-the-documentation">
+<h2>📚 Generate the documentation<a class="headerlink" href="#generate-the-documentation" title="Link to this heading"></a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>docs
 make<span class="w"> </span>html
 </pre></div>
 </div>
-<p>La documentation est ensuite accessible dans <cite>docs/_build/html/index.html</cite></p>
+<p>The documentation will then be available in <cite>docs/_build/html/index.html</cite></p>
 </section>
-<section id="arborescence-simplifiee">
-<h2>📂 Arborescence simplifiée<a class="headerlink" href="#arborescence-simplifiee" title="Link to this heading"></a></h2>
+<section id="simplified-folder-structure">
+<h2>📂 Simplified folder structure<a class="headerlink" href="#simplified-folder-structure" title="Link to this heading"></a></h2>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>CopulaFurtif/
 ├── core/
 │   └── copulas/
@@ -148,7 +151,7 @@ make<span class="w"> </span>html
 └── pyproject.toml
 </pre></div>
 </div>
-<p>✅ Et voilà, vous êtes prêt à explorer le monde fascinant des copules !</p>
+<p>✅ And that’s it — you’re ready to explore the fascinating world of copulas!</p>
 </section>
 </section>
 
@@ -157,7 +160,7 @@ make<span class="w"> </span>html
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="../index.html" class="btn btn-neutral float-left" title="Welcome to CopulaFurtif’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="usage.html" class="btn btn-neutral float-right" title="Utilisation de base" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="usage.html" class="btn btn-neutral float-right" title="Basic Usage" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
