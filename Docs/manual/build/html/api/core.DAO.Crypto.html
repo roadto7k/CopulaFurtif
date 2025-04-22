@@ -1,0 +1,136 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>core.DAO.Crypto package &mdash; CopulaFurtif 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/bullets.css" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=8d563738"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CopulaFurtif
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../pages/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/usage.html">Utilisation de base</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/fitting.html">Ajustement de copules (fitting)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/visualization.html">Visualisation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/extending.html">Étendre le pipeline : ajouter une copule</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CopulaFurtif</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">core.DAO.Crypto package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/core.DAO.Crypto.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="core-dao-crypto-package">
+<h1>core.DAO.Crypto package<a class="headerlink" href="#core-dao-crypto-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-core.DAO.Crypto.Crypto_history">
+<span id="core-dao-crypto-crypto-history-module"></span><h2>core.DAO.Crypto.Crypto_history module<a class="headerlink" href="#module-core.DAO.Crypto.Crypto_history" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="core.DAO.Crypto.Crypto_history.import_crypto_data">
+<span class="sig-prename descclassname"><span class="pre">core.DAO.Crypto.Crypto_history.</span></span><span class="sig-name descname"><span class="pre">import_crypto_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">symbol</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">period</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'1y'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">interval</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'1d'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/DAO/Crypto/Crypto_history.html#import_crypto_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.DAO.Crypto.Crypto_history.import_crypto_data" title="Link to this definition"></a></dt>
+<dd><p>Importe l’historique des prix d’une cryptomonnaie depuis Yahoo Finance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>symbol</strong> – Symbole de la crypto (ex: ‘BTC-USD’, ‘ETH-USD’)</p></li>
+<li><p><strong>period</strong> – Durée de l’historique (‘1d’, ‘5d’, ‘1mo’, ‘3mo’, ‘6mo’, ‘1y’, ‘2y’, ‘5y’, ‘10y’, ‘ytd’, ‘max’)</p></li>
+<li><p><strong>interval</strong> – Granularité (‘1m’, ‘2m’, ‘5m’, ‘15m’, ‘30m’, ‘1h’, ‘1d’, ‘5d’, ‘1wk’, ‘1mo’, ‘3mo’)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>DataFrame contenant l’historique des prix</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-core.DAO.Crypto">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-core.DAO.Crypto" title="Link to this heading"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jérémy Loustau-laguide, Théo Reymermier.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

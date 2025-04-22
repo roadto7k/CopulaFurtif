@@ -18,9 +18,9 @@ CopulaFurtif propose plusieurs outils pour visualiser la qualité d'ajustement d
 
 Cela produit une carte des écarts entre la CDF empirique et celle du modèle.
 
-.. image:: ../_static/heatmap_example.png
-   :align: center
-   :scale: 60 %
+.. .. image:: ../_static/heatmap_example.png
+..    :align: center
+..    :scale: 60 %
 
 
 📈 Courbes conditionnelles
@@ -32,9 +32,9 @@ Cela produit une carte des écarts entre la CDF empirique et celle du modèle.
 
    plot_conditional_curves(copula, fixed_values=[0.25, 0.5, 0.75], kind="u_given_v")
 
-.. image:: ../_static/conditional_curves.png
-   :align: center
-   :scale: 60 %
+.. .. image:: ../_static/conditional_curves.png
+..    :align: center
+..    :scale: 60 %
 
 
 📊 Benchmark entre copules
@@ -50,9 +50,9 @@ Cela produit une carte des écarts entre la CDF empirique et celle du modèle.
 
    plot_copula_comparison(copulas, u, v)
 
-.. image:: ../_static/comparison.png
-   :align: center
-   :scale: 60 %
+.. .. image:: ../_static/comparison.png
+..    :align: center
+..    :scale: 60 %
 
 
 🎯 Résumé visuel intégré

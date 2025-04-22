@@ -60,7 +60,7 @@ copy_files:
 	cp ../../Example.py source/examples/
 
 update_code:
-	sphinx-apidoc -f -T -o source/api ../../neosetanubis/NeoSetAnubis/core
+	sphinx-apidoc -f -T -o source/api ../../copulafurtif/CopulaFurtif/core
 
 RstFilesFromHelp:
 	./rstFromHelpFiles.py
