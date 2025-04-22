@@ -1,6 +1,6 @@
 import numpy as np
-from domain.models.interfaces import CopulaModel
-from domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
 class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -8,8 +8,8 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Gumbel Copula"
         self.type = "gumbel"
-        self.bounds_param = [(1.01, 20.0)]
-        self._parameters = np.array([1.8])
+        self.bounds_param = [(1.01, 30.0)]
+        self._parameters = np.array([2.0])
         self.default_optim_method = "SLSQP"
 
     @property
@@ -27,8 +27,6 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         theta = param[0]
-        u = np.clip(u, 1e-10, 1 - 1e-10)
-        v = np.clip(v, 1e-10, 1 - 1e-10)
         log_u = -np.log(u)
         log_v = -np.log(v)
         sum_pow = (log_u ** theta + log_v ** theta) ** (1 / theta)
@@ -38,8 +36,6 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         theta = param[0]
-        u = np.clip(u, 1e-10, 1 - 1e-10)
-        v = np.clip(v, 1e-10, 1 - 1e-10)
         log_u = -np.log(u)
         log_v = -np.log(v)
         A = log_u ** theta + log_v ** theta
@@ -71,3 +67,39 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.parameters
         theta = param[0]
         return 1 - 1 / theta
+
+    def LTDC(self, param=None):
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        return 2 - 2 ** (1 / theta)
+
+    def UTDC(self, param=None):
+        return self.LTDC(param)
+
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
+
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan
+
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        log_u = -np.log(u)
+        log_v = -np.log(v)
+        A = log_u ** theta + log_v ** theta
+        C = A ** (1 / theta)
+        return np.exp(-C) * log_u ** (theta - 1) * (log_v ** theta + log_u ** theta) ** (1 / theta - 1) / u
+
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(u, v, param)

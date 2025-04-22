@@ -1,15 +1,15 @@
 import numpy as np
-from domain.models.interfaces import CopulaModel
-from domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
 class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     def __init__(self):
         super().__init__()
-        self.name = "Tawn Type III Copula"
-        self.type = "tawn3"
-        self.bounds_param = [(0.01, 5.0), (0.0, 1.0)]  # [theta, delta]
-        self._parameters = np.array([1.5, 0.5])
+        self.name = "Tawn Copula"
+        self.type = "tawn"
+        self.bounds_param = [(1.01, 5.0), (0.0, 1.0)]  # [theta, delta]
+        self._parameters = np.array([2.0, 0.5])
         self.default_optim_method = "SLSQP"
 
     @property
@@ -28,18 +28,17 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         theta, delta = param
-        log_u = -np.log(u)
-        log_v = -np.log(v)
-        S = log_u + log_v
-        A = (1 - delta) * (log_u / S) ** theta + delta * (log_v / S) ** theta
-        return np.exp(-S * A ** (1 / theta))
+        x = -np.log(u)
+        y = -np.log(v)
+        s = x + y
+        w = (1 - delta) * (x / s) ** theta + delta * (y / s) ** theta
+        return np.exp(-s * w ** (1 / theta))
 
     def get_pdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
-        theta, delta = param
-        # NOTE: PDF for Tawn copula is analytically complex; simplified return for now
-        return np.ones_like(u)  # Placeholder for testing
+        # Full analytical PDF is complex; returning placeholder
+        return np.ones_like(u)
 
     def sample(self, n, param=None):
         if param is None:
@@ -53,3 +52,36 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.parameters
         theta, delta = param
         return (theta * (1 - delta + delta)) / (theta + 2)
+
+    def LTDC(self, param=None):
+        return 0.0
+
+    def UTDC(self, param=None):
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        return 2 - 2 ** (1 / theta)
+
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
+
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan
+
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
+        if param is None:
+            param = self.parameters
+        theta, delta = param
+        # Placeholder
+        return np.ones_like(u)
+
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(u, v, param)

@@ -1,16 +1,6 @@
-"""
-Clayton Copula implementation following the project coding standard:
-
-Norms:
- 1. Use private `_parameters` with public `@property parameters` and validation in setter.
- 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
- 3. Docstrings include **Parameters** and **Returns** with types.
- 4. Parameter bounds in `bounds_param`; setter enforces them.
- 5. Uniform boundary clipping with `eps=1e-12`.
-"""
 import numpy as np
-from domain.models.interfaces import CopulaModel
-from domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
 class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -18,8 +8,8 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Clayton Copula"
         self.type = "clayton"
-        self.bounds_param = [(0.01, 20.0)]
-        self._parameters = np.array([1.5])
+        self.bounds_param = [(0.01, 30.0)]
+        self._parameters = np.array([2.0])
         self.default_optim_method = "SLSQP"
 
     @property
@@ -61,3 +51,36 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.parameters
         theta = param[0]
         return theta / (theta + 2)
+
+    def LTDC(self, param=None):
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        return 2 ** (-1 / theta)
+
+    def UTDC(self, param=None):
+        return 0.0
+
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
+
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan
+
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        top = (u ** -theta + v ** -theta - 1) ** (-1 / theta - 1)
+        return top * u ** (-theta - 1)
+
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(u, v, param)

@@ -3,8 +3,8 @@ from math import sqrt
 from scipy.stats import t, multivariate_t
 from scipy.special import gammaln, gamma, roots_genlaguerre
 from scipy.stats import kendalltau, multivariate_normal
-from domain.models.interfaces import CopulaModel
-from domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     def __init__(self):

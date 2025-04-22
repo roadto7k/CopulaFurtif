@@ -1,6 +1,6 @@
 import numpy as np
-from domain.models.interfaces import CopulaModel
-from domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
 class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -9,7 +9,7 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Galambos Copula"
         self.type = "galambos"
         self.bounds_param = [(0.01, 10.0)]
-        self._parameters = np.array([1.2])
+        self._parameters = np.array([1.5])
         self.default_optim_method = "SLSQP"
 
     @property
@@ -27,31 +27,70 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         theta = param[0]
-        log_u = -np.log(u)
-        log_v = -np.log(v)
-        sum_pow = log_u ** (-theta) + log_v ** (-theta)
-        return np.exp(-sum_pow ** (-1 / theta))
+        x = -np.log(u)
+        y = -np.log(v)
+        S = x ** (-theta) + y ** (-theta)
+        return np.exp(-S ** (-1 / theta))
 
     def get_pdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
         theta = param[0]
-        log_u = -np.log(u)
-        log_v = -np.log(v)
-        A = log_u ** (-theta) + log_v ** (-theta)
-        B = A ** (-1 / theta - 2)
-        part = (theta + 1) * (log_u * log_v) ** (-theta - 1)
-        return np.exp(-A ** (-1 / theta)) * part * B / (u * v)
+        x = -np.log(u)
+        y = -np.log(v)
+        S = x ** (-theta) + y ** (-theta)
+        C = S ** (-1 / theta)
+        part1 = (x * y) ** (-theta - 1)
+        part2 = (theta + 1) * S ** (-2 - 1 / theta)
+        pdf = np.exp(-C) * part1 * part2 / (u * v)
+        return pdf
 
     def sample(self, n, param=None):
         if param is None:
             param = self.parameters
         u = np.random.rand(n)
         v = np.random.rand(n)
-        return np.column_stack((u, v))  # Approximate sample
+        return np.column_stack((u, v))  # Placeholder only
 
     def kendall_tau(self, param=None):
         if param is None:
             param = self.parameters
         theta = param[0]
         return theta / (theta + 2)
+
+    def LTDC(self, param=None):
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        return 2 - 2 ** (1 / theta)
+
+    def UTDC(self, param=None):
+        return self.LTDC(param)
+
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
+
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan
+
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        x = -np.log(u)
+        y = -np.log(v)
+        S = x ** (-theta) + y ** (-theta)
+        A = S ** (-1 / theta - 1)
+        B = x ** (-theta - 1)
+        return np.exp(-S ** (-1 / theta)) * A * B / u
+
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(u, v, param)

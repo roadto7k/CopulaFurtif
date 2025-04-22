@@ -1,6 +1,6 @@
 import numpy as np
-from domain.models.interfaces import CopulaModel
-from domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
 class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):

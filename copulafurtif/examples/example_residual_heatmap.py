@@ -6,7 +6,7 @@ from CopulaFurtif.core.copulas.application.use_cases.fit_copula import FitCopula
 from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
 from CopulaFurtif.core.copulas.application.services.diagnostics_service import DiagnosticsService
 from CopulaFurtif.core.copulas.infrastructure.visualization.matplotlib_visualizer import MatplotlibCopulaVisualizer
-from copulafurtif.examples.generate_data_beta_lognorm import generate_data_beta_lognorm
+from copulafurtif.CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm
 
 
 def main():
