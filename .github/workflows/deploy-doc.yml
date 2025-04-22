@@ -18,11 +18,11 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install sphinx autoapi
+          pip install sphinx autoapi sphinx_rtd_theme
 
       - name: Build Docs
         run: |
-          cd docs
+          cd Docs/manual
           make html
 
       - name: Deploy to GitHub Pages
