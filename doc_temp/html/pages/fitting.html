@@ -1,0 +1,186 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ajustement de copules (fitting) &mdash; CopulaFurtif 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/bullets.css" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=8d563738"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Visualisation" href="visualization.html" />
+    <link rel="prev" title="Utilisation de base" href="usage.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CopulaFurtif
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Utilisation de base</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Ajustement de copules (fitting)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#objectif">🧪 Objectif</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#outils-disponibles">⚙️ Outils disponibles</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#exemple-cmle">🚀 Exemple : CMLE</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#exemple-mle-avec-marges">📦 Exemple : MLE avec marges</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#exemple-ifm">🔁 Exemple : IFM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#options-d-optimisation">🔍 Options d’optimisation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#conseils">📌 Conseils</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="visualization.html">Visualisation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extending.html">Étendre le pipeline : ajouter une copule</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CopulaFurtif</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Ajustement de copules (fitting)</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pages/fitting.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="ajustement-de-copules-fitting">
+<span id="fitting"></span><h1>Ajustement de copules (fitting)<a class="headerlink" href="#ajustement-de-copules-fitting" title="Link to this heading"></a></h1>
+<p>Cette page décrit comment ajuster une copule à vos données à l’aide du pipeline CopulaFurtif.</p>
+<section id="objectif">
+<h2>🧪 Objectif<a class="headerlink" href="#objectif" title="Link to this heading"></a></h2>
+<p>Trouver les meilleurs paramètres de la copule qui maximisent la vraisemblance des données.</p>
+</section>
+<section id="outils-disponibles">
+<h2>⚙️ Outils disponibles<a class="headerlink" href="#outils-disponibles" title="Link to this heading"></a></h2>
+<p>Trois méthodes principales d’ajustement sont supportées :</p>
+<ul class="simple">
+<li><p><cite>CMLE</cite> : Canonical Maximum Likelihood Estimation (avec pseudo-observations)</p></li>
+<li><p><cite>MLE</cite>  : Maximum Likelihood sur données brutes + marges</p></li>
+<li><p><cite>IFM</cite>  : Inference Function for Margins (deux étapes)</p></li>
+</ul>
+</section>
+<section id="exemple-cmle">
+<h2>🚀 Exemple : CMLE<a class="headerlink" href="#exemple-cmle" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.domain.factories.copula_factory</span><span class="w"> </span><span class="kn">import</span> <span class="n">CopulaFactory</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.application.use_cases.fit_copula</span><span class="w"> </span><span class="kn">import</span> <span class="n">FitCopulaUseCase</span>
+
+<span class="n">copula</span> <span class="o">=</span> <span class="n">CopulaFactory</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">&quot;gumbel&quot;</span><span class="p">)</span>
+<span class="n">data</span> <span class="o">=</span> <span class="p">[[</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>  <span class="c1"># liste de paires (X, Y)</span>
+
+<span class="n">result</span> <span class="o">=</span> <span class="n">FitCopulaUseCase</span><span class="p">()</span><span class="o">.</span><span class="n">fit_cmle</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copula</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Paramètres optimaux :&quot;</span><span class="p">,</span> <span class="n">copula</span><span class="o">.</span><span class="n">parameters</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Log-vraisemblance :&quot;</span><span class="p">,</span> <span class="n">copula</span><span class="o">.</span><span class="n">log_likelihood_</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="exemple-mle-avec-marges">
+<h2>📦 Exemple : MLE avec marges<a class="headerlink" href="#exemple-mle-avec-marges" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.application.use_cases.fit_copula</span><span class="w"> </span><span class="kn">import</span> <span class="n">FitCopulaUseCase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.domain.estimation.marginals</span><span class="w"> </span><span class="kn">import</span> <span class="n">fit_marginals</span>
+
+<span class="n">marginals</span> <span class="o">=</span> <span class="n">fit_marginals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">family</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">FitCopulaUseCase</span><span class="p">()</span><span class="o">.</span><span class="n">fit_mle</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copula</span><span class="p">,</span> <span class="n">marginals</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="exemple-ifm">
+<h2>🔁 Exemple : IFM<a class="headerlink" href="#exemple-ifm" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.application.use_cases.fit_copula</span><span class="w"> </span><span class="kn">import</span> <span class="n">FitCopulaUseCase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">CopulaFurtif.core.copulas.domain.estimation.marginals</span><span class="w"> </span><span class="kn">import</span> <span class="n">fit_marginals</span>
+
+<span class="n">marginals</span> <span class="o">=</span> <span class="n">fit_marginals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">family</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span><span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">FitCopulaUseCase</span><span class="p">()</span><span class="o">.</span><span class="n">fit_ifm</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">copula</span><span class="p">,</span> <span class="n">marginals</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="options-d-optimisation">
+<h2>🔍 Options d’optimisation<a class="headerlink" href="#options-d-optimisation" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Méthodes utilisées : <cite>SLSQP</cite>, <cite>Powell</cite>, <cite>L-BFGS-B</cite>, etc.</p></li>
+<li><p>Les options peuvent être passées via <cite>FitCopulaUseCase(…, options={…})</cite></p></li>
+</ul>
+</section>
+<section id="conseils">
+<h2>📌 Conseils<a class="headerlink" href="#conseils" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Vérifiez que la copule est bien “fittée” (<cite>copula.log_likelihood_</cite> non nul)</p></li>
+<li><p>Adaptez le choix de la méthode selon la nature des données (brutes ou uniformisées)</p></li>
+<li><p>Vérifiez les bornes des paramètres (<cite>copula.bounds_param</cite>)</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="usage.html" class="btn btn-neutral float-left" title="Utilisation de base" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="visualization.html" class="btn btn-neutral float-right" title="Visualisation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jérémy Loustau-laguide, Théo Reymermier.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

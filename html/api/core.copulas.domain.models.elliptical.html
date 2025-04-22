@@ -1,0 +1,427 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>core.copulas.domain.models.elliptical package &mdash; CopulaFurtif 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/bullets.css" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=8d563738"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CopulaFurtif
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../pages/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/usage.html">Utilisation de base</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/fitting.html">Ajustement de copules (fitting)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/visualization.html">Visualisation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pages/extending.html">Étendre le pipeline : ajouter une copule</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CopulaFurtif</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">core.copulas.domain.models.elliptical package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/core.copulas.domain.models.elliptical.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="core-copulas-domain-models-elliptical-package">
+<h1>core.copulas.domain.models.elliptical package<a class="headerlink" href="#core-copulas-domain-models-elliptical-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-core.copulas.domain.models.elliptical.gaussian">
+<span id="core-copulas-domain-models-elliptical-gaussian-module"></span><h2>core.copulas.domain.models.elliptical.gaussian module<a class="headerlink" href="#module-core.copulas.domain.models.elliptical.gaussian" title="Link to this heading"></a></h2>
+<p>Gaussian Copula implementation following the project coding standard:</p>
+<dl class="simple">
+<dt>Norms:</dt><dd><ol class="arabic simple">
+<li><p>Use private attribute <cite>_parameters</cite> with public <cite>&#64;property parameters</cite> and validation in the setter.</p></li>
+<li><p>All methods accept <cite>param: np.ndarray = None</cite> defaulting to <cite>self.parameters</cite>.</p></li>
+<li><p>Docstrings must include <strong>Parameters</strong> and <strong>Returns</strong> sections with types.</p></li>
+<li><p>Parameter bounds are defined in <cite>bounds_param</cite>; setter enforces them.</p></li>
+<li><p>Consistent boundary handling with <cite>eps = 1e-12</cite> and <cite>np.clip</cite>.</p></li>
+</ol>
+</dd>
+</dl>
+<dl class="py class">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">core.copulas.domain.models.elliptical.gaussian.</span></span><span class="sig-name descname"><span class="pre">GaussianCopula</span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">CopulaModel</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">SupportsTailDependence</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">ModelSelectionMixin</span></code></p>
+<p>Gaussian Copula class.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.family">
+<span class="sig-name descname"><span class="pre">family</span></span><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.family" title="Link to this definition"></a></dt>
+<dd><p>Identifier for the copula family, “gaussian”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.name">
+<span class="sig-name descname"><span class="pre">name</span></span><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.name" title="Link to this definition"></a></dt>
+<dd><p>Human-readable name for output/logging.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.bounds_param">
+<span class="sig-name descname"><span class="pre">bounds_param</span></span><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.bounds_param" title="Link to this definition"></a></dt>
+<dd><p>Bounds for the copula parameter rho, in (-1,1).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.parameters">
+<span class="sig-name descname"><span class="pre">parameters</span></span><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.parameters" title="Link to this definition"></a></dt>
+<dd><p>Copula parameter [rho].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.AD">
+<span class="sig-name descname"><span class="pre">AD</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.AD"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.AD" title="Link to this definition"></a></dt>
+<dd><p>Anderson–Darling test statistic (disabled for elliptical copulas).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.nan</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.IAD">
+<span class="sig-name descname"><span class="pre">IAD</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.IAD"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.IAD" title="Link to this definition"></a></dt>
+<dd><p>Integrated absolute deviation (disabled for elliptical copulas).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.nan</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.LTDC">
+<span class="sig-name descname"><span class="pre">LTDC</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.LTDC"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.LTDC" title="Link to this definition"></a></dt>
+<dd><p>Lower tail dependence coefficient (always 0 for Gaussian).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>0.0</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.UTDC">
+<span class="sig-name descname"><span class="pre">UTDC</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.UTDC"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.UTDC" title="Link to this definition"></a></dt>
+<dd><p>Upper tail dependence coefficient (always 0 for Gaussian).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>0.0</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.conditional_cdf_u_given_v">
+<span class="sig-name descname"><span class="pre">conditional_cdf_u_given_v</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.conditional_cdf_u_given_v"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.conditional_cdf_u_given_v" title="Link to this definition"></a></dt>
+<dd><p>P(U ≤ u | V = v) = ∂C/∂v</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.conditional_cdf_v_given_u">
+<span class="sig-name descname"><span class="pre">conditional_cdf_v_given_u</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.conditional_cdf_v_given_u"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.conditional_cdf_v_given_u" title="Link to this definition"></a></dt>
+<dd><p>P(V ≤ v | U = u) = ∂C/∂u</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.get_cdf">
+<span class="sig-name descname"><span class="pre">get_cdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.get_cdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.get_cdf" title="Link to this definition"></a></dt>
+<dd><p>Compute the Gaussian copula CDF C(u,v).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>u</strong> (<em>float</em><em> or </em><em>array-like</em>) – Pseudo-observations in (0,1).</p></li>
+<li><p><strong>v</strong> (<em>float</em><em> or </em><em>array-like</em>) – Pseudo-observations in (0,1).</p></li>
+<li><p><strong>param</strong> (<em>ndarray</em><em>, </em><em>optional</em>) – Copula parameter [rho]. If None, uses self.parameters.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>CDF value(s) at (u, v).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float or np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.get_pdf">
+<span class="sig-name descname"><span class="pre">get_pdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.get_pdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.get_pdf" title="Link to this definition"></a></dt>
+<dd><p>Compute the Gaussian copula PDF c(u,v).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>u</strong> (<em>float</em><em> or </em><em>array-like</em>) – Pseudo-observations in (0,1).</p></li>
+<li><p><strong>v</strong> (<em>float</em><em> or </em><em>array-like</em>) – Pseudo-observations in (0,1).</p></li>
+<li><p><strong>param</strong> (<em>ndarray</em><em>, </em><em>optional</em>) – Copula parameter [rho]. If None, uses self.parameters.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>PDF value(s) at (u, v).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float or np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.kendall_tau">
+<span class="sig-name descname"><span class="pre">kendall_tau</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.kendall_tau"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.kendall_tau" title="Link to this definition"></a></dt>
+<dd><p>Compute Kendall’s tau = (2/π) · arcsin(rho).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>param</strong> (<em>ndarray</em><em>, </em><em>optional</em>) – Copula parameter [rho]. If None, uses self.parameters.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Kendall’s tau.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="id0">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">parameters</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></em><a class="headerlink" href="#id0" title="Link to this definition"></a></dt>
+<dd><p>Get the copula parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Current copula parameter [rho].</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.partial_derivative_C_wrt_u">
+<span class="sig-name descname"><span class="pre">partial_derivative_C_wrt_u</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.partial_derivative_C_wrt_u"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.partial_derivative_C_wrt_u" title="Link to this definition"></a></dt>
+<dd><p>Compute ∂C(u,v)/∂u = P(V ≤ v | U = u)</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.partial_derivative_C_wrt_v">
+<span class="sig-name descname"><span class="pre">partial_derivative_C_wrt_v</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.partial_derivative_C_wrt_v"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.partial_derivative_C_wrt_v" title="Link to this definition"></a></dt>
+<dd><p>Compute ∂C(u,v)/∂v = P(U ≤ u | V = v) via symmetry</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.gaussian.GaussianCopula.sample">
+<span class="sig-name descname"><span class="pre">sample</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/gaussian.html#GaussianCopula.sample"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.gaussian.GaussianCopula.sample" title="Link to this definition"></a></dt>
+<dd><p>Generate n samples from the Gaussian copula.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> (<em>int</em>) – Number of samples.</p></li>
+<li><p><strong>param</strong> (<em>ndarray</em><em>, </em><em>optional</em>) – Copula parameter [rho]. If None, uses self.parameters.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Shape (n,2) array of pseudo-observations (u, v).</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-core.copulas.domain.models.elliptical.student">
+<span id="core-copulas-domain-models-elliptical-student-module"></span><h2>core.copulas.domain.models.elliptical.student module<a class="headerlink" href="#module-core.copulas.domain.models.elliptical.student" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">core.copulas.domain.models.elliptical.student.</span></span><span class="sig-name descname"><span class="pre">StudentCopula</span></span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">CopulaModel</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">ModelSelectionMixin</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">SupportsTailDependence</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.AD">
+<span class="sig-name descname"><span class="pre">AD</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.AD"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.AD" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.IAD">
+<span class="sig-name descname"><span class="pre">IAD</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.IAD"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.IAD" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.LTDC">
+<span class="sig-name descname"><span class="pre">LTDC</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.LTDC"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.LTDC" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.UTDC">
+<span class="sig-name descname"><span class="pre">UTDC</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.UTDC"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.UTDC" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.conditional_cdf_u_given_v">
+<span class="sig-name descname"><span class="pre">conditional_cdf_u_given_v</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.conditional_cdf_u_given_v"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.conditional_cdf_u_given_v" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.conditional_cdf_v_given_u">
+<span class="sig-name descname"><span class="pre">conditional_cdf_v_given_u</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.conditional_cdf_v_given_u"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.conditional_cdf_v_given_u" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.get_cdf">
+<span class="sig-name descname"><span class="pre">get_cdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.get_cdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.get_cdf" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.get_pdf">
+<span class="sig-name descname"><span class="pre">get_pdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.get_pdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.get_pdf" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.kendall_tau">
+<span class="sig-name descname"><span class="pre">kendall_tau</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.kendall_tau"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.kendall_tau" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.parameters">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">parameters</span></span><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.parameters" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.partial_derivative_C_wrt_u">
+<span class="sig-name descname"><span class="pre">partial_derivative_C_wrt_u</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.partial_derivative_C_wrt_u"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.partial_derivative_C_wrt_u" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.partial_derivative_C_wrt_v">
+<span class="sig-name descname"><span class="pre">partial_derivative_C_wrt_v</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.partial_derivative_C_wrt_v"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.partial_derivative_C_wrt_v" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="core.copulas.domain.models.elliptical.student.StudentCopula.sample">
+<span class="sig-name descname"><span class="pre">sample</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">param</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/core/copulas/domain/models/elliptical/student.html#StudentCopula.sample"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#core.copulas.domain.models.elliptical.student.StudentCopula.sample" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-core.copulas.domain.models.elliptical">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-core.copulas.domain.models.elliptical" title="Link to this heading"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Jérémy Loustau-laguide, Théo Reymermier.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
