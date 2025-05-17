@@ -13,15 +13,17 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.gumbel import GumbelCop
 from CopulaFurtif.core.copulas.domain.models.archimedean.plackett import PlackettCopula
 from CopulaFurtif.core.copulas.domain.models.archimedean.Tawn import TawnCopula
 
-CopulaFactory.register("gaussian", GaussianCopula)
-CopulaFactory.register("student", StudentCopula)
+from CopulaFurtif.copulas import CopulaType
 
-CopulaFactory.register("frank", FrankCopula)
-CopulaFactory.register("joe", JoeCopula)
-CopulaFactory.register("amh", AMHCopula)
-CopulaFactory.register("clayton", ClaytonCopula)
-CopulaFactory.register("fgm", FGMCopula)
-CopulaFactory.register("galambos", GalambosCopula)
-CopulaFactory.register("gumbel", GumbelCopula)
-CopulaFactory.register("plackett", PlackettCopula)
-CopulaFactory.register("tawn", TawnCopula)
+CopulaFactory.register(CopulaType.GAUSSIAN, GaussianCopula)
+CopulaFactory.register(CopulaType.STUDENT, StudentCopula)
+
+CopulaFactory.register(CopulaType.FRANK, FrankCopula)
+CopulaFactory.register(CopulaType.JOE, JoeCopula)
+CopulaFactory.register(CopulaType.AMH, AMHCopula)
+CopulaFactory.register(CopulaType.CLAYTON, ClaytonCopula)
+CopulaFactory.register(CopulaType.FGM, FGMCopula)
+CopulaFactory.register(CopulaType.GALAMBOS, GalambosCopula)
+CopulaFactory.register(CopulaType.GUMBEL, GumbelCopula)
+CopulaFactory.register(CopulaType.PLACKETT, PlackettCopula)
+CopulaFactory.register(CopulaType.TAWN, TawnCopula)

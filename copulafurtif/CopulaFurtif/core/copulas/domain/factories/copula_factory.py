@@ -1,3 +1,5 @@
+from CopulaFurtif.copulas import CopulaType
+
 class CopulaFactory:
     """
     Factory centralisée pour créer des instances de copules par nom.
@@ -5,12 +7,12 @@ class CopulaFactory:
     registry = {}
 
     @classmethod
-    def register(cls, name: str, constructor):
-        cls.registry[name.lower()] = constructor
+    def register(cls, name: CopulaType, constructor):
+        cls.registry[name] = constructor
 
     @classmethod
-    def create(cls, name: str):
-        key = name.lower()
+    def create(cls, name: CopulaType):
+        key = name
         if key not in cls.registry:
             raise ValueError(f"Unknown copula type: {name}")
         return cls.registry[key]()

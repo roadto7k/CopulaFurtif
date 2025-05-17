@@ -2,6 +2,7 @@ import numpy as np
 from scipy.stats import norm, expon
 # from CopulaFurtif.core.copulas.infrastructure.registry import register_all_copulas
 from CopulaFurtif.core.copulas.domain.factories.copula_factory import CopulaFactory
+from CopulaFurtif.copulas import CopulaType
 from CopulaFurtif.core.copulas.infrastructure.visualization import copula_viz_adapter as viz
 
 def main():
@@ -11,8 +12,8 @@ def main():
     # Exemple temporaire : StudentCopula (non refactorisée pour l’instant)
     # from Service.Copulas.elliptical.student import StudentCopula  # TODO: refactor version
     # cop = StudentCopula()
-    cop = CopulaFactory.create("gaussian")
-    cop.parameters = np.array([0.8])
+    cop = CopulaFactory.create(CopulaType.AMH)
+    # cop.parameters = np.array([0.8])
 
     print("→ Visualisation de la CDF (3D + contours)")
     # viz.plot_cdf(cop, plot_type='3d', Nsplit=60, cmap='coolwarm')
