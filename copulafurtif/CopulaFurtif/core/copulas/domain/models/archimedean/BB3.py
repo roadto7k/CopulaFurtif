@@ -1,130 +1,71 @@
-"""
-BB3 Copula implementation following the project coding standard:
-
-Norms:
- 1. Use private `_parameters` with public `@property parameters` and validation in setter.
- 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
- 3. Docstrings include **Parameters** and **Returns** with types.
- 4. Parameter bounds in `bounds_param`; setter enforces them.
- 5. Uniform boundary clipping with `eps=1e-12` and `np.clip` where needed.
- 6. Document parameter names (`d`, `q`) in `__init__` docstring.
-"""
 import numpy as np
 from scipy.optimize import brentq
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
-from Service.Copulas.base import BaseCopula
 
-
-class BB3Copula(BaseCopula):
+class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
     BB3 Copula (Two-parameter Archimedean copula).
 
-    Parameters
-    ----------
-    d : float
-        Parameter controlling generator scale (d > 0).
-    q : float
-        Parameter controlling generator shape (q ≥ 1).
+    Attributes:
+        name (str): Human-readable name of the copula.
+        type (str): Identifier for the copula family.
+        bounds_param (list of tuple): Parameter bounds [d > 0, q >= 1].
+        parameters (np.ndarray): Current copula parameters.
+        default_optim_method (str): Optimization method.
     """
+
     def __init__(self):
+        """Initialize BB3 copula with default parameters d=1.0, q=1.0."""
         super().__init__()
-        self.type = "bb3"
         self.name = "BB3 Copula"
-        # d > 0, q >= 1
-        self.bounds_param = [(1e-6, None), (1.0, None)]
-        self._parameters = np.array([1.0, 1.0])  # [d, q]
+        self.type = "bb3"
+        self.bounds_param = [(1e-6, None), (1.0, None)]  # [d, q]
+        self._parameters = np.array([1.0, 1.0])
         self.default_optim_method = "Powell"
 
     @property
-    def parameters(self) -> np.ndarray:
+    def parameters(self):
         """
         Get the copula parameters.
 
-        Returns
-        -------
-        np.ndarray
-            Current parameters [d, q].
+        Returns:
+            np.ndarray: Parameters [d, q].
         """
         return self._parameters
 
     @parameters.setter
-    def parameters(self, param: np.ndarray):
+    def parameters(self, param):
         """
-        Set and validate copula parameters against bounds_param.
+        Set and validate copula parameters.
 
-        Parameters
-        ----------
-        param : array-like
-            New parameters [d, q].
+        Args:
+            param (array-like): Parameters [d, q].
 
-        Raises
-        ------
-        ValueError
-            If any value is outside its specified bound.
+        Raises:
+            ValueError: If parameters are out of bounds.
         """
         param = np.asarray(param)
         for idx, (lower, upper) in enumerate(self.bounds_param):
-            val = param[idx]
-            name = ['d', 'q'][idx]
-            if lower is not None and val <= lower:
-                raise ValueError(f"Parameter '{name}' must be > {lower}, got {val}")
-            if upper is not None and val < upper and False:
-                pass
+            if lower is not None and param[idx] <= lower:
+                raise ValueError(f"Parameter {['d','q'][idx]} must be > {lower}, got {param[idx]}")
         self._parameters = param
 
-    def _h(self, s, param: np.ndarray = None):
-        """
-        Generator h(s) = [(log(1+s)/d)]^(1/q).
-
-        Parameters
-        ----------
-        s : float or ndarray
-            Generator argument.
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        float or ndarray
-            Generator value h(s).
-        """
+    def _h(self, s, param=None):
         if param is None:
             param = self.parameters
         d, q = param
         return (np.log1p(s) / d) ** (1.0 / q)
 
-    def _h_prime(self, s, param: np.ndarray = None):
-        """
-        Derivative h'(s) of generator.
-
-        Parameters
-        ----------
-        s : float or ndarray
-        param : ndarray, optional
-
-        Returns
-        -------
-        float or ndarray
-        """
+    def _h_prime(self, s, param=None):
         if param is None:
             param = self.parameters
         d, q = param
         g = np.log1p(s) / d
         return (1.0 / (q * d * (1.0 + s))) * g ** (1.0 / q - 1.0)
 
-    def _h_double(self, s, param: np.ndarray = None):
-        """
-        Second derivative h''(s) of generator.
-
-        Parameters
-        ----------
-        s : float or ndarray
-        param : ndarray, optional
-
-        Returns
-        -------
-        float or ndarray
-        """
+    def _h_double(self, s, param=None):
         if param is None:
             param = self.parameters
         d, q = param
@@ -134,24 +75,7 @@ class BB3Copula(BaseCopula):
         term2 = (1.0 / q - 1.0) * g ** (1.0 / q - 2.0) / d
         return A * (term1 + term2)
 
-    def get_cdf(self, u, v, param: np.ndarray = None):
-        """
-        Compute copula CDF C(u,v) = exp(-h(s)), s = phi^{-1}(u)+phi^{-1}(v).
-
-        Parameters
-        ----------
-        u : float or ndarray
-            Pseudo-observation(s) in (0,1).
-        v : float or ndarray
-            Pseudo-observation(s) in (0,1).
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        float or ndarray
-            Copula CDF value(s).
-        """
+    def get_cdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
         d, q = param
@@ -163,24 +87,7 @@ class BB3Copula(BaseCopula):
         s = s_u + s_v
         return np.exp(-self._h(s, param))
 
-    def get_pdf(self, u, v, param: np.ndarray = None):
-        """
-        Compute copula PDF c(u,v) = phi''(s)*phi_inv_u'*phi_inv_v'.
-
-        Parameters
-        ----------
-        u : float or ndarray
-            Pseudo-observation(s) in (0,1).
-        v : float or ndarray
-            Pseudo-observation(s) in (0,1).
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        float or ndarray
-            Copula PDF value(s).
-        """
+    def get_pdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
         d, q = param
@@ -198,24 +105,7 @@ class BB3Copula(BaseCopula):
         phi_inv_v_prime = -d * q * np.exp(d * (-np.log(v)) ** q) * (((-np.log(v)) ** (q - 1)) / v)
         return phi_dd * phi_inv_u_prime * phi_inv_v_prime
 
-    def kendall_tau(self, param: np.ndarray = None, n: int = 201) -> float:
-        """
-        Estimate Kendall's tau by double integral:
-
-            τ = 4 ∫_0^1 ∫_0^1 C(u,v) du dv - 1.
-
-        Parameters
-        ----------
-        param : ndarray, optional
-            Copula parameters [d, q].
-        n : int
-            Grid points per dimension (default=201).
-
-        Returns
-        -------
-        float
-            Estimated Kendall's tau.
-        """
+    def kendall_tau(self, param=None, n=201):
         if param is None:
             param = self.parameters
         eps = 1e-6
@@ -225,111 +115,27 @@ class BB3Copula(BaseCopula):
         integral = np.trapz(np.trapz(Z, u, axis=1), u)
         return 4.0 * integral - 1.0
 
-    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
-        """
-        Generate samples (u,v) via conditional inversion.
-
-        Parameters
-        ----------
-        n : int
-            Number of samples.
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        np.ndarray
-            Shape (n,2) array of pseudo-observations.
-        """
+    def sample(self, n, param=None):
         if param is None:
             param = self.parameters
         samples = np.empty((n, 2))
         for i in range(n):
             u = np.random.rand()
             p = np.random.rand()
-            root = brentq(
-                lambda v_val: self.conditional_cdf_v_given_u(u, v_val, param) - p,
-                1e-6, 1 - 1e-6
-            )
+            root = brentq(lambda v_val: self.conditional_cdf_v_given_u(u, v_val, param) - p, 1e-6, 1 - 1e-6)
             samples[i] = [u, root]
         return samples
 
-    def LTDC(self, param: np.ndarray = None) -> float:
-        """
-        Lower-tail dependence λ_L = 0 for BB3.
-
-        Returns
-        -------
-        float
-            0.0
-        """
+    def LTDC(self, param=None):
         return 0.0
 
-    def UTDC(self, param: np.ndarray = None) -> float:
-        """
-        Upper-tail dependence λ_U = 2 - 2^(1/q).
-
-        Parameters
-        ----------
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        float
-            Upper-tail dependence.
-        """
+    def UTDC(self, param=None):
         if param is None:
             param = self.parameters
         q = param[1]
         return 2.0 - 2.0 ** (1.0 / q)
 
-    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
-        """
-        Compute partial ∂C/∂v.
-
-        Parameters
-        ----------
-        u, v : float or ndarray
-            Pseudo-observations in (0,1).
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        float or ndarray
-            ∂C/∂v.
-        """
-        if param is None:
-            param = self.parameters
-        d, q = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
-        s = s_u + s_v
-        h1 = self._h_prime(s, param)
-        phi_p = -h1 * np.exp(-self._h(s, param))
-        phi_inv_v_prime = -d * q * np.exp(d * (-np.log(v)) ** q) * (((-np.log(v)) ** (q - 1)) / v)
-        return phi_p * phi_inv_v_prime
-
-    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
-        """
-        Compute partial ∂C/∂u.
-
-        Parameters
-        ----------
-        u, v : float or ndarray
-            Pseudo-observations in (0,1).
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        float or ndarray
-            ∂C/∂u.
-        """
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
         if param is None:
             param = self.parameters
         d, q = param
@@ -344,46 +150,19 @@ class BB3Copula(BaseCopula):
         phi_inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (((-np.log(u)) ** (q - 1)) / u)
         return phi_p * phi_inv_u_prime
 
-    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
-        """
-        Compute P(U ≤ u | V = v).
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(v, u, param)
 
-        Parameters
-        ----------
-        u, v : float or ndarray
-            Pseudo-observations in (0,1).
-        param : ndarray, optional
-            Copula parameters [d, q].
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_v(u, v, param) / self.partial_derivative_C_wrt_v(1.0, v, param)
 
-        Returns
-        -------
-        float or ndarray
-            Conditional CDF value.
-        """
-        if param is None:
-            param = self.parameters
-        num = self.partial_derivative_C_wrt_v(u, v, param)
-        den = self.partial_derivative_C_wrt_v(1.0, v, param)
-        return num / den
+    def conditional_cdf_v_given_u(self, u, v, param=None):
+        return self.partial_derivative_C_wrt_u(u, v, param) / self.partial_derivative_C_wrt_u(u, 1.0, param)
 
-    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
-        """
-        Compute P(V ≤ v | U = u).
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
 
-        Parameters
-        ----------
-        u, v : float or ndarray
-            Pseudo-observations in (0,1).
-        param : ndarray, optional
-            Copula parameters [d, q].
-
-        Returns
-        -------
-        float or ndarray
-            Conditional CDF value.
-        """
-        if param is None:
-            param = self.parameters
-        num = self.partial_derivative_C_wrt_u(u, v, param)
-        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
-        return num / den
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan

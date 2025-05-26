@@ -12,4 +12,15 @@ class CopulaType(Enum):
     GUMBEL = "gumbel"
     PLACKETT = "plackett"
     TAWN = "tawn"
+    TAWNT1 = "tawnT1"
+    TAWNT2 = "tawnT2"
+    BB1 = "BB1"
+    BB2 = "BB2"
+    BB3 = "BB3"
+    BB4 = "BB4"
+    BB5 = "BB5"
+    BB6 = "BB6"
+    BB7 = "BB7"
+    BB8 = "BB8"
+    
     

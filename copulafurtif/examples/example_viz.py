@@ -12,7 +12,7 @@ def main():
     # Exemple temporaire : StudentCopula (non refactorisée pour l’instant)
     # from Service.Copulas.elliptical.student import StudentCopula  # TODO: refactor version
     # cop = StudentCopula()
-    cop = CopulaFactory.create(CopulaType.AMH)
+    cop = CopulaFactory.create(CopulaType.BB8)
     # cop.parameters = np.array([0.8])
 
     print("→ Visualisation de la CDF (3D + contours)")

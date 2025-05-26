@@ -1,83 +1,50 @@
 import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import root_scalar
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
-from Service.Copulas.base import BaseCopula
 
-
-class TawnT1Copula(BaseCopula):
+class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
     Tawn Type-1 (asymmetric logistic) extreme-value copula.
 
-    Parameters
-    ----------
-    theta : float
-        Dependence strength parameter (>= 1).
-    beta : float
-        Asymmetry parameter (beta) in [0, 1].
-
-    Pickands dependence function:
-      A(t) = (1 - beta) * t + [ (1 - t)**theta + (beta * t)**theta ]**(1/theta)
-
-    CDF:
-      C(u, v) = exp( - (x + y) * A( x/(x+y) ) ),
-      where x = -log(u), y = -log(v).
+    Attributes:
+        name (str): Human-readable name.
+        type (str): Internal identifier.
+        bounds_param (list): Bounds for [theta, beta].
+        parameters (np.ndarray): Current parameters.
+        default_optim_method (str): Optimization method.
     """
 
     def __init__(self):
         super().__init__()
-        self.type = "tawn1"
         self.name = "Tawn Type-1 Copula"
+        self.type = "tawn1"
         self.bounds_param = [(1.0, None), (0.0, 1.0)]
-        self._parameters = np.array([2.0, 0.5])  # [theta, beta]
+        self._parameters = np.array([2.0, 0.5])
         self.default_optim_method = "Powell"
 
     @property
-    def parameters(self) -> np.ndarray:
+    def parameters(self):
         return self._parameters
 
     @parameters.setter
-    def parameters(self, param: np.ndarray):
-        self._parameters = np.asarray(param)
+    def parameters(self, param):
+        param = np.asarray(param)
+        if param[0] < 1.0:
+            raise ValueError("theta must be >= 1.0")
+        if not (0.0 <= param[1] <= 1.0):
+            raise ValueError("beta must be in [0, 1]")
+        self._parameters = param
 
-    def _A(self, t: float, param: np.ndarray = None) -> float:
-        """
-        Pickands dependence function A(t).
-
-        Parameters
-        ----------
-        t : float
-            Argument in [0,1].
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        A_t : float
-            Value of A(t).
-        """
+    def _A(self, t, param=None):
         if param is None:
             param = self.parameters
         theta, beta = param
-        h = (1 - t)**theta + (beta * t)**theta
-        return (1 - beta) * t + h**(1.0 / theta)
+        return (1 - beta) * t + ((1 - t)**theta + (beta * t)**theta)**(1.0 / theta)
 
-    def _A_prime(self, t: float, param: np.ndarray = None) -> float:
-        """
-        First derivative A'(t).
-
-        Parameters
-        ----------
-        t : float
-            Argument in [0,1].
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        A1_t : float
-            Derivative A'(t).
-        """
+    def _A_prime(self, t, param=None):
         if param is None:
             param = self.parameters
         theta, beta = param
@@ -85,22 +52,7 @@ class TawnT1Copula(BaseCopula):
         hp = -theta * (1 - t)**(theta - 1) + theta * beta * (beta * t)**(theta - 1)
         return (1 - beta) + (1.0 / theta) * h**(1.0 / theta - 1) * hp
 
-    def _A_double(self, t: float, param: np.ndarray = None) -> float:
-        """
-        Second derivative A''(t).
-
-        Parameters
-        ----------
-        t : float
-            Argument in [0,1].
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        A2_t : float
-            Derivative A''(t).
-        """
+    def _A_double(self, t, param=None):
         if param is None:
             param = self.parameters
         theta, beta = param
@@ -111,60 +63,24 @@ class TawnT1Copula(BaseCopula):
         term2 = (1.0 / theta) * h**(1.0 / theta - 1) * hpp
         return term1 + term2
 
-    def get_cdf(self, u: np.ndarray, v: np.ndarray, param: np.ndarray = None) -> np.ndarray:
-        """
-        Copula CDF: C(u,v) = exp(-l(x,y)), where l = (x+y)*A(x/(x+y)).
-
-        Parameters
-        ----------
-        u : ndarray
-            First pseudo-observations in (0,1).
-        v : ndarray
-            Second pseudo-observations in (0,1).
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        C : ndarray
-            Copula CDF values.
-        """
+    def get_cdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-        x = -np.log(u)
-        y = -np.log(v)
+        x, y = -np.log(u), -np.log(v)
         s = x + y
         t = x / s
         return np.exp(-s * self._A(t, param))
 
-    def get_pdf(self, u: np.ndarray, v: np.ndarray, param: np.ndarray = None) -> np.ndarray:
-        """
-        Copula PDF: c(u,v) = C(u,v) * (l_x * l_y - l_xy) / (u*v).
-
-        Parameters
-        ----------
-        u : ndarray
-            First pseudo-observations in (0,1).
-        v : ndarray
-            Second pseudo-observations in (0,1).
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        c : ndarray
-            Copula PDF values.
-        """
+    def get_pdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-        x = -np.log(u)
-        y = -np.log(v)
+        x, y = -np.log(u), -np.log(v)
         s = x + y
         t = x / s
         A = self._A(t, param)
@@ -176,28 +92,10 @@ class TawnT1Copula(BaseCopula):
         C_val = np.exp(-s * A)
         return C_val * (Lx * Ly - Lxy) / (u * v)
 
-    def partial_derivative_C_wrt_u(self, u: np.ndarray, v: np.ndarray, param: np.ndarray = None) -> np.ndarray:
-        """
-        Partial derivative ∂C/∂u for conditional sampling.
-
-        Parameters
-        ----------
-        u : ndarray
-            First pseudo-observations.
-        v : ndarray
-            Second pseudo-observations.
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        dCdu : ndarray
-            ∂C/∂u values.
-        """
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
         if param is None:
             param = self.parameters
-        x = -np.log(u)
-        y = -np.log(v)
+        x, y = -np.log(u), -np.log(v)
         s = x + y
         t = x / s
         C_val = self.get_cdf(u, v, param)
@@ -205,28 +103,10 @@ class TawnT1Copula(BaseCopula):
         Ap = self._A_prime(t, param)
         return C_val * (A / u + (y / (u * s)) * Ap)
 
-    def partial_derivative_C_wrt_v(self, u: np.ndarray, v: np.ndarray, param: np.ndarray = None) -> np.ndarray:
-        """
-        Partial derivative ∂C/∂v for conditional sampling.
-
-        Parameters
-        ----------
-        u : ndarray
-            First pseudo-observations.
-        v : ndarray
-            Second pseudo-observations.
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        dCdv : ndarray
-            ∂C/∂v values.
-        """
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
         if param is None:
             param = self.parameters
-        x = -np.log(u)
-        y = -np.log(v)
+        x, y = -np.log(u), -np.log(v)
         s = x + y
         t = x / s
         C_val = self.get_cdf(u, v, param)
@@ -234,74 +114,18 @@ class TawnT1Copula(BaseCopula):
         Ap = self._A_prime(t, param)
         return C_val * (A / v - (x / (v * s)) * Ap)
 
-    def conditional_cdf_v_given_u(self, u: np.ndarray, v: np.ndarray, param: np.ndarray = None) -> np.ndarray:
-        """
-        Conditional CDF P(V <= v | U = u).
-
-        Parameters
-        ----------
-        u : ndarray
-            First pseudo-observations.
-        v : ndarray
-            Second pseudo-observations.
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        P : ndarray
-            P(V <= v | U = u).
-        """
-        if param is None:
-            param = self.parameters
+    def conditional_cdf_v_given_u(self, u, v, param=None):
         return self.partial_derivative_C_wrt_u(u, v, param)
 
-    def conditional_cdf_u_given_v(self, u: np.ndarray, v: np.ndarray, param: np.ndarray = None) -> np.ndarray:
-        """
-        Conditional CDF P(U <= u | V = v).
-
-        Parameters
-        ----------
-        u : ndarray
-            First pseudo-observations.
-        v : ndarray
-            Second pseudo-observations.
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        P : ndarray
-            P(U <= u | V = v).
-        """
-        if param is None:
-            param = self.parameters
+    def conditional_cdf_u_given_v(self, u, v, param=None):
         return self.partial_derivative_C_wrt_v(u, v, param)
 
-    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
-        """
-        Generate samples via conditional inversion:
-          1. u ~ Uniform(0,1)
-          2. p ~ Uniform(0,1)
-          3. solve P(V<=v|U=u)=p via bisection.
-
-        Parameters
-        ----------
-        n : int
-            Number of samples.
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        samples : ndarray
-            Array of shape (n,2) of (u,v) samples.
-        """
+    def sample(self, n, param=None):
         if param is None:
             param = self.parameters
-        eps = 1e-6
         u = np.random.rand(n)
         v = np.empty(n)
+        eps = 1e-6
         for i in range(n):
             p = np.random.rand()
             sol = root_scalar(
@@ -311,56 +135,25 @@ class TawnT1Copula(BaseCopula):
             v[i] = sol.root
         return np.column_stack((u, v))
 
-    def kendall_tau(self, param: np.ndarray = None) -> float:
-        """
-        Compute Kendall's tau: τ = 1 - 4 ∫₀¹ A(t) dt.
-
-        Parameters
-        ----------
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        tau : float
-            Kendall's tau.
-        """
+    def kendall_tau(self, param=None):
         if param is None:
             param = self.parameters
         integral, _ = quad(lambda t: self._A(t, param), 0.0, 1.0)
         return 1.0 - 4.0 * integral
 
-    def LTDC(self, param: np.ndarray = None) -> float:
-        """
-        Lower-tail dependence coefficient λ_L = 0.
-
-        Parameters
-        ----------
-        param : ndarray, optional
-            Copula parameters, unused.
-
-        Returns
-        -------
-        l : float
-            Lower-tail dependence.
-        """
+    def LTDC(self, param=None):
         return 0.0
 
-    def UTDC(self, param: np.ndarray = None) -> float:
-        """
-        Upper-tail dependence coefficient λ_U = 2 - 2^(1/theta).
-
-        Parameters
-        ----------
-        param : ndarray, optional
-            Copula parameters [theta, beta].
-
-        Returns
-        -------
-        u : float
-            Upper-tail dependence.
-        """
+    def UTDC(self, param=None):
         if param is None:
             param = self.parameters
         theta = param[0]
         return 2.0 - 2.0**(1.0 / theta)
+
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
+
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan

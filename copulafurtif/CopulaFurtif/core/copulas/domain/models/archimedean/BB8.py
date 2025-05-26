@@ -1,98 +1,47 @@
-"""
-BB8 Copula implementation following the project coding standard:
-
-Norms:
- 1. Use private `_parameters` with public `@property parameters` and validation in setter.
- 2. All methods accept `param: np.ndarray = None` defaulting to `self.parameters`.
- 3. Docstrings include **Parameters** and **Returns** with types.
- 4. Parameter bounds in `bounds_param`; setter enforces them.
- 5. Finite-difference approximations use `eps=1e-6`.
- 6. Uniform boundary clipping with `eps=1e-12` for CDF.
-"""
 import numpy as np
 from scipy.optimize import root_scalar
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
-from Service.Copulas.base import BaseCopula
 
-
-class BB8Copula(BaseCopula):
+class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
     BB8 Copula (Durante et al.):
-      C(u,v) = [1 - (1-A)*(1-B)]^(1/theta)
-      A = [1 - (1-u)^theta]^delta, B = [1 - (1-v)^theta]^delta
+      C(u,v) = [1 - (1-A)*(1-B)]^(1/theta),
+      where A = [1 - (1-u)^theta]^delta,
+            B = [1 - (1-v)^theta]^delta.
 
-    Parameters
-    ----------
-    theta : float
-        Tail dependence parameter (θ >= 1).
-    delta : float
-        Asymmetry parameter (0 < δ <= 1).
+    Attributes:
+        name (str): Human-readable name of the copula.
+        type (str): Identifier for the copula family.
+        bounds_param (list of tuple): Bounds for copula parameters.
+        parameters (np.ndarray): Current copula parameters.
+        default_optim_method (str): Default method for optimization.
     """
+
     def __init__(self):
         super().__init__()
-        self.type = "bb8"
         self.name = "BB8 Copula (Durante)"
-        # theta >= 1, delta in (0,1]
-        self.bounds_param = [(1.0, None), (0.0, 1.0)]
-        self._parameters = np.array([2.0, 0.7])  # [theta, delta]
+        self.type = "bb8"
+        self.bounds_param = [(1.0, None), (0.0, 1.0)]  # [theta, delta]
+        self._parameters = np.array([2.0, 0.7])
         self.default_optim_method = "Powell"
 
     @property
-    def parameters(self) -> np.ndarray:
-        """
-        Get copula parameters [theta, delta].
-
-        Returns
-        -------
-        np.ndarray
-            Current parameters.
-        """
+    def parameters(self):
         return self._parameters
 
     @parameters.setter
-    def parameters(self, param: np.ndarray):
-        """
-        Set and validate copula parameters against bounds_param.
-
-        Parameters
-        ----------
-        param : array-like
-            New parameters [theta, delta].
-
-        Raises
-        ------
-        ValueError
-            If any value is outside its specified bound.
-        """
+    def parameters(self, param):
         param = np.asarray(param)
-        names = ['theta', 'delta']
         for i, (lower, upper) in enumerate(self.bounds_param):
-            val = param[i]
-            name = names[i]
-            if lower is not None and val < lower:
-                raise ValueError(f"Parameter '{name}' must be >= {lower}, got {val}")
-            if upper is not None and val > upper:
-                raise ValueError(f"Parameter '{name}' must be <= {upper}, got {val}")
+            if param[i] < lower:
+                raise ValueError(f"Parameter {['theta','delta'][i]} must be >= {lower}, got {param[i]}")
+            if upper is not None and param[i] > upper:
+                raise ValueError(f"Parameter {['theta','delta'][i]} must be <= {upper}, got {param[i]}")
         self._parameters = param
 
-    def get_cdf(self, u, v, param: np.ndarray = None):
-        """
-        Compute BB8 copula CDF: C(u,v) = [1 - (1-A)*(1-B)]^(1/theta).
-
-        Parameters
-        ----------
-        u : float or ndarray
-            First pseudo-observation in (0,1).
-        v : float or ndarray
-            Second pseudo-observation in (0,1).
-        param : ndarray, optional
-            Copula parameters [theta, delta].
-
-        Returns
-        -------
-        float or ndarray
-            Copula CDF value(s).
-        """
+    def get_cdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
         theta, delta = param
@@ -104,148 +53,70 @@ class BB8Copula(BaseCopula):
         inner = 1.0 - (1.0 - A)*(1.0 - B)
         return inner**(1.0/theta)
 
-    def get_pdf(self, u, v, param: np.ndarray = None):
-        """
-        Approximate BB8 copula PDF via finite differences.
-
-        Parameters
-        ----------
-        u : float or ndarray
-        v : float or ndarray
-        param : ndarray, optional
-            Copula parameters [theta, delta].
-
-        Returns
-        -------
-        float or ndarray
-            Approximate PDF c(u,v).
-        """
+    def get_pdf(self, u, v, param=None):
         if param is None:
             param = self.parameters
         eps = 1e-6
         c = self.get_cdf
         return (
-            c(u+eps, v+eps, param)
-            - c(u+eps, v-eps, param)
-            - c(u-eps, v+eps, param)
-            + c(u-eps, v-eps, param)
+            c(u+eps, v+eps, param) - c(u+eps, v-eps, param)
+            - c(u-eps, v+eps, param) + c(u-eps, v-eps, param)
         ) / (4.0 * eps**2)
 
-    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
-        """
-        Approximate ∂C/∂u using forward finite difference.
-
-        Parameters
-        ----------
-        u : float or ndarray
-        v : float or ndarray
-        param : ndarray, optional
-            Copula parameters.
-
-        Returns
-        -------
-        float or ndarray
-            Approximate ∂C/∂u.
-        """
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
         if param is None:
             param = self.parameters
         eps = 1e-6
         c = self.get_cdf
         return (c(u+eps, v, param) - c(u, v, param)) / eps
 
-    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
-        """
-        Approximate ∂C/∂v using forward finite difference.
-
-        Returns
-        -------
-        float or ndarray
-            Approximate ∂C/∂v.
-        """
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
         if param is None:
             param = self.parameters
         eps = 1e-6
         c = self.get_cdf
         return (c(u, v+eps, param) - c(u, v, param)) / eps
 
-    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
-        """
-        Compute P(V ≤ v | U = u) = ∂C/∂u(u,v).
-
-        Returns
-        -------
-        float or ndarray
-        """
+    def conditional_cdf_v_given_u(self, u, v, param=None):
         return self.partial_derivative_C_wrt_u(u, v, param)
 
-    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
-        """
-        Compute P(U ≤ u | V = v) = ∂C/∂v(u,v).
-
-        Returns
-        -------
-        float or ndarray
-        """
+    def conditional_cdf_u_given_v(self, u, v, param=None):
         return self.partial_derivative_C_wrt_v(u, v, param)
 
-    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
-        """
-        Generate samples via conditional inversion.
-
-        Parameters
-        ----------
-        n : int
-            Number of samples.
-        param : ndarray, optional
-            Copula parameters.
-
-        Returns
-        -------
-        np.ndarray of shape (n,2)
-            Sampled pseudo-observations.
-        """
+    def sample(self, n, param=None):
         if param is None:
             param = self.parameters
-        samples = np.empty((n,2))
+        samples = np.empty((n, 2))
         eps = 1e-6
         for i in range(n):
             u = np.random.rand()
             p = np.random.rand()
             root = root_scalar(
                 lambda vv: self.partial_derivative_C_wrt_u(u, vv, param) - p,
-                bracket=[eps, 1-eps], method='bisect', xtol=1e-6
+                bracket=[eps, 1 - eps], method='bisect', xtol=1e-6
             )
             samples[i] = [u, root.root]
         return samples
 
-    def LTDC(self, param: np.ndarray = None) -> float:
-        """
-        Approximate lower-tail dependence λ_L = lim_{u→0} C(u,u)/u.
-
-        Returns
-        -------
-        float
-        """
+    def LTDC(self, param=None):
         if param is None:
             param = self.parameters
         u = 1e-6
-        return self.get_cdf(u,u,param) / u
+        return self.get_cdf(u, u, param) / u
 
-    def UTDC(self, param: np.ndarray = None) -> float:
-        """
-        Approximate upper-tail dependence λ_U = lim_{u→1} (1-2u+C(u,u))/(1-u).
-
-        Returns
-        -------
-        float
-        """
+    def UTDC(self, param=None):
         if param is None:
             param = self.parameters
-        u = 1 - 1e-6
-        return (1 - 2*u + self.get_cdf(u,u,param)) / (1-u)
+        u = 1.0 - 1e-6
+        return (1 - 2*u + self.get_cdf(u, u, param)) / (1 - u)
 
-    def kendall_tau(self, param: np.ndarray = None) -> float:
-        """
-        Not implemented for BB8.
-        """
+    def kendall_tau(self, param=None):
         raise NotImplementedError("Kendall's tau not implemented for BB8.")
+
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
+
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan

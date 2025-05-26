@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import beta, lognorm
 # from CopulaFurtif.core.copulas.infrastructure.registry import register_all_copulas
-from CopulaFurtif.core.copulas.domain.factories.copula_factory import CopulaFactory
+from CopulaFurtif.core.copulas.domain.factories.copula_factory import CopulaFactory, CopulaType
 from CopulaFurtif.core.copulas.application.use_cases.fit_copula import FitCopulaUseCase
 from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
 from CopulaFurtif.core.copulas.application.services.diagnostics_service import DiagnosticsService
@@ -19,7 +19,7 @@ def main():
     print(f"True rho: {true_rho}\n")
 
     # === Step 1: Instantiate copula ===
-    copula = CopulaFactory.create("gaussian")
+    copula = CopulaFactory.create(CopulaType.GAUSSIAN)
 
     # === Step 2: Fit (CMLE) ===
     print("→ Step 1: CMLE")
