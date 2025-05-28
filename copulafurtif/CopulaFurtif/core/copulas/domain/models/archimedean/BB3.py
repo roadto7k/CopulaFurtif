@@ -22,35 +22,10 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB3 Copula"
         self.type = "bb3"
         self.bounds_param = [(1e-6, None), (1.0, None)]  # [d, q]
-        self._parameters = np.array([1.0, 1.0])
+        self.param_names = ["d", "q"]
+        self.parameters = [1.0, 1.0]
         self.default_optim_method = "Powell"
 
-    @property
-    def parameters(self):
-        """
-        Get the copula parameters.
-
-        Returns:
-            np.ndarray: Parameters [d, q].
-        """
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        """
-        Set and validate copula parameters.
-
-        Args:
-            param (array-like): Parameters [d, q].
-
-        Raises:
-            ValueError: If parameters are out of bounds.
-        """
-        param = np.asarray(param)
-        for idx, (lower, upper) in enumerate(self.bounds_param):
-            if lower is not None and param[idx] <= lower:
-                raise ValueError(f"Parameter {['d','q'][idx]} must be > {lower}, got {param[idx]}")
-        self._parameters = param
 
     def _h(self, s, param=None):
         if param is None:

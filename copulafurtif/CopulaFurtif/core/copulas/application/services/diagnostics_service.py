@@ -1,8 +1,9 @@
 from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
 import numpy as np
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 
-class DiagnosticsService:
-    def evaluate(self, data, copula):
+class CopulaDiagnostics:
+    def evaluate(self, data, copula : CopulaModel):
         u, v = pseudo_obs(data)
         cdf = [u, v]
         result = {

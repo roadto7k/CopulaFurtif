@@ -1,6 +1,6 @@
 from CopulaFurtif.core.copulas.domain.estimation.estimation import cmle, fit_mle, fit_ifm
 
-class FitCopulaUseCase:
+class CopulaFitter:
     def fit_cmle(self, data, copula):
         res = cmle(copula, data)
         if res:

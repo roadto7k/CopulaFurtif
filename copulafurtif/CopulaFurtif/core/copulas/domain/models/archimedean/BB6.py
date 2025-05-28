@@ -23,20 +23,10 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB6 Copula"
         self.type = "bb6"
         self.bounds_param = [(1.0, None), (1.0, None)]  # [theta, delta]
-        self._parameters = np.array([2.0, 2.0])
+        self.param_names = ["theta", "delta"]
+        self.parameters = [2.0, 2.0]
         self.default_optim_method = "Powell"
 
-    @property
-    def parameters(self):
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        param = np.asarray(param)
-        for idx, (lower, _) in enumerate(self.bounds_param):
-            if param[idx] < lower:
-                raise ValueError(f"Parameter {['theta','delta'][idx]} must be >= {lower}, got {param[idx]}")
-        self._parameters = param
 
     def _phi(self, t, theta, delta):
         return (-np.log(1.0 - (1.0 - t)**theta))**(1.0 / delta)

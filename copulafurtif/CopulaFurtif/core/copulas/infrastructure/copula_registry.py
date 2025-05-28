@@ -23,7 +23,7 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.BB6 import BB6Copula
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB7 import BB7Copula
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB8 import BB8Copula
 
-from CopulaFurtif.copulas import CopulaType
+from CopulaFurtif.core.copulas.domain.copula_type import CopulaType
 
 CopulaFactory.register(CopulaType.GAUSSIAN, GaussianCopula)
 CopulaFactory.register(CopulaType.STUDENT, StudentCopula)

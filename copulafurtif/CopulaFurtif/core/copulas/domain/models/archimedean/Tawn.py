@@ -27,33 +27,9 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Tawn Copula"
         self.type = "tawn"
         self.bounds_param = [(1.01, 5.0), (0.0, 1.0)]  # [theta, delta]
-        self._parameters = np.array([2.0, 0.5])
+        self.param_names = ["theta", "delta"]
+        self.parameters = [2.0, 0.5]
         self.default_optim_method = "SLSQP"
-
-    @property
-    def parameters(self):
-        """Get the copula parameters.
-
-        Returns:
-            np.ndarray: Copula parameters [theta, delta].
-        """
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        """Set and validate the copula parameters.
-
-        Args:
-            param (array-like): New copula parameters [theta, delta].
-
-        Raises:
-            ValueError: If any parameter is out of bounds.
-        """
-        param = np.asarray(param)
-        for i, (low, high) in enumerate(self.bounds_param):
-            if not (low <= param[i] <= high):
-                raise ValueError(f"Parameter {i} out of bounds")
-        self._parameters = param
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).

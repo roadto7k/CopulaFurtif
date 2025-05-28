@@ -18,7 +18,7 @@ import numpy as np
 from scipy.special import erfinv
 from scipy.stats import norm, multivariate_normal
 
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import SupportsTailDependence, ModelSelectionMixin
 
 
@@ -30,48 +30,19 @@ class GaussianCopula(CopulaModel, SupportsTailDependence, ModelSelectionMixin):
         type (str): Copula type identifier.
         name (str): Human-readable copula name.
         bounds_param (list of tuple): Bounds for the copula parameter rho in (-1, 1).
-        _parameters (np.ndarray): Internal parameter [rho].
+        _parameters (CopulaParameters): Internal parameter [rho].
         default_optim_method (str): Default optimization method to use during fitting.
     """
 
     def __init__(self):
         """Initialize the Gaussian Copula with default parameters and bounds."""
         super().__init__()
-        self.type = "gaussian"
         self.name = "Gaussian Copula"
+        self.type = "gaussian"
         self.bounds_param = [(-0.999, 0.999)]
-        self._parameters = np.array([0.0])
+        self.param_names = ["rho"]
+        self.parameters = [0.0]
         self.default_optim_method = "SLSQP"
-
-    @property
-    def parameters(self) -> np.ndarray:
-        """
-        Get the copula parameters.
-
-        Returns:
-            np.ndarray: Current copula parameter [rho].
-        """
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param: np.ndarray):
-        """
-        Set and validate copula parameters.
-
-        Args:
-            param (np.ndarray): New copula parameters [rho].
-
-        Raises:
-            ValueError: If parameter is outside of its defined bounds.
-        """
-        param = np.asarray(param)
-        for idx, (lower, upper) in enumerate(self.bounds_param):
-            val = param[idx]
-            if lower is not None and val <= lower:
-                raise ValueError(f"Parameter at index {idx} must be > {lower}, got {val}")
-            if upper is not None and val >= upper:
-                raise ValueError(f"Parameter at index {idx} must be < {upper}, got {val}")
-        self._parameters = param
 
     def get_cdf(self, u, v, param: np.ndarray = None):
         """

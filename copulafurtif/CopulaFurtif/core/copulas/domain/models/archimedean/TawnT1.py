@@ -21,22 +21,10 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Tawn Type-1 Copula"
         self.type = "tawn1"
-        self.bounds_param = [(1.0, None), (0.0, 1.0)]
-        self._parameters = np.array([2.0, 0.5])
+        self.bounds_param = [(1.0, None), (0.0, 1.0)]  # [theta, delta]
+        self.param_names = ["theta", "delta"]
+        self.parameters = [2.0, 0.5]
         self.default_optim_method = "Powell"
-
-    @property
-    def parameters(self):
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        param = np.asarray(param)
-        if param[0] < 1.0:
-            raise ValueError("theta must be >= 1.0")
-        if not (0.0 <= param[1] <= 1.0):
-            raise ValueError("beta must be in [0, 1]")
-        self._parameters = param
 
     def _A(self, t, param=None):
         if param is None:

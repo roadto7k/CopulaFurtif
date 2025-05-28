@@ -2,7 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class MatplotlibCopulaVisualizer:
-    def plot_residual_heatmap(self, copula, u, v, bins=50):
+    @staticmethod
+    def plot_residual_heatmap(copula, u, v, bins=50):
         u, v = np.asarray(u).flatten(), np.asarray(v).flatten()
         U, V = np.meshgrid(np.linspace(0, 1, bins), np.linspace(0, 1, bins), indexing="ij")
         emp = np.array([

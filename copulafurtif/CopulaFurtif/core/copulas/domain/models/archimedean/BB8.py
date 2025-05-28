@@ -24,22 +24,9 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB8 Copula (Durante)"
         self.type = "bb8"
         self.bounds_param = [(1.0, None), (0.0, 1.0)]  # [theta, delta]
-        self._parameters = np.array([2.0, 0.7])
+        self.param_names = ["theta", "delta"]
+        self.parameters = [2.0, 0.7]
         self.default_optim_method = "Powell"
-
-    @property
-    def parameters(self):
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        param = np.asarray(param)
-        for i, (lower, upper) in enumerate(self.bounds_param):
-            if param[i] < lower:
-                raise ValueError(f"Parameter {['theta','delta'][i]} must be >= {lower}, got {param[i]}")
-            if upper is not None and param[i] > upper:
-                raise ValueError(f"Parameter {['theta','delta'][i]} must be <= {upper}, got {param[i]}")
-        self._parameters = param
 
     def get_cdf(self, u, v, param=None):
         if param is None:

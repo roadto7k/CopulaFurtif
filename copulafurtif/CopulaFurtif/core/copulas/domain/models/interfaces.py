@@ -23,7 +23,31 @@ Abstract Methods:
 from abc import ABC, abstractmethod
 import numpy as np
 
+class CopulaParameters:
+    def __init__(self, values: np.ndarray, bounds: list[tuple], expected_size: int, names: list[str] = None):
+        self.bounds = bounds
+        self.expected_size = expected_size
+        self.names = names or [f"param_{i}" for i in range(expected_size)]
+        self.values = self._validate(values)
 
+    def _validate(self, values):
+        values = np.asarray(values, dtype=float)
+        if len(values) != self.expected_size:
+            raise ValueError(f"Expected {self.expected_size} parameters, got {len(values)}.")
+        for i, (val, (lo, hi)) in enumerate(zip(values, self.bounds)):
+            if not (lo < val < hi):
+                raise ValueError(f"Parameter '{self.names[i]}'={val} out of bounds ({lo}, {hi}).")
+        return values
+
+    def __getitem__(self, idx):
+        return self.values[idx]
+
+    def __repr__(self):
+        return f"CopulaParameters({dict(zip(self.names, self.values))})"
+
+    def as_array(self):
+        return self.values.copy()
+    
 class CopulaModel(ABC):
     """
     Abstract base class for all bivariate copula models.
@@ -46,7 +70,25 @@ class CopulaModel(ABC):
         self._parameters = None
         self.bounds_param = None
         self.log_likelihood_ = None
+        self.param_names = None
         self.n_obs = None
+
+    @property
+    def parameters(self) -> np.ndarray:
+        """Return parameters as numpy array."""
+        return self._parameters.as_array()
+
+    @parameters.setter
+    def parameters(self, values: np.ndarray):
+        """Validate and set parameters. Uses bounds_param and expected size."""
+        if self.bounds_param is None:
+            raise ValueError("bounds_param must be defined before setting parameters.")
+        self._parameters = CopulaParameters(
+            values=values,
+            bounds=self.bounds_param,
+            expected_size=len(self.bounds_param),
+            names=self.param_names
+        )
 
     @abstractmethod
     def get_cdf(self, u, v, param=None):

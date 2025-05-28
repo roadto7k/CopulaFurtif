@@ -1,13 +1,12 @@
 import numpy as np
 from scipy.stats import beta, lognorm
 # from CopulaFurtif.core.copulas.infrastructure.registry import register_all_copulas
-from CopulaFurtif.core.copulas.domain.factories.copula_factory import CopulaFactory, CopulaType
-from CopulaFurtif.core.copulas.application.use_cases.fit_copula import FitCopulaUseCase
-from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
-from CopulaFurtif.core.copulas.application.services.diagnostics_service import DiagnosticsService
-from CopulaFurtif.core.copulas.infrastructure.visualization.matplotlib_visualizer import MatplotlibCopulaVisualizer
 from copulafurtif.CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm
-
+from CopulaFurtif.copulas import CopulaFactory, CopulaType
+from CopulaFurtif.visualization import MatplotlibCopulaVisualizer
+from CopulaFurtif.copulas import CopulaFitter
+from CopulaFurtif.copulas import CopulaDiagnostics
+from CopulaFurtif.copula_utils import pseudo_obs
 
 def main():
     np.random.seed(42)
@@ -20,10 +19,11 @@ def main():
 
     # === Step 1: Instantiate copula ===
     copula = CopulaFactory.create(CopulaType.GAUSSIAN)
-
+    
+    copula.parameters = [0.9]
     # === Step 2: Fit (CMLE) ===
     print("→ Step 1: CMLE")
-    usecase = FitCopulaUseCase()
+    usecase = CopulaFitter()
     res = usecase.fit_cmle(data, copula)
     if res:
         rho_cmle = res[0][0]
@@ -45,7 +45,7 @@ def main():
 
     # === Step 4: Diagnostics ===
     print("→ Step 3: Diagnostics")
-    diagnostics = DiagnosticsService()
+    diagnostics = CopulaDiagnostics()
     report = diagnostics.evaluate(data, copula)
     for k, v in report.items():
         print(f"{k}: {v}")
@@ -53,7 +53,7 @@ def main():
     # === Step 5: Residual Heatmap ===
     print("\n→ Step 4: Visualisation")
     u, v = pseudo_obs(data)
-    MatplotlibCopulaVisualizer().plot_residual_heatmap(copula, u, v)
+    MatplotlibCopulaVisualizer.plot_residual_heatmap(copula, u, v)
 
 
 if __name__ == "__main__":

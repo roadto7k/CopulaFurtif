@@ -28,33 +28,10 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Frank Copula"
         self.type = "frank"
-        self.bounds_param = [(-35.0, 35.0)]
-        self._parameters = np.array([5.0])
+        self.bounds_param = [(-35.0, 35.0)]  # [theta]
+        self.param_names = ["theta"]
+        self.parameters = [5.0]
         self.default_optim_method = "SLSQP"
-
-    @property
-    def parameters(self):
-        """Get the copula parameter.
-
-        Returns:
-            np.ndarray: Copula parameter [theta].
-        """
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        """Set and validate the copula parameter.
-
-        Args:
-            param (array-like): New parameter [theta].
-
-        Raises:
-            ValueError: If parameter is out of bounds.
-        """
-        param = np.asarray(param)
-        if not (self.bounds_param[0][0] < param[0] < self.bounds_param[0][1]):
-            raise ValueError("Parameter out of bounds")
-        self._parameters = param
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).

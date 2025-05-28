@@ -23,20 +23,9 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB5 Copula"
         self.type = "bb5"
         self.bounds_param = [(1.0, None), (1e-6, None)]  # [theta, delta]
-        self._parameters = np.array([1.0, 1.0])
+        self.param_names = ["theta", "delta"]
+        self.parameters = [1.0, 1.0]
         self.default_optim_method = "Powell"
-
-    @property
-    def parameters(self):
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        param = np.asarray(param)
-        for idx, (lower, _) in enumerate(self.bounds_param):
-            if param[idx] < lower:
-                raise ValueError(f"Parameter {['theta','delta'][idx]} must be >= {lower}, got {param[idx]}")
-        self._parameters = param
 
     def get_cdf(self, u, v, param=None):
         if param is None:

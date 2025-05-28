@@ -21,21 +21,11 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB7 Copula"
         self.type = "bb7"
-        self.bounds_param = [(1e-6, None), (1e-6, None)]
-        self._parameters = np.array([1.0, 1.0])
+        self.bounds_param = [(1e-6, None), (1e-6, None)]  # [theta, delta]
+        self.param_names = ["theta", "delta"]
+        self.parameters = [1.0, 1.0]
         self.default_optim_method = "Powell"
 
-    @property
-    def parameters(self):
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        param = np.asarray(param)
-        for i, (lower, _) in enumerate(self.bounds_param):
-            if param[i] < lower:
-                raise ValueError(f"Parameter {['theta', 'delta'][i]} must be >= {lower}, got {param[i]}")
-        self._parameters = param
 
     def _phi(self, t, theta, delta):
         t = np.clip(t, 1e-12, 1 - 1e-12)

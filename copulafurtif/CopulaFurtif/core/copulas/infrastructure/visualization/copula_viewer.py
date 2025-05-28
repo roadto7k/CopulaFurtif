@@ -3,7 +3,14 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from scipy.optimize import brentq
+from enum import Enum
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 
+
+class Plot_type(Enum):
+    DIM3 = "3d"
+    CONTOUR = "contour"
+    
 def plot_bivariate_3d(X, Y, Z, bounds, title, **kwargs):
     """
     Plot a 3D surface with flexible axis bounds.
@@ -39,12 +46,13 @@ def plot_bivariate_3d(X, Y, Z, bounds, title, **kwargs):
     plt.tight_layout()
     plt.show()
     
-def plot_cdf(copula, plot_type='3d', Nsplit=80, levels=None, cmap="coolwarm"):
+    
+def plot_cdf(copula : CopulaModel, plot_type : Plot_type = Plot_type.DIM3, Nsplit=80, levels=None, cmap="coolwarm"):
     grid = np.linspace(0, 1, Nsplit)
     U, V = np.meshgrid(grid, grid, indexing="ij")
     Z = copula.get_cdf(U.ravel(), V.ravel(), copula.parameters).reshape(Nsplit, Nsplit)
 
-    if plot_type == '3d':
+    if plot_type == Plot_type.DIM3:
         fig = plt.figure(figsize=(8, 6))
         ax = fig.add_subplot(111, projection='3d')
         ax.plot_surface(U, V, Z, cmap=cmap)
@@ -53,7 +61,8 @@ def plot_cdf(copula, plot_type='3d', Nsplit=80, levels=None, cmap="coolwarm"):
         ax.set_zlabel("C(u,v)")
         ax.set_title("Copula CDF Surface")
         plt.tight_layout()
-    elif plot_type == 'contour':
+        
+    elif plot_type == Plot_type.CONTOUR:
         plt.contourf(U, V, Z, levels=levels if levels is not None else 10, cmap=cmap)
         plt.title("Copula CDF Contours")
         plt.xlabel("u")
@@ -62,7 +71,7 @@ def plot_cdf(copula, plot_type='3d', Nsplit=80, levels=None, cmap="coolwarm"):
         plt.tight_layout()
     plt.show()
 
-def plot_pdf(copula, plot_type: str, Nsplit: int = 50, levels=None, log_scale: bool = False, **kwargs):
+def plot_pdf(copula : CopulaModel, plot_type: Plot_type, Nsplit: int = 50, levels=None, log_scale: bool = False, **kwargs):
     """
     Plot the bivariate PDF of a copula with optional log-scaled contours.
 
@@ -82,9 +91,9 @@ def plot_pdf(copula, plot_type: str, Nsplit: int = 50, levels=None, log_scale: b
         for 'contour': passed to contourf/contour (e.g., cmap).
     """
     # grid bounds
-    if plot_type == '3d':
+    if plot_type == Plot_type.DIM3:
         lo, hi = 1e-2, 1 - 1e-2
-    elif plot_type == 'contour':
+    elif plot_type == Plot_type.CONTOUR:
         lo, hi = 1e-3, 1 - 1e-3
     else:
         raise ValueError("plot_type must be '3d' or 'contour'.")
@@ -96,7 +105,7 @@ def plot_pdf(copula, plot_type: str, Nsplit: int = 50, levels=None, log_scale: b
     ]).reshape(U.shape)
     title = f"{copula.name} Copula PDF ({plot_type})"
 
-    if plot_type == '3d':
+    if plot_type == Plot_type.DIM3:
         plot_bivariate_3d(U, V, Z, (lo, hi), title, **kwargs)
     else:
         # auto-levels if not provided or integer
@@ -183,7 +192,7 @@ def plot_bivariate_contour(X, Y, Z, bounds, title, levels=10, **kwargs):
     plt.show()
 
 
-def plot_mpdf(copula, margins, plot_type: str, Nsplit: int = 50, bounds=None, **kwargs):
+def plot_mpdf(copula : CopulaModel, margins, plot_type: Plot_type, Nsplit: int = 50, bounds=None, **kwargs):
     """
     Plot the joint PDF with specified marginal distributions.
 
@@ -217,7 +226,7 @@ def plot_mpdf(copula, margins, plot_type: str, Nsplit: int = 50, bounds=None, **
     Z = Zc * f1 * f2
 
     title = f"{copula.name} joint PDF ({plot_type})"
-    if plot_type == '3d':
+    if plot_type == Plot_type.DIM3:
         plot_bivariate_3d(X, Y, Z, (x_min, x_max, y_min, y_max), title, **kwargs)
     else:
         plot_bivariate_contour(X, Y, Z, (x_min, x_max, y_min, y_max), title, **kwargs)
@@ -226,7 +235,7 @@ def plot_mpdf(copula, margins, plot_type: str, Nsplit: int = 50, bounds=None, **
 
 
 def plot_arbitrage_frontiers(
-    copula,
+    copula : CopulaModel,
     alpha_low: float = 0.05,
     alpha_high: float = 0.95,
     levels: int = 200,

@@ -21,42 +21,15 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
 
     def __init__(self):
-        """Initialize the BB2 copula with default parameters."""
+        """Initialize BB2 copula with default parameters."""
         super().__init__()
         self.name = "BB2 Copula"
         self.type = "bb2"
         self.bounds_param = [(1e-6, None), (1.0, None)]  # [theta, delta]
-        self._parameters = np.array([0.5, 1.5])
+        self.param_names = ["theta", "delta"]
+        self.parameters = [0.5, 1.5]
         self.default_optim_method = "Powell"
 
-    @property
-    def parameters(self):
-        """
-        Get the copula parameters.
-
-        Returns:
-            np.ndarray: Parameters [theta, delta].
-        """
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        """
-        Set and validate the copula parameters.
-
-        Args:
-            param (array-like): New parameters [theta, delta].
-
-        Raises:
-            ValueError: If parameters are out of bounds.
-        """
-        param = np.asarray(param)
-        for i, (lower, upper) in enumerate(self.bounds_param):
-            if lower is not None and param[i] <= lower:
-                raise ValueError(f"Parameter {i} must be > {lower}, got {param[i]}")
-            if upper is not None and param[i] >= upper:
-                raise ValueError(f"Parameter {i} must be < {upper}, got {param[i]}")
-        self._parameters = param
 
     def get_cdf(self, u, v, param=None):
         """

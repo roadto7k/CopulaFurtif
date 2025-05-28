@@ -1,4 +1,5 @@
-from CopulaFurtif.copulas import CopulaType
+from CopulaFurtif.core.copulas.domain.copula_type import CopulaType
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 
 class CopulaFactory:
     """
@@ -11,7 +12,7 @@ class CopulaFactory:
         cls.registry[name] = constructor
 
     @classmethod
-    def create(cls, name: CopulaType):
+    def create(cls, name: CopulaType) -> CopulaModel:
         key = name
         if key not in cls.registry:
             raise ValueError(f"Unknown copula type: {name}")

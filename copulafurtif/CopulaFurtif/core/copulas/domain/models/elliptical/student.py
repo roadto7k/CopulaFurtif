@@ -22,7 +22,7 @@ import numpy as np
 from math import sqrt
 from scipy.stats import t, multivariate_t, kendalltau, multivariate_normal
 from scipy.special import gammaln, gamma, roots_genlaguerre
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -34,35 +34,11 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Student Copula"
         self.type = "student"
-        self.bounds_param = [(-0.999, 0.999), (2.01, 30.0)]
-        self._parameters = np.array([0.5, 4.0])
+        self.bounds_param = [(-0.999, 0.999), (2.01, 30.0)] 
+        self.param_names = ["rho", "nu"]
+        self.parameters = [0.5, 4.0] 
         self.default_optim_method = "SLSQP"
         self.n_nodes = 64
-
-    @property
-    def parameters(self):
-        """Get the current copula parameters.
-
-        Returns:
-            np.ndarray: [rho, nu]
-        """
-        return self._parameters
-
-    @parameters.setter
-    def parameters(self, param):
-        """Set and validate parameters.
-
-        Args:
-            param (array-like): New parameters [rho, nu].
-
-        Raises:
-            ValueError: If parameters are out of bounds.
-        """
-        param = np.asarray(param)
-        for i, (low, high) in enumerate(self.bounds_param):
-            if not (low <= param[i] <= high):
-                raise ValueError(f"Parameter {i} out of bounds")
-        self._parameters = param
 
     def get_cdf(self, u, v, param=None):
         """Numerically compute the CDF C(u,v) using Gauss-Laguerre quadrature.
