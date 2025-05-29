@@ -22,13 +22,45 @@ Abstract Methods:
 
 from abc import ABC, abstractmethod
 import numpy as np
+from sympy import symbols, diff, pretty
+from sympy.utilities.lambdify import lambdify
+from scipy.stats import norm, multivariate_normal
+
+
 
 class CopulaParameters:
-    def __init__(self, values: np.ndarray, bounds: list[tuple], expected_size: int, names: list[str] = None):
+    def __init__(self, values: np.ndarray, bounds: list[tuple], names: list[str] = None,
+                 cdf_expr=None, pdf_expr=None, input_symbols=None, param_symbols=None, cdf_numeric: callable = None,
+                    pdf_numeric: callable = None,
+                    partial_u_numeric: callable = None,
+                    partial_v_numeric: callable = None,):
         self.bounds = bounds
-        self.expected_size = expected_size
-        self.names = names or [f"param_{i}" for i in range(expected_size)]
+        self.expected_size = len(bounds)
+        self.names = names or [f"param_{i}" for i in range(self.expected_size)]
         self.values = self._validate(values)
+
+        self.input_symbols = input_symbols
+        self.param_symbols = param_symbols
+
+        all_symbols = input_symbols + param_symbols if input_symbols and param_symbols else []
+
+        self.cdf_expr = cdf_expr
+        self.pdf_expr = pdf_expr or (diff(cdf_expr, *input_symbols) if cdf_expr and input_symbols else None)
+
+        self.cdf_numeric = cdf_numeric or (lambdify(all_symbols, self.cdf_expr, modules=['scipy', 'numpy']) if self.cdf_expr else None)
+        self.pdf_numeric = pdf_numeric or (lambdify(all_symbols, self.pdf_expr, modules=['scipy', 'numpy']) if self.pdf_expr else None)
+
+        if partial_u_numeric and partial_v_numeric:
+            self.partial_u_numeric = partial_u_numeric
+            self.partial_v_numeric = partial_v_numeric
+        elif self.pdf_expr and input_symbols:
+            self.partial_u_expr = diff(self.pdf_expr, self.input_symbols[0])
+            self.partial_v_expr = diff(self.pdf_expr, self.input_symbols[1])
+            self.partial_u_numeric = lambdify(all_symbols, self.partial_u_expr, modules=['scipy', 'numpy'])
+            self.partial_v_numeric = lambdify(all_symbols, self.partial_v_expr, modules=['scipy', 'numpy'])
+        else:
+            self.partial_u_expr = self.partial_v_expr = None
+            self.partial_u_numeric = self.partial_v_numeric = None
 
     def _validate(self, values):
         values = np.asarray(values, dtype=float)
@@ -42,11 +74,11 @@ class CopulaParameters:
     def __getitem__(self, idx):
         return self.values[idx]
 
-    def __repr__(self):
-        return f"CopulaParameters({dict(zip(self.names, self.values))})"
-
     def as_array(self):
         return self.values.copy()
+
+    def __repr__(self):
+        return f"CopulaParameters({dict(zip(self.names, self.values))})"
     
 class CopulaModel(ABC):
     """
@@ -68,9 +100,7 @@ class CopulaModel(ABC):
         Initialize the copula model with default attributes.
         """
         self._parameters = None
-        self.bounds_param = None
         self.log_likelihood_ = None
-        self.param_names = None
         self.n_obs = None
 
     @property
@@ -79,19 +109,19 @@ class CopulaModel(ABC):
         return self._parameters.as_array()
 
     @parameters.setter
-    def parameters(self, values: np.ndarray):
+    def parameters(self, params: CopulaParameters):
         """Validate and set parameters. Uses bounds_param and expected size."""
-        if self.bounds_param is None:
-            raise ValueError("bounds_param must be defined before setting parameters.")
-        self._parameters = CopulaParameters(
-            values=values,
-            bounds=self.bounds_param,
-            expected_size=len(self.bounds_param),
-            names=self.param_names
-        )
+        self._parameters = params
 
-    @abstractmethod
-    def get_cdf(self, u, v, param=None):
+    def pretty_print(self, equation='cdf'):
+        if equation == 'cdf':
+            print(pretty(self._parameters.cdf_expr))
+        elif equation == 'pdf':
+            print(pretty(self._parameters.pdf_expr))
+        else:
+            raise ValueError("Equation must be 'cdf' or 'pdf'.")
+        
+    def get_cdf(self, u, v):
         """
         Compute the cumulative distribution function C(u, v).
 
@@ -103,10 +133,11 @@ class CopulaModel(ABC):
         Returns:
             float or np.ndarray: Value(s) of the CDF.
         """
-        pass
+        if self._parameters.cdf_numeric:
+            return self._parameters.cdf_numeric(u, v, *self.parameters)
+        raise NotImplementedError("CDF not defined symbolically. Override get_cdf method.")
 
-    @abstractmethod
-    def get_pdf(self, u, v, param=None):
+    def get_pdf(self, u, v):
         """
         Compute the probability density function c(u, v).
 
@@ -118,7 +149,9 @@ class CopulaModel(ABC):
         Returns:
             float or np.ndarray: Value(s) of the PDF.
         """
-        pass
+        if self._parameters.pdf_numeric:
+            return self._parameters.pdf_numeric(u, v, *self.parameters)
+        raise NotImplementedError("PDF not defined symbolically. Override get_pdf method.")
 
     @abstractmethod
     def kendall_tau(self, param=None):
@@ -146,3 +179,19 @@ class CopulaModel(ABC):
             np.ndarray: Array of shape (n, 2) with samples from the copula.
         """
         pass
+    
+    def partial_derivative_C_wrt_u(self, u, v):
+        if self._parameters.partial_u_numeric:
+            return self._parameters.partial_u_numeric(u, v, *self.parameters)
+        raise NotImplementedError("Partial derivative wrt u not defined symbolically.")
+
+    def partial_derivative_C_wrt_v(self, u, v):
+        if self._parameters.partial_v_numeric:
+            return self._parameters.partial_v_numeric(u, v, *self.parameters)
+        raise NotImplementedError("Partial derivative wrt v not defined symbolically.")
+
+    def conditional_cdf_u_given_v(self, u, v):
+        return self.partial_derivative_C_wrt_v(u, v)
+
+    def conditional_cdf_v_given_u(self, u, v):
+        return self.partial_derivative_C_wrt_u(u, v)
