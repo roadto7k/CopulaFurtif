@@ -1,7 +1,7 @@
 import pytest
 # from CopulaFurtif.core.copulas.infrastructure.registry import register_all_copulas
 from CopulaFurtif.core.copulas.domain.factories.copula_factory import CopulaFactory
-from CopulaFurtif.core.copulas.application.use_cases.fit_copula import FitCopulaUseCase
+from CopulaFurtif.core.copulas.application.services.fit_copula import FitCopulaUseCase
 from CopulaFurtif.core.copulas.application.services.diagnostics_service import DiagnosticsService
 from CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm
 

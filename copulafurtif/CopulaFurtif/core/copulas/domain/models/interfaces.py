@@ -77,6 +77,9 @@ class CopulaParameters:
     def as_array(self):
         return self.values.copy()
 
+    def __len__(self):
+        return self.values.__len__()
+    
     def __repr__(self):
         return f"CopulaParameters({dict(zip(self.names, self.values))})"
     
@@ -106,6 +109,7 @@ class CopulaModel(ABC):
     @property
     def parameters(self) -> np.ndarray:
         """Return parameters as numpy array."""
+        return self._parameters
         return self._parameters.as_array()
 
     @parameters.setter

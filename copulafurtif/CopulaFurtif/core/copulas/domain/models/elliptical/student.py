@@ -54,6 +54,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         rho, nu = param
+        print( "u,v", u,v)
         if u <= 0 or v <= 0:
             return 0.0
         if u >= 1 and v >= 1:

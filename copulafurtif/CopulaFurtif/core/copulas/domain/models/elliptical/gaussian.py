@@ -47,6 +47,8 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
     #     self.default_optim_method = "SLSQP"
 
     def __init__(self, rho=0.0):
+        self.name = "Gaussian Copula"
+        self.type = "gaussian"
         u, v = symbols('u v')
         rho_sym = symbols('rho')
 

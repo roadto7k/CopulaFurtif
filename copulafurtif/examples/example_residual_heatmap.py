@@ -15,9 +15,10 @@ def main():
 
     print("=== Step 0: Generate data with known Gaussian copula ===")
     true_rho = 0.7
-    data = generate_data_beta_lognorm(n=5000, rho=true_rho)
+    X,Y = generate_data_beta_lognorm(n=5000, rho=true_rho)
+    data = [X, Y]
     print(f"True rho: {true_rho}\n")
-
+    print(data)
     # === Step 1: Instantiate copula ===
     copula = CopulaFactory.create(CopulaType.STUDENT)
 
@@ -53,6 +54,7 @@ def main():
     # === Step 5: Residual Heatmap ===
     print("\n→ Step 4: Visualisation")
     u, v = pseudo_obs(data)
+    print(u,v )
     MatplotlibCopulaVisualizer.plot_residual_heatmap(copula, u, v)
 
 
