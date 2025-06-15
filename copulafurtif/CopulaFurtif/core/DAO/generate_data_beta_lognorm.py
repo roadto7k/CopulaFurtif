@@ -1,5 +1,8 @@
 import numpy as np
-from scipy.stats import beta, lognorm, norm# def generate_data_beta_lognorm(n=1000, rho=0.7):
+from scipy.stats import beta, lognorm, norm
+from scipy.stats import beta, lognorm, t as student_t
+
+# def generate_data_beta_lognorm(n=1000, rho=0.7):
 #     """
 #     Generate bivariate data with controlled dependence using Gaussian copula and marginals.
 #     """
@@ -40,4 +43,22 @@ def generate_data_beta_lognorm(n=1000, rho=0.7):
     #   (remarque: Beta(2,5) dans [0,1])
     Y = lognorm.ppf(V, s=0.5, scale=np.exp(1))
 
+    return X, Y
+
+def generate_data_beta_lognorm_student(n=1000, rho=0.7, nu=4):
+    """
+    Generates (X, Y) with a t-Student copula and known marginals.
+    X ~ Beta(2,5), Y ~ LogNorm(s=0.5, scale=exp(1))
+    """
+    cov = np.array([[1, rho], [rho, 1]])
+    L = np.linalg.cholesky(cov)
+    Z = np.random.randn(n, 2)
+    chi2 = np.random.chisquare(nu, size=n)
+    T = (Z @ L.T) / np.sqrt(chi2 / nu)[:, None]
+
+    U = student_t.cdf(T[:, 0], df=nu)
+    V = student_t.cdf(T[:, 1], df=nu)
+
+    X = beta.ppf(U, a=2, b=5)
+    Y = lognorm.ppf(V, s=0.5, scale=np.exp(1))
     return X, Y

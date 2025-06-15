@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.stats import beta, lognorm
 # from CopulaFurtif.core.copulas.infrastructure.registry import register_all_copulas
-from copulafurtif.CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm
+from copulafurtif.CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm, \
+    generate_data_beta_lognorm_student
 
 from CopulaFurtif.copulas import CopulaFitter
 from CopulaFurtif.visualization import MatplotlibCopulaVisualizer
@@ -15,7 +16,7 @@ def main():
 
     print("=== Step 0: Generate data with known Gaussian copula ===")
     true_rho = 0.7
-    X,Y = generate_data_beta_lognorm(n=5000, rho=true_rho)
+    X,Y = generate_data_beta_lognorm_student(n=5000, rho=0.7, nu=4)
     data = [X, Y]
     print(f"True rho: {true_rho}\n")
     print(data)

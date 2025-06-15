@@ -3,7 +3,7 @@ from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 
 class CopulaFactory:
     """
-    Factory centralisée pour créer des instances de copules par nom.
+    Centralized factory for creating copula instances by name.
     """
     registry = {}
 

@@ -9,7 +9,9 @@ class MatplotlibCopulaVisualizer:
         emp = np.array([
             np.mean((u <= U[i, j]) & (v <= V[i, j])) for i in range(bins) for j in range(bins)
         ]).reshape(bins, bins)
-        model = copula.get_cdf(U.ravel(), V.ravel(), copula.parameters).reshape(bins, bins)
+        flat = [copula.get_cdf(ui, vi, copula.parameters)
+                for ui, vi in zip(U.ravel(), V.ravel())]
+        model = np.array(flat).reshape(bins, bins)
         residuals = emp - model
         plt.figure(figsize=(6, 5))
         plt.imshow(residuals, origin="lower", extent=[0, 1, 0, 1], cmap="coolwarm")
