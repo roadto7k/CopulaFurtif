@@ -4,36 +4,28 @@ from scipy.stats import rv_continuous
 
 def auto_initialize_marginal_params(data, dist_name):
     """
-    Automatically fit a distribution from scipy.stats to the given 1D data,
-    and return a dictionary of its best-fit parameters.
+    Automatically fit a scipy.stats distribution to 1D data and return best-fit parameters.
 
-    Parameters
-    ----------
-    data : array-like
-        1D array of observations.
-    dist_name : str
-        Name of the scipy.stats distribution (e.g., "beta", "lognorm", "gamma", ...)
+    Args:
+        data (array-like): 1D array of observations.
+        dist_name (str): Name of the scipy.stats distribution (e.g., 'beta', 'gamma').
 
-    Returns
-    -------
-    param_dict : dict
-        A dictionary with keys:
-            - "distribution": the scipy.stats distribution object
-            - one key per shape parameter (if any), with their fitted values
-            - "loc": the fitted location parameter
-            - "scale": the fitted scale parameter
+    Returns:
+        dict: Dictionary containing:
+            - "distribution": scipy.stats distribution object,
+            - one entry per shape parameter with fitted values,
+            - "loc": fitted location parameter,
+            - "scale": fitted scale parameter.
 
-    Raises
-    ------
-    ValueError
-        If the distribution name is invalid or if fitting fails.
+    Raises:
+        ValueError: If the distribution name is invalid or fitting fails.
 
-    Example
-    -------
-    >>> auto_initialize_marginal_params(X, "beta")
-    {'distribution': <scipy.stats._continuous_distns.beta_gen>,
-     'a': 2.03, 'b': 4.97, 'loc': 0.01, 'scale': 0.98}
+    Examples:
+        > auto_initialize_marginal_params(X, "beta")
+        {'distribution': <scipy.stats._continuous_distns.beta_gen>,
+         'a': 2.03, 'b': 4.97, 'loc': 0.01, 'scale': 0.98}
     """
+
     # Get all available continuous distributions from scipy.stats
     available_distributions = {
         name: getattr(stats, name) for name in dir(stats)
@@ -70,8 +62,17 @@ def auto_initialize_marginal_params(data, dist_name):
     return param_dict
 
 def adapt_theta(theta_array, copula):
-    """Convert a flattened slice of parameters (theta) back to the
-    copula's required format if needed."""
+    """
+    Convert a flattened array of parameters back to the copula's required format.
+
+    Args:
+        theta_array (array-like): Flattened parameter values.
+        copula (object): Copula instance whose .parameters attribute defines the required format.
+
+    Returns:
+        tuple or list: Parameters formatted to match copula.parameters.
+    """
+
     if isinstance(copula.parameters, tuple):
         return tuple(theta_array[:len(copula.parameters)])
     elif isinstance(copula.parameters, np.ndarray) and copula.parameters.shape == ():
@@ -80,6 +81,15 @@ def adapt_theta(theta_array, copula):
         return list(theta_array[:len(copula.parameters)])
 
 def flatten_theta(param):
+    """
+     copula parameter container into a list of floats.
+
+    Args:
+        param (tuple, numpy.ndarray, or list): Copula.parameters in tuple, scalar array, or list form.
+
+    Returns:
+        list[float]: Flattened list of parameter values.
+    """
     if isinstance(param, tuple):
         return [float(x) for x in param]
     elif isinstance(param, np.ndarray) and param.shape == ():
@@ -87,14 +97,23 @@ def flatten_theta(param):
     else:
         return list(param)
 
-# utils.py
-import numpy as np
 
 def log_likelihood_only_copula(theta_array, copula, X, Y, marginals, adapt_theta_func):
     """
-    Compute the negative log-likelihood for the copula alone
-    (assuming the marginal parameters are fixed).
+    Compute the negative log-likelihood for the copula alone assuming fixed marginals.
+
+    Args:
+        theta_array (array-like): Flattened copula parameter values.
+        copula (object): Copula instance with method get_pdf(u, v, theta).
+        X (array-like): Observations for the first margin.
+        Y (array-like): Observations for the second margin.
+        marginals (Sequence[dict]): Fixed marginal distribution specifications.
+        adapt_theta_func (callable): Function to convert theta_array to copula parameter format.
+
+    Returns:
+        float: Negative log-likelihood combining copula PDF and marginal PDFs.
     """
+
     # 1) Reconstruct copula parameters
     theta = adapt_theta_func(theta_array, copula)
 
@@ -133,9 +152,22 @@ def log_likelihood_joint(param_vec,
                          adapt_theta_func,
                          theta0_length):
     """
-    Compute the negative log-likelihood for the copula + marginals,
-    i.e. jointly estimating copula params + shape/loc/scale for both margins.
+    Compute the negative joint log-likelihood for copula and marginal distributions.
+
+    Args:
+        param_vec (array-like): Flattened vector [copula parameters, margin1 params, margin2 params].
+        copula (object): Copula instance with method get_pdf(u, v, theta).
+        X (array-like): Observations for the first margin.
+        Y (array-like): Observations for the second margin.
+        marginals (Sequence[dict]): Marginal distribution specifications.
+        margin_shapes_count (Sequence[int]): Number of shape parameters for each margin.
+        adapt_theta_func (callable): Function to convert param_vec to copula parameter format.
+        theta0_length (int): Number of copula parameters at the start of param_vec.
+
+    Returns:
+        float: Negative joint log-likelihood combining copula and marginal PDFs.
     """
+
     # param_vec layout:
     #   [ copula parameters (theta0_length of them),
     #     margin1 (shape(s), loc, scale),

@@ -4,6 +4,20 @@ import numpy as np
 
 
 def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
+    """
+    Estimate copula parameters using canonical maximum likelihood.
+
+    Args:
+        copula (CopulaModel): Copula instance with initial `parameters` and optional `bounds_param`.
+        data (array-like): Observed data for computing pseudo-observations.
+        opti_method (str, optional): Optimization method for scipy.minimize. Defaults to 'SLSQP'.
+        options (dict, optional): Solver options passed to the optimizer. Defaults to None.
+        verbose (bool, optional): If True, print optimizer failure messages. Defaults to True.
+
+    Returns:
+        tuple[numpy.ndarray, float] or None: Estimated parameters and log-likelihood if successful; otherwise None.
+    """
+
     if options is None:
         options = {}
 

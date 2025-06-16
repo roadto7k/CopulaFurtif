@@ -29,9 +29,33 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
 
     def _phi(self, t, theta, delta):
+        """
+        Compute the generator function φ(t) = (−log(1 − (1 − t)^θ))^(1/δ).
+
+        Args:
+            t (float or array-like): Input variable in [0,1].
+            theta (float): Copula parameter θ.
+            delta (float): Copula parameter δ.
+
+        Returns:
+            float or numpy.ndarray: Value of φ(t).
+        """
+
         return (-np.log(1.0 - (1.0 - t)**theta))**(1.0 / delta)
 
     def _phi_prime(self, t, theta, delta):
+        """
+        Compute the derivative φ′(t) of the generator function.
+
+        Args:
+            t (float or array-like): Input variable in [0,1].
+            theta (float): Copula parameter θ.
+            delta (float): Copula parameter δ.
+
+        Returns:
+            float or numpy.ndarray: Value of φ′(t).
+        """
+
         g = 1.0 - (1.0 - t)**theta
         gp = theta * (1.0 - t)**(theta - 1)
         L = -np.log(g)
@@ -39,6 +63,18 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return (1.0 / delta) * L**(1.0 / delta - 1.0) * Lp
 
     def get_cdf(self, u, v, param=None):
+        """
+        Evaluate the copula cumulative distribution function C(u, v).
+
+        Args:
+            u (float or array-like): First uniform margin in (0,1).
+            v (float or array-like): Second uniform margin in (0,1).
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float or numpy.ndarray: CDF value C(u, v).
+        """
+
         if param is None:
             param = self.parameters
         theta, delta = param
@@ -54,6 +90,18 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return 1.0 - (1.0 - w)**(1.0 / theta)
 
     def get_pdf(self, u, v, param=None):
+        """
+        Compute the partial derivative ∂C(u,v)/∂u of the copula CDF.
+
+        Args:
+            u (float or array-like): First margin in (0,1).
+            v (float or array-like): Second margin in (0,1).
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float or numpy.ndarray: Value of ∂C/∂u at (u, v).
+        """
+
         if param is None:
             param = self.parameters
         theta, delta = param
@@ -75,6 +123,19 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return prefac * bracket * jac
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
+        """
+        Compute the partial derivative ∂C(u,v)/∂u of the copula CDF.
+
+        Args:
+            u (float or array-like): First margin in (0,1).
+            v (float or array-like): Second margin in (0,1).
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float or numpy.ndarray: Value of ∂C/∂u at (u, v).
+        """
+
+
         if param is None:
             param = self.parameters
         theta, delta = param
@@ -98,15 +159,62 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return dC_dx * dx_du
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
+        """
+        Compute the partial derivative ∂C(u,v)/∂v of the copula CDF.
+
+        Args:
+            u (float or array-like): First margin in (0,1).
+            v (float or array-like): Second margin in (0,1).
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float or numpy.ndarray: Value of ∂C/∂v at (u, v).
+        """
+
         return self.partial_derivative_C_wrt_u(v, u, param)
 
     def conditional_cdf_u_given_v(self, u, v, param=None):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v).
+
+        Args:
+            u (float or array-like): Value of U in (0,1).
+            v (float or array-like): Conditioning value of V in (0,1).
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float or numpy.ndarray: Conditional CDF of U given V.
+        """
+
         return self.partial_derivative_C_wrt_v(u, v, param) / self.partial_derivative_C_wrt_v(1.0, v, param)
 
     def conditional_cdf_v_given_u(self, u, v, param=None):
+        """
+        Compute the conditional CDF P(V ≤ v | U = u).
+
+        Args:
+            u (float or array-like): Conditioning value of U in (0,1).
+            v (float or array-like): Value of V in (0,1).
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float or numpy.ndarray: Conditional CDF of V given U.
+        """
+
         return self.partial_derivative_C_wrt_u(u, v, param) / self.partial_derivative_C_wrt_u(u, 1.0, param)
 
     def sample(self, n, param=None):
+        """
+        Generate random samples from the copula using conditional inversion.
+
+        Args:
+            n (int): Number of samples to generate.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            numpy.ndarray: Array of shape (n, 2) with uniform samples on [0,1]^2.
+        """
+
         if param is None:
             param = self.parameters
         eps = 1e-6
@@ -122,6 +230,16 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return np.column_stack((u, v))
 
     def kendall_tau(self, param=None, n=1001):
+        """
+        Compute the lower tail dependence coefficient (LTDC) of the copula.
+
+        Args:
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float: LTDC value (0.0 for this copula).
+        """
+
         if param is None:
             param = self.parameters
         theta, delta = param
@@ -133,18 +251,58 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return 1.0 + 4.0 * integral
 
     def LTDC(self, param=None):
+        """
+        Compute the lower tail dependence coefficient (LTDC) of the copula.
+
+        Args:
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float: LTDC value (0.0 for this copula).
+        """
+
         return 0.0
 
     def UTDC(self, param=None):
+        """
+        Compute the upper tail dependence coefficient (UTDC) of the copula.
+
+        Args:
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+
+        Returns:
+            float: UTDC value (2 − 2^(1/δ)).
+        """
+
         if param is None:
             param = self.parameters
         delta = param[1]
         return 2.0 - 2.0 ** (1.0 / delta)
 
     def IAD(self, data):
+        """
+        Return NaN for the Integrated Anderson-Darling (IAD) statistic.
+
+        Args:
+            data (Sequence[array-like, array-like]): Ignored pseudo-observations.
+
+        Returns:
+            float: Always returns numpy.nan.
+        """
+
         print(f"[INFO] IAD is disabled for {self.name}.")
         return np.nan
 
     def AD(self, data):
+        """
+        Return NaN for the Anderson-Darling (AD) statistic.
+
+        Args:
+            data (Sequence[array-like, array-like]): Ignored pseudo-observations.
+
+        Returns:
+            float: Always returns numpy.nan.
+        """
+
         print(f"[INFO] AD is disabled for {self.name}.")
         return np.nan

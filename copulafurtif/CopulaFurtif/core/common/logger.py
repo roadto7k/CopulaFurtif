@@ -29,16 +29,15 @@ class CustomLogger:
     _instances = {}
 
     def __new__(cls, name: str, log_file: str, level: int = logging.DEBUG):
-        """
-        Creates a new instance of CustomLogger if it does not already exist.
+        """Create or retrieve a singleton CustomLogger instance.
 
-        Parameters:
-            name (str): The name of the logger.
-            log_file (str): The path to the log file.
-            level (int): The logging level. Default is logging.DEBUG.
+        Args:
+            name (str): Name of the logger.
+            log_file (str): Path to the log file.
+            level (int, optional): Logging level. Defaults to logging.DEBUG.
 
         Returns:
-            CustomLogger: The logger instance.
+            CustomLogger: Singleton instance of CustomLogger.
         """
         if name not in cls._instances:
             instance = super(CustomLogger, cls).__new__(cls)
@@ -47,14 +46,17 @@ class CustomLogger:
         return cls._instances[name]
 
     def __init__(self, name: str, log_file: str, level: int = logging.DEBUG):
-        """
-        Initializes the logger with the specified name and log file.
+        """Initialize the CustomLogger by configuring file and stream handlers.
 
-        Parameters:
-            name (str): The name of the logger.
-            log_file (str): The path to the log file.
-            level (int): The logging level. Default is logging.DEBUG.
+        Args:
+            name (str): Name of the logger.
+            log_file (str): Path to the log file.
+            level (int, optional): Logging level. Defaults to logging.DEBUG.
+
+        Returns:
+            None
         """
+
         if self._initialized:
             return
         self._initialized = True
@@ -79,10 +81,10 @@ class CustomLogger:
             self.logger.addHandler(ch)
     
     def get_logger(self):
-        """
-        Returns the logger instance.
+        """Retrieve the configured logging.Logger.
 
         Returns:
-            logging.Logger: The logger instance.
+            logging.Logger: The underlying logger instance.
         """
+
         return self.logger

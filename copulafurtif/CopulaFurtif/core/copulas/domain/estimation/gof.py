@@ -6,18 +6,15 @@ def compute_aic(copula):
     """
     Compute the Akaike Information Criterion (AIC) for a fitted copula.
 
-    Parameters
-    ----------
-    copula : object
-        The copula object with attributes:
-        - log_likelihood_ : float
-        - bounds_param : list of parameter bounds
+    Args:
+        copula (object): Fitted copula with attributes:
+            - log_likelihood_ (float): Log-likelihood of the model.
+            - bounds_param (Sequence): Parameter bounds.
 
-    Returns
-    -------
-    float
-        AIC score
+    Returns:
+        float: AIC score.
     """
+
     k = len(copula.bounds_param)
     return 2 * k - 2 * copula.log_likelihood_
 
@@ -26,11 +23,19 @@ def compute_bic(copula):
     """
     Compute the Bayesian Information Criterion (BIC) for a fitted copula.
 
-    Returns
-    -------
-    float
-        BIC score
+    Args:
+        copula (object): Fitted copula with attributes:
+            - log_likelihood_ (float): Log-likelihood of the model.
+            - bounds_param (Sequence): Parameter bounds.
+            - n_obs (int): Number of observations.
+
+    Returns:
+        float: BIC score.
+
+    Raises:
+        ValueError: If `n_obs` is missing or None on the copula object.
     """
+
     if not hasattr(copula, "n_obs") or copula.n_obs is None:
         raise ValueError("n_obs (number of observations) is missing in copula object.")
 
@@ -40,23 +45,21 @@ def compute_bic(copula):
 
 def compute_iad_score(copula, data):
     """
-    Compute the Integrated Anderson-Darling (IAD) statistic between the empirical
-    copula and a parametric copula model.
+    Compute the Integrated Anderson-Darling (IAD) statistic between the empirical copula and a parametric copula model.
 
-    The empirical copula is computed over a grid defined by the sorted pseudo-observations.
+    Args:
+        copula (object): Copula model with methods:
+            - get_cdf(u, v, params) -> array-like: CDF values on a grid.
+            - parameters (Sequence): Fitted parameter values.
+        data (Sequence[array-like, array-like]): Two-element sequence [u, v] of pseudo-observations.
 
-    Parameters
-    ----------
-    copula : object
-        A copula object with a .get_cdf(u, v, params) method and a .parameters attribute.
-    data : array-like
-        A list or array [u, v] of pseudo-observations (each a 1D array of length n).
+    Returns:
+        float: IAD goodness-of-fit score (lower is better).
 
-    Returns
-    -------
-    float
-        The IAD goodness-of-fit score (lower values indicate a better fit).
+    Raises:
+        ValueError: If `u` and `v` have different lengths.
     """
+
     # data must be a list [u, v] where u and v are 1D arrays
     u, v = data
     n = len(u)
@@ -103,29 +106,21 @@ def compute_iad_score(copula, data):
 
 def AD_score(copula, data):
     """
-    Compute the Anderson-Darling (AD) goodness-of-fit statistic between the empirical
-    copula and the parametric copula model.
+    Compute the Anderson-Darling (AD) goodness-of-fit statistic between the empirical copula and a parametric model.
 
-    The AD score is defined as the maximum weighted squared deviation between
-    the empirical copula CDF and the model CDF, with weights emphasizing the tail regions.
+    Args:
+        copula (object): Copula model with methods:
+            - get_cdf(u, v, params) -> array-like: CDF values on a grid.
+            - parameters (Sequence): Fitted parameter values.
+        data (Sequence[array-like, array-like]): Two-element sequence [u, v] of pseudo-observations.
 
-    Parameters
-    ----------
-    copula : object
-        A copula object with a .get_cdf(u, v, params) method and a .parameters attribute.
-    data : array-like
-        A list or array [u, v] of pseudo-observations (each a 1D array of length n,
-        values in (0,1)).
-    fitted : bool, optional
-        If True, use copula.parameters as the fitted parameters.
-    params : array-like, optional
-        If fitted is False, this parameter list will be used.
+    Returns:
+        float: AD goodness-of-fit score (lower is better, sensitive to tails).
 
-    Returns
-    -------
-    float
-        The AD score (lower values indicate a better fit, with more sensitivity to tail deviations).
+    Raises:
+        ValueError: If `u` and `v` have different lengths.
     """
+
     # Use fitted parameters if requested
 
     params = copula.parameters
@@ -171,24 +166,14 @@ def AD_score(copula, data):
 
 def kendall_tau_distance(copula, data):
     """
-    Compute the absolute difference between the empirical Kendall's tau
-    and the theoretical Kendall's tau implied by the copula.
+    Compute the absolute distance between empirical and theoretical Kendall’s tau for a copula.
 
-    Parameters
-    ----------
-    copula : object
-        Copula object. Must optionally have a method `.kendall_tau(param)`
-    data : list of arrays
-        [X, Y] sample
-    fitted : bool
-        If True, use `copula.parameters` as the fitted param.
-        Otherwise, raise an error.
+    Args:
+        copula (object): Copula model with optional method `kendall_tau(params)`.
+        data (Sequence[array-like, array-like]): Two-element sequence [X, Y] of observed samples.
 
-    Returns
-    -------
-    float
-        Absolute distance between empirical and theoretical Kendall's tau,
-        or np.nan if the copula does not implement `kendall_tau`.
+    Returns:
+        float: Absolute difference between empirical and theoretical Kendall’s tau, or NaN if not implemented.
     """
 
     if not hasattr(copula, "kendall_tau"):

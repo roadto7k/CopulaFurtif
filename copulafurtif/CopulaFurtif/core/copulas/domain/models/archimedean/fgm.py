@@ -95,3 +95,94 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.parameters
         theta = param[0]
         return (2 * theta) / 9
+
+    def LTDC(self, param: np.ndarray = None) -> float:
+        """
+        Compute the lower tail dependence coefficient (LTDC) for the FGM copula.
+
+        Args:
+            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
+
+        Returns:
+            float: Lower tail dependence (0.0 for FGM).
+        """
+
+        return 0.0
+
+    def UTDC(self, param: np.ndarray = None) -> float:
+        """
+        Compute the upper tail dependence coefficient (UTDC) for the FGM copula.
+
+        Args:
+            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
+
+        Returns:
+            float: Upper tail dependence (0.0 for FGM).
+        """
+
+        return 0.0
+
+    def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
+        """
+        Compute the partial derivative ∂C(u,v)/∂v of the FGM copula CDF.
+
+        Args:
+            u (float or np.ndarray): First margin in (0,1).
+            v (float or np.ndarray): Second margin in (0,1).
+            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Value of ∂C/∂v = u + θ·u·(1−u)·(1−2v).
+        """
+
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        u = np.asarray(u)
+        v = np.asarray(v)
+        return u + theta * u * (1.0 - u) * (1.0 - 2.0*v)
+
+    def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
+        """
+        Compute the partial derivative ∂C(u,v)/∂u of the FGM copula CDF.
+
+        Args:
+            u (float or np.ndarray): First margin in (0,1).
+            v (float or np.ndarray): Second margin in (0,1).
+            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Value of ∂C/∂u = v + θ·v·(1−v)·(1−2u).
+        """
+
+        return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v) for the FGM copula.
+
+        Args:
+            u (float or np.ndarray): Value of U in (0,1).
+            v (float or np.ndarray): Conditioning value of V in (0,1).
+            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Conditional CDF of U given V, equal to ∂C/∂v.
+        """
+
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
+        """
+        Compute the conditional CDF P(V ≤ v | U = u) for the FGM copula.
+
+        Args:
+            u (float or np.ndarray): Conditioning value of U in (0,1).
+            v (float or np.ndarray): Value of V in (0,1).
+            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Conditional CDF of V given U, equal to ∂C/∂u.
+        """
+
+        return self.partial_derivative_C_wrt_u(u, v, param)

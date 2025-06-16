@@ -28,16 +28,49 @@ class TawnT2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.default_optim_method = "Powell"
 
     def _A(self, t: float, param: np.ndarray) -> float:
+        """
+        Compute the dependence function A(t) = (1−β)(1−t) + (t^θ + (β(1−t))^θ)^(1/θ).
+
+        Args:
+            t (float): Proportion x/(x+y) in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float: Value of A(t).
+        """
+
         theta, beta = param
         return (1 - beta) * (1 - t) + (t**theta + (beta * (1 - t))**theta)**(1.0 / theta)
 
     def _A_prime(self, t: float, param: np.ndarray) -> float:
+        """
+        Compute the first derivative A′(t) of the dependence function.
+
+        Args:
+            t (float): Proportion x/(x+y) in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float: Value of A′(t).
+        """
+
         theta, beta = param
         h = t**theta + (beta * (1 - t))**theta
         hp = theta * t**(theta - 1) - theta * beta * (beta * (1 - t))**(theta - 1)
         return -(1 - beta) + (1.0 / theta) * h**(1.0 / theta - 1) * hp
 
     def _A_double(self, t: float, param: np.ndarray) -> float:
+        """
+        Compute the second derivative A″(t) of the dependence function.
+
+        Args:
+            t (float): Proportion x/(x+y) in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float: Value of A″(t).
+        """
+
         theta, beta = param
         h = t**theta + (beta * (1 - t))**theta
         hp = theta * t**(theta - 1) - theta * beta * (beta * (1 - t))**(theta - 1)
@@ -47,6 +80,18 @@ class TawnT2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return term1 + term2
 
     def get_cdf(self, u, v, param: np.ndarray = None):
+        """
+        Evaluate the copula cumulative distribution function at (u, v).
+
+        Args:
+            u (float or array-like): First uniform margin in (0,1).
+            v (float or array-like): Second uniform margin in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: CDF value C(u, v).
+        """
+
         if param is None:
             param = self.parameters
         eps = 1e-12
@@ -58,6 +103,18 @@ class TawnT2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return np.exp(-s * self._A(t, param))
 
     def get_pdf(self, u, v, param: np.ndarray = None):
+        """
+        Evaluate the copula probability density function at (u, v).
+
+        Args:
+            u (float or array-like): First uniform margin in (0,1).
+            v (float or array-like): Second uniform margin in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: PDF value c(u, v).
+        """
+
         if param is None:
             param = self.parameters
         eps = 1e-12
@@ -76,6 +133,18 @@ class TawnT2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return C_val * (Lx * Ly - Lxy) / (u * v)
 
     def partial_derivative_C_wrt_u(self, u, v, param: np.ndarray = None):
+        """
+        Compute the partial derivative ∂C/∂u of the copula CDF.
+
+        Args:
+            u (float or array-like): First margin in (0,1).
+            v (float or array-like): Second margin in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Value of ∂C/∂u.
+        """
+
         if param is None:
             param = self.parameters
         C_val = self.get_cdf(u, v, param)
@@ -87,6 +156,18 @@ class TawnT2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return C_val * (A / u + (y / (u * s)) * Ap)
 
     def partial_derivative_C_wrt_v(self, u, v, param: np.ndarray = None):
+        """
+        Compute the partial derivative ∂C/∂v of the copula CDF.
+
+        Args:
+            u (float or array-like): First margin in (0,1).
+            v (float or array-like): Second margin in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Value of ∂C/∂v.
+        """
+
         if param is None:
             param = self.parameters
         C_val = self.get_cdf(u, v, param)
@@ -98,12 +179,47 @@ class TawnT2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return C_val * (A / v - (x / (v * s)) * Ap)
 
     def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
+        """
+        Compute the conditional CDF P(V ≤ v | U = u).
+
+        Args:
+            u (float or array-like): Conditioning value of U in (0,1).
+            v (float or array-like): Value of V in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Conditional CDF of V given U.
+        """
+
         return self.partial_derivative_C_wrt_u(u, v, param)
 
     def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v).
+
+        Args:
+            u (float or array-like): Value of U in (0,1).
+            v (float or array-like): Conditioning value of V in (0,1).
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float or np.ndarray: Conditional CDF of U given V.
+        """
+
         return self.partial_derivative_C_wrt_v(u, v, param)
 
     def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
+        """
+        Generate random samples from the copula using conditional inversion.
+
+        Args:
+            n (int): Number of samples to generate.
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            np.ndarray: Array of shape (n, 2) with uniform samples on [0,1]^2.
+        """
+
         if param is None:
             param = self.parameters
         eps = 1e-6
@@ -119,15 +235,45 @@ class TawnT2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return np.column_stack((u, v))
 
     def kendall_tau(self, param: np.ndarray = None) -> float:
+        """
+        Compute theoretical Kendall’s tau implied by the copula.
+
+        Args:
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float: Kendall’s tau = 1 − 4 ∫₀¹ A(t) dt.
+        """
+
         if param is None:
             param = self.parameters
         integral, _ = quad(lambda t: self._A(t, param), 0.0, 1.0)
         return 1.0 - 4.0 * integral
 
     def LTDC(self, param: np.ndarray = None) -> float:
+        """
+        Compute the lower tail dependence coefficient (LTDC).
+
+        Args:
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float: LTDC value (0.0 for this copula).
+        """
+
         return 0.0
 
     def UTDC(self, param: np.ndarray = None) -> float:
+        """
+        Compute the upper tail dependence coefficient (UTDC).
+
+        Args:
+            param (np.ndarray, optional): Copula parameters [θ, β]. Defaults to self.parameters.
+
+        Returns:
+            float: UTDC value = 2 − 2^(1/θ).
+        """
+
         if param is None:
             param = self.parameters
         theta = param[0]

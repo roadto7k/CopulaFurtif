@@ -59,16 +59,16 @@ def pseudo_obs(data):
     """
     Compute pseudo-observations from raw data using empirical CDF ranks.
 
-    Parameters
-    ----------
-    data : list or tuple of two arrays
-        [X, Y] data samples
+    Args:
+        data (Sequence[array-like, array-like]): Sequence containing two arrays [X, Y] of equal length.
 
-    Returns
-    -------
-    u, v : np.ndarray, np.ndarray
-        Pseudo-observations from empirical CDFs, both in (0,1).
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Pseudo-observations u and v in the interval (0, 1).
+
+    Raises:
+        ValueError: If input does not contain exactly two elements.
     """
+
     if len(data) != 2:
         raise ValueError("Input must be a list or tuple with two elements [X, Y].")
 
@@ -87,23 +87,22 @@ def pseudo_obs(data):
 
 def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
     """
-    Canonical Maximum Likelihood Estimation (CMLE) using pseudo-observations.
+    Estimate copula parameters via canonical maximum likelihood using pseudo-observations.
 
-    Parameters
-    ----------
-    copula : object with .get_pdf(), .parameters, .bounds_param
-    data : list of [X, Y]
-    opti_method : str
-        Optimization algorithm (default: 'SLSQP')
-    options : dict or None
-        Extra options passed to scipy.optimize.minimize
-    verbose : bool
-        If True, prints debug info when optimization fails
+    Args:
+        copula (object): Copula instance with attributes `parameters` (list of initial values), optional `bounds_param` (sequence of (low, high) pairs), and method `get_pdf(u, v, params)`.
+        data (Sequence[array-like, array-like]): Two-element sequence [X, Y] of observed data for computing pseudo-observations.
+        opti_method (str, optional): Optimization algorithm for `scipy.optimize.minimize`. Defaults to 'SLSQP'.
+        options (dict, optional): Additional solver options passed to the optimizer. Defaults to None.
+        verbose (bool, optional): If True, print debug information when optimization or likelihood evaluation fails. Defaults to True.
 
-    Returns
-    -------
-    tuple (fitted_params, log_likelihood) or None
+    Returns:
+        Tuple[numpy.ndarray, float] or None: Estimated parameter values and log-likelihood if successful; otherwise None.
+
+    Raises:
+        ValueError: If the length of `params_raw` does not match the number of `copula.parameters`.
     """
+
     if options is None:
         options = {}
 
@@ -187,42 +186,26 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
 
 def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False):
     """
-    Fit a bivariate copula by Maximum Likelihood Estimation (MLE),
-    allowing joint estimation of marginal distribution parameters
-    (including shape parameters).
+    Fit a bivariate copula and marginal distributions by maximum likelihood.
 
-    Parameters
-    ----------
-    data : list of arrays
-        [X, Y] observations
-    copula : object
-        Copula instance with attributes:
-            - parameters (tuple or array): initial guess(es) for copula params
-            - bounds_param (list of tuples, optional): bounds for copula parameters
-            - type (str): e.g. 'mixture' or something else
-            - get_pdf(u, v, theta): function returning copula PDF value at (u,v)
-    marginals : list of dict
-        Each dict must contain:
-            - "distribution": a scipy.stats distribution
-            - zero or more shape parameters (e.g. 'a', 'b' for Beta),
-            - optional 'loc' (float),
-            - optional 'scale' (float),
-          The shape/loc/scale parameters found in the dict are:
-            - Interpreted as fixed if known_parameters=True,
-            - Interpreted as initial guesses if known_parameters=False.
-    opti_method : str
-        Optimization method passed to scipy.optimize.minimize (default: 'SLSQP')
-    known_parameters : bool
-        If True, we treat all marginal parameters as fixed/known, and only optimize copula parameters.
-        If False, we optimize copula parameters AND the marginal parameters (shape, loc, scale).
+    Fits copula parameters and, if requested, joint estimation of marginal distribution parameters.
 
-    Returns
-    -------
-    tuple
-        (optimized_parameters, max_log_likelihood)
-        If success, 'optimized_parameters' is a flattened array:
-          [copula_params, [marginal_1_shape(s), loc1, scale1], [marginal_2_shape(s), loc2, scale2]]
-        If the optimizer fails, returns None.
+    Args:
+        data (Sequence[array-like, array-like]): Two-element sequence [X, Y] of observed data.
+        copula (object): Copula instance with attributes `parameters`, optional `bounds_param`, `type`, and method `get_pdf(u, v, params)`. Must not be of type 'mixture'.
+        marginals (Sequence[dict]): List of marginal specs, each containing:
+            - "distribution": a scipy.stats distribution or its name,
+            - optional shape parameters,
+            - optional 'loc' and 'scale'.
+        opti_method (str, optional): Optimization method for scipy.optimize.minimize. Defaults to 'SLSQP'.
+        known_parameters (bool, optional): If True, treat all marginal parameters as fixed; if False, jointly estimate them. Defaults to False.
+
+    Returns:
+        Tuple[numpy.ndarray, float] or None: Flattened optimized parameters [copula_params, marginal_params] and maximum log-likelihood if successful; otherwise None.
+
+    Raises:
+        ValueError: If `copula.type` is "mixture", or if distribution parameters are invalid, or if initial guess contains NaN/Inf.
+        RuntimeError: If the optimizer crashes or fails to converge when estimating joint parameters.
     """
 
     if copula.type == "mixture":
@@ -437,60 +420,28 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
 
 def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=True):
     """
-    Inference Functions for Margins (IFM) for a bivariate copula.
+    Fit a bivariate copula by Inference Functions for Margins (IFM).
 
-    This method fits the marginal distributions independently, then transforms
-    the data to (U, V) via each fitted margin's CDF, and finally fits the copula
-    parameters by maximum likelihood on (U, V).
+    Args:
+        data (Sequence[array-like, array-like]): Two-element list [X, Y] of observations.
+        copula (object): Copula instance with attributes:
+            - parameters (list or array): initial guess for copula parameters,
+            - bounds_param (list of tuple): bounds for each parameter,
+            - get_pdf(u, v, theta): method returning copula PDF at (u, v),
+            - log_likelihood_ (float): will be set to final log-likelihood.
+        marginals (Sequence[dict]): Two dictionaries describing each margin, each containing:
+            - "distribution": a scipy.stats distribution,
+            - optional shape parameters,
+            - optional 'loc' and 'scale'.
+        opti_method (str, optional): Optimization method for scipy.optimize.minimize. Defaults to 'SLSQP'.
+        options (dict, optional): Additional options for the optimizer. Defaults to None.
+        verbose (bool, optional): If True, print debug information on failure. Defaults to True.
 
-    It differs from a full joint MLE (where marginals and copula are all fitted
-    at once) and is often more stable when margins are unknown or many parameters
-    are involved.
+    Returns:
+        Tuple[numpy.ndarray, float] or None: Final fitted copula parameters and log-likelihood if successful; otherwise None.
 
-    Parameters
-    ----------
-    data : list of arrays
-        [X, Y] observations (each array of shape (n,))
-    copula : object
-        Copula instance with attributes:
-            - parameters (list or array): initial guess(es) for copula params
-            - bounds_param (list of tuples): bounds for each copula parameter
-            - get_pdf(u, v, theta): method returning copula PDF at (u, v)
-            - log_likelihood_ (float): gets filled with final log-likelihood
-    marginals : list of dict
-        Two dictionaries describing each margin. Each dict should specify:
-          - "distribution": a scipy.stats distribution object
-          - optionally shape parameters (e.g. 'a', 'b' for Beta)
-          - optionally 'loc', 'scale'
-
-        *If shape/loc/scale are not provided, IFM will fit them from the data using dist.fit()*
-        *If they are provided, we treat them as fixed (known) and do not re-fit.*
-
-    opti_method : str
-        Optimization method for copula fitting, passed to scipy.optimize.minimize
-        (default: 'SLSQP'). Other good choices: 'Powell', 'L-BFGS-B'.
-    options : dict or None
-        Extra options passed to scipy.optimize.minimize (e.g. {'maxiter': 1000}).
-    verbose : bool
-        If True, prints debug info on failure.
-
-    Returns
-    -------
-    tuple (copula_params, log_likelihood) or None
-        copula_params: final fitted parameters for the copula
-        log_likelihood: maximum log-likelihood on (U, V)
-
-    Example
-    -------
-    # >>> # Suppose we have data = [X, Y], each of length n=1000
-    # >>> # marginals = [
-    # >>> #     {'distribution': beta},      # no shape provided => fit a,b from data
-    # >>> #     {'distribution': lognorm}    # no shape => fit s from data
-    # >>> # ]
-    # >>> res_ifm = fit_ifm(data, myStudentCopula, marginals, opti_method='Powell')
-    # >>> if res_ifm is not None:
-    # >>>     params, loglik = res_ifm
-    # >>>     print("IFM => Copula params:", params, " log-lik:", loglik)
+    Raises:
+        ValueError: If X and Y have different lengths.
     """
     if options is None:
         options = {}
