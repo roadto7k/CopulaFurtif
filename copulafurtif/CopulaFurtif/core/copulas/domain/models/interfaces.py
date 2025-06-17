@@ -185,17 +185,67 @@ class CopulaModel(ABC):
         pass
     
     def partial_derivative_C_wrt_u(self, u, v):
+        """
+        Compute the partial derivative ∂C(u,v)/∂u using numeric or symbolic implementation.
+
+        Args:
+            u (float or array-like): Value of U in (0,1).
+            v (float or array-like): Value of V in (0,1).
+
+        Returns:
+            float or numpy.ndarray: Value of ∂C/∂u at (u, v).
+
+        Raises:
+            NotImplementedError: If no numeric implementation is provided.
+        """
+
         if self._parameters.partial_u_numeric:
             return self._parameters.partial_u_numeric(u, v, *self.parameters)
         raise NotImplementedError("Partial derivative wrt u not defined symbolically.")
 
     def partial_derivative_C_wrt_v(self, u, v):
+        """
+        Compute the partial derivative ∂C(u,v)/∂v using numeric or symbolic implementation.
+
+        Args:
+            u (float or array-like): Value of U in (0,1).
+            v (float or array-like): Value of V in (0,1).
+
+        Returns:
+            float or numpy.ndarray: Value of ∂C/∂v at (u, v).
+
+        Raises:
+            NotImplementedError: If no numeric implementation is provided.
+        """
+
         if self._parameters.partial_v_numeric:
             return self._parameters.partial_v_numeric(u, v, *self.parameters)
         raise NotImplementedError("Partial derivative wrt v not defined symbolically.")
 
     def conditional_cdf_u_given_v(self, u, v):
+        """
+        Compute the conditional CDF P(U ≤ u | V = v) via ∂C/∂v.
+
+        Args:
+            u (float or array-like): Value of U in (0,1).
+            v (float or array-like): Value of V in (0,1).
+
+        Returns:
+            float or numpy.ndarray: Conditional CDF of U given V.
+        """
+
         return self.partial_derivative_C_wrt_v(u, v)
 
     def conditional_cdf_v_given_u(self, u, v):
+        """
+        Compute the conditional CDF P(V ≤ v | U = u) via ∂C/∂u.
+
+        Args:
+            u (float or array-like): Value of U in (0,1).
+            v (float or array-like): Value of V in (0,1).
+
+        Returns:
+            float or numpy.ndarray: Conditional CDF of V given U.
+        """
+
         return self.partial_derivative_C_wrt_u(u, v)

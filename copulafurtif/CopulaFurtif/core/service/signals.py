@@ -3,7 +3,9 @@ Service for trading logic orchestration (calculating signals, placing orders, et
 """
 
 import pandas as pd
-from CopulaFurtif.core.trading.signals import moving_average_signal
+
+from CopulaFurtif.core.signal.signals import moving_average_signal
+
 
 class TradingService:
     def generate_signals(self, data: pd.DataFrame) -> pd.Series:

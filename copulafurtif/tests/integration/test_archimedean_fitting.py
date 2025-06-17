@@ -7,6 +7,16 @@ from CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_
 
 @pytest.mark.parametrize("copula_name", ["clayton", "frank", "joe"])
 def test_cmle_on_archimedean(copula_name):
+    """
+    Test CMLE fitting on Archimedean copulas.
+
+    Args:
+        copula_name (str): Name of the Archimedean copula to test (e.g., 'clayton', 'frank', 'joe').
+
+    Raises:
+        AssertionError: If the CMLE result is None or copula.log_likelihood_ is not set.
+    """
+
     # register_all_copulas()
     copula = CopulaFactory.create(copula_name)
     data = generate_data_beta_lognorm(n=1000, rho=0.6)
