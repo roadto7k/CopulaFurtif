@@ -115,7 +115,14 @@ class CopulaModel(ABC):
     @parameters.setter
     def parameters(self, params: CopulaParameters):
         """Validate and set parameters. Uses bounds_param and expected size."""
-        self._parameters = params
+        if isinstance(params, CopulaParameters):
+            self._parameters = params
+        else:
+            self._parameters = CopulaParameters(
+                values=params,
+                bounds=self.bounds_param,
+                names=getattr(self, "param_names", None)
+            )
 
     def pretty_print(self, equation='cdf'):
         if equation == 'cdf':

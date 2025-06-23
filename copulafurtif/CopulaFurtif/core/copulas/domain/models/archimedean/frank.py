@@ -1,8 +1,8 @@
 """
 Frank Copula implementation.
 
-The Frank copula is an Archimedean copula that supports both positive and negative 
-dependence. It is symmetric and does not exhibit tail dependence. This implementation 
+The Frank copula is an Archimedean copula that supports both positive and negative
+dependence. It is symmetric and does not exhibit tail dependence. This implementation
 includes methods for CDF, PDF, sampling, and conditional distributions.
 
 Attributes:
@@ -180,9 +180,14 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.parameters
+
         theta = param[0]
-        num = theta * np.exp(-theta * u) * (np.exp(-theta * v) - 1)
-        denom = (np.exp(-theta) - 1 + (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1))
+
+        e_theta_u = np.exp(-theta * u)
+        e_theta_v = np.exp(-theta * v)
+
+        num = e_theta_u * (e_theta_v - 1)
+        denom = np.exp(-theta) - 1 + (e_theta_u - 1) * (e_theta_v - 1)
         return num / denom
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
