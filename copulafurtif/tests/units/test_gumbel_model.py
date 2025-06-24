@@ -1,55 +1,123 @@
+"""Unit‑test suite for the Gumbel (Archimedean) copula implementation.
+
+* θ ∈ (1.01, 30).  We validate inside/outside bounds.
+* The provided sampler is exact (Hougaard construction with exponentials),
+  so we can trust shapes but we skip an empirical Kendall‑τ test for speed.
+
+Run:  pytest tests/test_gumbel_copula.py -q
+"""
+
+import math
 import numpy as np
 import pytest
+from hypothesis import given, strategies as st, settings
 from CopulaFurtif.core.copulas.domain.models.archimedean.gumbel import GumbelCopula
 
+# -----------------------------------------------------------------------------
+# Strategies helpers
+# -----------------------------------------------------------------------------
 
-@pytest.fixture
-def copula():
-    return GumbelCopula()
+@st.composite
+def theta_valid(draw):
+    """θ strictly between bounds to avoid numeric blow‑ups at 1.01 & 30."""
+    return draw(st.floats(min_value=1.05, max_value=29.5, allow_nan=False, allow_infinity=False))
 
-def test_parameters_set_get(copula):
-    copula.parameters = [1.5]
-    assert np.allclose(copula.parameters, [1.5])
+@st.composite
+def theta_invalid(draw):
+    return draw(st.one_of(
+        st.floats(max_value=1.01, allow_nan=False, allow_infinity=False, exclude_max=True),  # θ ≤ 1.01
+        st.floats(min_value=30.0, allow_nan=False, allow_infinity=False, exclude_min=False), # θ ≥ 30
+    ))
 
-def test_parameters_out_of_bounds(copula):
+@st.composite
+def unit_interval(draw):
+    # Keep away from 0/1 to stabilise logs
+    return draw(st.floats(min_value=1e-3, max_value=0.999, allow_nan=False, allow_infinity=False))
+
+
+def _finite_diff(f, x, y, h=1e-5):
+    return (f(x + h, y) - f(x - h, y)) / (2 * h)
+
+# -----------------------------------------------------------------------------
+# Parameter tests
+# -----------------------------------------------------------------------------
+
+@given(theta=theta_valid())
+def test_parameter_roundtrip(theta):
+    cop = GumbelCopula(); cop.parameters = [theta]
+    assert math.isclose(cop.parameters[0], theta, rel_tol=1e-12)
+
+
+@given(theta=theta_invalid())
+def test_parameter_out_of_bounds(theta):
+    cop = GumbelCopula()
     with pytest.raises(ValueError):
-        copula.parameters = [0.9]
-    with pytest.raises(ValueError):
-        copula.parameters = [31.0]
+        cop.parameters = [theta]
 
-def test_cdf_pdf_sample_shapes(copula):
-    u = np.linspace(0.1, 0.9, 10)
-    v = np.linspace(0.1, 0.9, 10)
-    cdf_vals = copula.get_cdf(u, v)
-    pdf_vals = copula.get_pdf(u, v)
-    assert len(cdf_vals) == 10
-    assert len(pdf_vals) == 10
+# -----------------------------------------------------------------------------
+# CDF / PDF invariants
+# -----------------------------------------------------------------------------
 
-    samples = copula.sample(100)
-    assert samples.shape == (100, 2)
+@given(theta=theta_valid(), u=unit_interval(), v=unit_interval())
+def test_cdf_bounds(theta, u, v):
+    cop = GumbelCopula(); cop.parameters = [theta]
+    val = cop.get_cdf(u, v)
+    assert 0.0 <= val <= 1.0
 
-def test_kendall_tau(copula):
-    tau = copula.kendall_tau()
-    expected = 1 - 1 / copula.parameters[0]
-    assert np.isclose(tau, expected)
 
-def test_tail_dependence(copula):
-    val = copula.UTDC()
-    assert 0 < val < 1
-    assert np.isclose(val, copula.LTDC())
+@given(theta=theta_valid(), u=unit_interval(), v=unit_interval())
+def test_pdf_nonnegative(theta, u, v):
+    cop = GumbelCopula(); cop.parameters = [theta]
+    assert cop.get_pdf(u, v) >= 0.0
 
-def test_partial_derivatives_and_conditionals(copula):
-    u, v = 0.4, 0.6
-    du = copula.partial_derivative_C_wrt_u(u, v)
-    dv = copula.partial_derivative_C_wrt_v(u, v)
-    assert 0 <= du <= 5
-    assert 0 <= dv <= 5
 
-    cond1 = copula.conditional_cdf_u_given_v(u, v)
-    cond2 = copula.conditional_cdf_v_given_u(u, v)
-    assert np.isclose(cond1, dv)
-    assert np.isclose(cond2, du)
+@given(theta=theta_valid(), u=unit_interval(), v=unit_interval())
+def test_cdf_symmetry(theta, u, v):
+    cop = GumbelCopula(); cop.parameters = [theta]
+    assert math.isclose(cop.get_cdf(u, v), cop.get_cdf(v, u), rel_tol=1e-12)
 
-def test_iad_ad_disabled(copula):
-    assert np.isnan(copula.IAD(None))
-    assert np.isnan(copula.AD(None))
+# -----------------------------------------------------------------------------
+# Derivative cross‑check (moderate θ only)
+# -----------------------------------------------------------------------------
+
+@given(theta=st.floats(min_value=1.1, max_value=10.0, allow_nan=False),
+       u=unit_interval(), v=unit_interval())
+@settings(max_examples=40)
+def test_partial_derivative_matches_finite_diff(theta, u, v):
+    cop = GumbelCopula(); cop.parameters = [theta]
+
+    def C(x, y):
+        return cop.get_cdf(x, y)
+
+    num_du = _finite_diff(C, u, v)
+    num_dv = _finite_diff(lambda x, y: C(y, x), v, u)
+    ana_du = cop.partial_derivative_C_wrt_u(u, v)
+    ana_dv = cop.partial_derivative_C_wrt_v(u, v)
+
+    assert math.isclose(ana_du, num_du, rel_tol=2e-2, abs_tol=2e-3)
+    assert math.isclose(ana_dv, num_dv, rel_tol=2e-2, abs_tol=2e-3)
+
+# -----------------------------------------------------------------------------
+# Kendall τ & tail dependence
+# -----------------------------------------------------------------------------
+
+@given(theta=theta_valid())
+def test_kendall_tau_and_tail(theta):
+    cop = GumbelCopula(); cop.parameters = [theta]
+    tau = cop.kendall_tau()
+    assert math.isclose(tau, 1 - 1/theta, rel_tol=1e-12)
+
+    expected_lambda = 2 - 2 ** (1/theta)
+    assert math.isclose(cop.LTDC(), 0.0)  # Gumbel has **upper** tail dependence only
+    assert math.isclose(cop.UTDC(), expected_lambda, rel_tol=1e-12)
+
+# -----------------------------------------------------------------------------
+# Sample shape & disabled metrics
+# -----------------------------------------------------------------------------
+
+def test_sample_and_disabled_metrics():
+    cop = GumbelCopula(); cop.parameters = [2.5]
+    samp = cop.sample(512)
+    assert samp.shape == (512, 2)
+    assert np.isnan(cop.IAD(None))
+    assert np.isnan(cop.AD(None))

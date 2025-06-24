@@ -158,10 +158,13 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         theta = param[0]
-        a = theta - 1
-        b = 1 + a * (u + v)
-        c = np.sqrt(b ** 2 - 4 * theta * a * u * v)
-        return (2 * theta * v * (b + c - 2 * a * u)) / ((b + c) ** 2)
+
+        delta = theta - 1.0
+        A = 1.0 + delta * (u + v)
+        sqrtD = np.sqrt(A ** 2 - 4.0 * theta * delta * u * v)
+
+        # ½ [1 − (A − 2 θ v) / √D]
+        return 0.5 * (1.0 - (A - 2.0 * theta * v) / sqrtD)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """Compute ∂C(u,v)/∂v via symmetry.

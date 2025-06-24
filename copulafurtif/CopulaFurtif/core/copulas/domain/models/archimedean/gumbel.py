@@ -122,10 +122,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float: LTDC value.
         """
-        if param is None:
-            param = self.parameters
-        theta = param[0]
-        return 2 - 2 ** (1 / theta)
+        return 0
 
     def UTDC(self, param=None):
         """Upper tail dependence coefficient (same as LTDC for Gumbel copula).
@@ -136,7 +133,10 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float: UTDC value.
         """
-        return self.LTDC(param)
+        if param is None:
+            param = self.parameters
+        theta = param[0]
+        return 2 - 2 ** (1 / theta)
 
     def IAD(self, data):
         """Integrated Absolute Deviation (disabled for Gumbel copula).

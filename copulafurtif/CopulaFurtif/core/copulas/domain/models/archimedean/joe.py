@@ -164,10 +164,12 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         theta = param[0]
+
         A = (1 - u) ** theta
         B = (1 - v) ** theta
-        top = theta * A * (1 - v) ** (theta - 1) * (1 - A * B) ** (1 / theta - 2)
-        return top / u
+        Z = A + B - A * B
+
+        return (1 - u) ** (theta - 1) * (1 - B) * Z ** (1 / theta - 1)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """Compute ∂C(u,v)/∂v via symmetry.
