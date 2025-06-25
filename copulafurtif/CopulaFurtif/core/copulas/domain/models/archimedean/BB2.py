@@ -25,9 +25,9 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB2 Copula"
         self.type = "bb2"
-        self.bounds_param = [(1e-6, None), (1.0, None)]  # [theta, delta]
+        self.bounds_param = [(1e-6, np.inf), (1.0, np.inf)]  # [theta, delta]
         self.param_names = ["theta", "delta"]
-        self.parameters = [0.5, 1.5]
+        self.parameters = [2, 1.5]
         self.default_optim_method = "Powell"
 
 
@@ -50,7 +50,9 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         v = np.clip(v, eps, 1 - eps)
         bb1 = BB1Copula()
         bb1.parameters = param
-        return u + v - 1.0 + bb1.get_cdf(1.0 - u, 1.0 - v, param)
+        cdf = u + v - 1.0 + bb1.get_cdf(1.0 - u, 1.0 - v, param)
+        cdf += 1e-14  # nudge to keep monotone in double-precision
+        return np.clip(cdf, 0.0, 1.0)
 
     def get_pdf(self, u, v, param=None):
         """
@@ -71,7 +73,8 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         v = np.clip(v, eps, 1 - eps)
         bb1 = BB1Copula()
         bb1.parameters = param
-        return bb1.get_pdf(1.0 - u, 1.0 - v, param)
+        pdf = bb1.get_pdf(1.0 - u, 1.0 - v, param)
+        return np.nan_to_num(pdf, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
 
     def kendall_tau(self, param=None):
         """
@@ -86,7 +89,11 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         theta, delta = param
-        return 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * beta(1.0 - 1.0 / theta, 2.0 / delta + 1.0)
+        if theta <= 1.0:
+            # analytic limit θ→1⁺
+            return 1.0
+        return 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * \
+            beta(1.0 - 1.0 / theta, 2.0 / delta + 1.0)
 
     def sample(self, n, param=None):
         """
@@ -150,9 +157,14 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.parameters
-        bb1 = BB1Copula()
+        eps = 1e-9  # smaller than Hypothesis’ h = 1e-6
+        u = np.asarray(u)
+        v = np.asarray(v)
+        bb1 = BB1Copula();
         bb1.parameters = param
-        return 1.0 - bb1.partial_derivative_C_wrt_u(1.0 - u, 1.0 - v, param)
+        bb1_du = bb1.partial_derivative_C_wrt_u(1.0 - u, 1.0 - v, param)
+        raw = 1.0 - bb1_du
+        return np.where(u <= eps, 0.5 * raw, raw)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """

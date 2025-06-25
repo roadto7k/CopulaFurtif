@@ -24,7 +24,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB1 Copula"
         self.type = "bb1"
-        self.bounds_param = [(1e-6, None), (1.0, None)]  # [theta, delta]
+        self.bounds_param = [(1e-6, np.inf), (1.0, np.inf)]  # [theta, delta]
         self.param_names = ["theta", "delta"]
         self.parameters = [0.5, 1.5]
         self.default_optim_method = "Powell"

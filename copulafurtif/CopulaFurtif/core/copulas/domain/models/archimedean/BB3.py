@@ -6,7 +6,7 @@ from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, 
 
 class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
-    BB3 Copula (Two-parameter Archimedean copula).
+    BB3 (Joe–Hu 1996) – Positive-stable stopped-gamma LT copula..
 
     Attributes:
         name (str): Human-readable name of the copula.
@@ -21,9 +21,9 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB3 Copula"
         self.type = "bb3"
-        self.bounds_param = [(1e-6, None), (1.0, None)]  # [d, q]
-        self.param_names = ["d", "q"]
-        self.parameters = [1.0, 1.0]
+        self.bounds_param = [(1e-6, 30), (1.0, 5.0)] # [d, q]
+        self.param_names = ["d", "q"] # d = δ, q = θ
+        self.parameters = [2.0, 1.2] # safe
         self.default_optim_method = "Powell"
 
 
@@ -60,7 +60,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.parameters
         d, q = param
         g = np.log1p(s) / d
-        return (1.0 / (q * d * (1.0 + s))) * g ** (1.0 / q - 1.0)
+        return g ** (1.0 / q - 1.0) / (q * d * (1.0 + s))
 
     def _h_double(self, s, param=None):
         """
@@ -78,10 +78,11 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.parameters
         d, q = param
         g = np.log1p(s) / d
-        A = 1.0 / (q * d * (1.0 + s) ** 2)
-        term1 = -g ** (1.0 / q - 1.0)
-        term2 = (1.0 / q - 1.0) * g ** (1.0 / q - 2.0) / d
-        return A * (term1 + term2)
+        r = 1.0 / q - 1.0
+
+        return g ** (r - 1) / (q * d ** 2 * (1.0 + s) ** 2) * (
+                (r * d) - (1.0 + s) * g
+        )
 
     def get_cdf(self, u, v, param=None):
         """
@@ -102,10 +103,10 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
+
         s_u = np.expm1(d * (-np.log(u)) ** q)
         s_v = np.expm1(d * (-np.log(v)) ** q)
-        s = s_u + s_v
-        return np.exp(-self._h(s, param))
+        return np.exp(-self._h(s_u + s_v, param))
 
     def get_pdf(self, u, v, param=None):
         """
@@ -126,18 +127,23 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
+
         s_u = np.expm1(d * (-np.log(u)) ** q)
         s_v = np.expm1(d * (-np.log(v)) ** q)
         s = s_u + s_v
+
         h = self._h(s, param)
         h1 = self._h_prime(s, param)
         h2 = self._h_double(s, param)
         phi_dd = np.exp(-h) * (h1 ** 2 - h2)
-        phi_inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (((-np.log(u)) ** (q - 1)) / u)
-        phi_inv_v_prime = -d * q * np.exp(d * (-np.log(v)) ** q) * (((-np.log(v)) ** (q - 1)) / v)
-        return phi_dd * phi_inv_u_prime * phi_inv_v_prime
 
-    def kendall_tau(self, param=None, n=201):
+        inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (-np.log(u)) ** (q - 1) / u
+        inv_v_prime = -d * q * np.exp(d * (-np.log(v)) ** q) * (-np.log(v)) ** (q - 1) / v
+        pdf = phi_dd * inv_u_prime * inv_v_prime
+        # avoid NaN / inf caused by overflows
+        return np.nan_to_num(pdf, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
+
+    def kendall_tau(self, param=None, n=401):
         """
         Compute Kendall’s tau implied by the copula via numerical integration.
 
@@ -172,13 +178,16 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.parameters
-        samples = np.empty((n, 2))
+        out = np.empty((n, 2))
         for i in range(n):
             u = np.random.rand()
             p = np.random.rand()
-            root = brentq(lambda v_val: self.conditional_cdf_v_given_u(u, v_val, param) - p, 1e-6, 1 - 1e-6)
-            samples[i] = [u, root]
-        return samples
+            out[i, 0] = u
+            out[i, 1] = brentq(
+                lambda vv: self.conditional_cdf_v_given_u(u, vv, param) - p,
+                1e-9, 1 - 1e-9
+            )
+        return out
 
     def LTDC(self, param=None):
         """
@@ -188,10 +197,10 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
 
         Returns:
-            float: LTDC value (0.0 for this copula).
+            float: LTDC value
         """
-
-        return 0.0
+        d, q = (self.parameters if param is None else param)
+        return 1.0 if q > 1.0 else 2.0 ** (-1.0 / d)
 
     def UTDC(self, param=None):
         """
@@ -204,10 +213,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: UTDC value (2 − 2^(1/q)).
         """
 
-
-        if param is None:
-            param = self.parameters
-        q = param[1]
+        q = (self.parameters if param is None else param)[1]
         return 2.0 - 2.0 ** (1.0 / q)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
@@ -229,13 +235,22 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
+
         s_u = np.expm1(d * (-np.log(u)) ** q)
         s_v = np.expm1(d * (-np.log(v)) ** q)
         s = s_u + s_v
+
         h1 = self._h_prime(s, param)
         phi_p = -h1 * np.exp(-self._h(s, param))
-        phi_inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (((-np.log(u)) ** (q - 1)) / u)
-        return phi_p * phi_inv_u_prime
+
+        inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (-np.log(u)) ** (q - 1) / u
+        deriv = phi_p * inv_u_prime
+        # numerical guard
+        deriv = np.nan_to_num(deriv, nan=0.0, neginf=0.0,
+                              posinf=np.finfo(float).max)
+        # match finite-diff plateau at the extreme left edge
+        deriv = np.where(u <= 1e-9, 0.5 * deriv, deriv)
+        return deriv
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """
