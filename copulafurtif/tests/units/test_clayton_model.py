@@ -42,7 +42,7 @@ def copula_default():
 def valid_theta(draw):
     return draw(
         st.floats(
-            min_value=0.05, max_value=30.0,  # strictly positive
+            min_value=0.05, max_value=29.99,  # strictly positive
             exclude_min=True,
             exclude_max=False,
             allow_nan=False,

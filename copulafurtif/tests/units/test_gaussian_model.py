@@ -12,12 +12,14 @@ def copula():
     return GaussianCopula()
 
 def test_parameters_set_get(copula):
-    copula.parameters = [0.7]
-    assert np.allclose(copula.parameters, [0.7])
+    copula.set_parameters([0.7])
+    # copula.parameters = [0.7]
+    assert np.allclose(copula.get_parameters(), [0.7])
 
 def test_parameters_out_of_bounds(copula):
     with pytest.raises(ValueError):
-        copula.parameters = [1.5]  # out of bounds
+        copula.set_parameters([1.5])
+        # copula.parameters = [1.5]  # out of bounds
 
 def test_cdf_pdf_sample_shapes(copula):
     u = np.linspace(0.01, 0.99, 10)
@@ -30,7 +32,8 @@ def test_cdf_pdf_sample_shapes(copula):
     assert samples.shape == (100, 2)
 
 def test_kendall_tau(copula):
-    copula.parameters = [0.6]
+    copula.set_parameters([0.6])
+    # copula.parameters = [0.6]
     tau = copula.kendall_tau()
     expected = (2 / np.pi) * np.arcsin(0.6)
     assert np.isclose(tau, expected)

@@ -28,7 +28,7 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "fgm"
         self.bounds_param = [(-1.0, 1.0)]  # [theta]
         self.param_names = ["theta"]
-        self.parameters = [0.3]
+        # self.parameters = [0.3]
         self.default_optim_method = "SLSQP"
 
     def get_cdf(self, u, v, param=None):

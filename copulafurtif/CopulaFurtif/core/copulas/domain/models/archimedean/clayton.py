@@ -14,7 +14,7 @@ Attributes:
 """
 
 import numpy as np
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -28,8 +28,9 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "clayton"
         self.bounds_param = [(0.01, 30.0)]  # [theta]
         self.param_names = ["theta"]
-        self.parameters = [2.0]
+        # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
+        self.init_parameters(CopulaParameters([2.0],[(0.01, 30.0)] , ["theta"] ))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -43,7 +44,7 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Value(s) of the CDF.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return np.maximum((u ** -theta + v ** -theta - 1) ** (-1 / theta), 0.0)
 
@@ -59,7 +60,7 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Value(s) of the PDF.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         num = (theta + 1) * (u * v) ** (-theta - 1)
         denom = (u ** -theta + v ** -theta - 1) ** (2 + 1 / theta)
@@ -76,7 +77,7 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Samples of shape (n, 2).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         u = np.random.rand(n)
         w = np.random.gamma(1 / theta, 1, n)
@@ -93,7 +94,7 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return theta / (theta + 2)
 
@@ -107,7 +108,7 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: LTDC value.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return 2 ** (-1 / theta)
 
@@ -158,7 +159,7 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         top = (u ** -theta + v ** -theta - 1) ** (-1 / theta - 1)
         return top * u ** (-theta - 1)

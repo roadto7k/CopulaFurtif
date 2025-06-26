@@ -46,12 +46,12 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
     #     self.parameters = [0.0]
     #     self.default_optim_method = "SLSQP"
 
-    def __init__(self, rho=0.0):
+    def __init__(self):
         self.name = "Gaussian Copula"
         self.type = "gaussian"
         u, v = symbols('u v')
         rho_sym = symbols('rho')
-
+        rho = 0.5
         x = sqrt(2) * erfinv(2 * u - 1)
         y = sqrt(2) * erfinv(2 * v - 1)
         det = 1 - rho_sym ** 2
@@ -78,10 +78,10 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
             partial_u_numeric=partial_u_numeric,
             partial_v_numeric=partial_v_numeric
         )
-        super().__init__(parameters=params)
+        self.init_parameters(params)
 
     def get_cdf(self, u, v, param: np.ndarray = None):
-        param = param or self.parameters
+        param = param or self.get_parameters()
         rho = param[0]
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -163,7 +163,7 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         rho = param[0]
         return (2.0 / np.pi) * np.arcsin(rho)
 
@@ -191,7 +191,7 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
     #     return np.column_stack((u, v))
 
     def sample(self, n, param=None):
-        param = param or self.parameters
+        param = param or self.get_parameters()
         rho = param[0]
         cov = [[1, rho], [rho, 1]]
         samples = np.random.multivariate_normal([0, 0], cov, size=n)
@@ -310,46 +310,38 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
 
 
 def main():
-    gaussian_copula = GaussianCopula(rho=0.5)
+    gaussian_copula = GaussianCopula()
 
-    # Test générique des paramètres
     print("Valeurs initiales des paramètres:", gaussian_copula.get_parameters())
 
     gaussian_copula.set_parameters([0.7])
     print("Nouvelles valeurs numériques:", gaussian_copula.get_parameters())
 
-    # Affichage pretty print
     gaussian_copula.pretty_print(equation='pdf')
 
-    # Test d'échantillonnage
     samples = gaussian_copula.sample(n=1000)
     print("Échantillons (5 premiers):", samples[:5])
 
-    # Test Kendall tau
     tau = gaussian_copula.kendall_tau()
     print("Kendall tau:", tau)
 
-    # Test des nouvelles propriétés
     gaussian_copula.set_log_likelihood(-123.45)
     gaussian_copula.set_n_obs(1000)
 
     print("Log-likelihood:", gaussian_copula.get_log_likelihood())
     print("Nombre d'observations:", gaussian_copula.get_n_obs())
 
-    # Test des setters supplémentaires via proxy dans CopulaModel
     gaussian_copula.set_bounds([(-0.9, 0.9)])
     gaussian_copula.set_names(["correlation_coefficient"])
 
     print("Nouveaux bounds:", gaussian_copula.get_bounds())
     print("Nouveaux noms:", gaussian_copula.get_names())
 
-    # Test des valeurs limites pour bounds (doit lever une exception)
     try:
         gaussian_copula.set_bounds([(-1.1, 1.1)])
     except ValueError as e:
         print("Erreur capturée lors de la définition des bounds invalides:", e)
 
-    # Test des valeurs limites pour names (doit lever une exception)
     try:
         gaussian_copula.set_names(["rho", "extra_name"])
     except ValueError as e:

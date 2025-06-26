@@ -14,7 +14,7 @@ Attributes:
 """
 
 import numpy as np
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -26,10 +26,15 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "AMH Copula"
         self.type = "amh"
-        self.bounds_param = [(-0.999, 1.0)]
+        self.bounds_param = [(-1.0, 1.0)]
         self.param_names = ["theta"]
-        self.parameters = [0.3]
+        # self.parameters = [0.3]
         self.default_optim_method = "SLSQP"
+        self.init_parameters(CopulaParameters([0.3], 
+                            [(-1.0, 1.0)], 
+                            ["theta"]))
+        self.set_bounds([(-1.0, 1.0)])
+        self.set_names(["theta"])
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -43,7 +48,8 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF value(s).
         """
         if param is None:
-            param = self.parameters
+            print(self.get_parameters())
+            param = self.get_parameters()
         theta = param[0]
         num = u * v
         denom = 1 - theta * (1 - u) * (1 - v)
@@ -61,7 +67,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         numerator = 1 + theta * (1 - 2 * u) * (1 - 2 * v)
         denominator = (1 - theta * (1 - u) * (1 - v)) ** 2
@@ -78,7 +84,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Samples of shape (n, 2).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         u = np.random.rand(n)
         v = np.random.rand(n)
@@ -94,7 +100,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return 1 - 2 * (theta / (3 * (1 + theta)))
 
@@ -156,7 +162,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Conditional CDF value.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         num = v * (1 - theta * (1 - v))
         denom = (1 - theta * (1 - u) * (1 - v)) ** 2
@@ -200,3 +206,4 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Conditional CDF value.
         """
         return self.partial_derivative_C_wrt_u(u, v, param)
+

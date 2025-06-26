@@ -14,7 +14,7 @@ Attributes:
 """
 
 import numpy as np
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -28,8 +28,9 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "plackett"
         self.bounds_param = [(0.01, 100.0)]  # [theta]
         self.param_names = ["theta"]
-        self.parameters = [2.0]
+        # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
+        self.init_parameters(CopulaParameters([2.0],  [(0.01, 100.0)],["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -43,7 +44,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         a = theta - 1
         b = 1 + a * (u + v)
@@ -62,7 +63,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         num = theta * (1 + (theta - 1) * (u + v - 2 * u * v))
         denom = ((1 + (theta - 1) * (u + v)) ** 2 - 4 * theta * (theta - 1) * u * v) ** 1.5
@@ -79,7 +80,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Samples of shape (n, 2).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         u = np.random.rand(n)
         v = np.random.rand(n)
         return np.column_stack((u, v))  # NOTE: Not an exact sampler
@@ -94,7 +95,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return (theta - 1) / (theta + 1)
 
@@ -156,7 +157,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
 
         delta = theta - 1.0

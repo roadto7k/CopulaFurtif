@@ -49,8 +49,9 @@ def unit_interval(draw):
 @given(theta=valid_theta())
 def test_parameter_roundtrip(theta):
     c = AMHCopula()
-    c.parameters = [theta]
-    assert math.isclose(c.parameters[0], theta, rel_tol=1e-12)
+    c.set_parameters([theta])
+    # c.parameters = [theta]
+    assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
 
 @given(theta=st.one_of(
     st.floats(max_value=-1.0, allow_infinity=False, allow_nan=False),
@@ -59,7 +60,8 @@ def test_parameter_roundtrip(theta):
 def test_parameter_out_of_bounds(theta):
     c = AMHCopula()
     with pytest.raises(ValueError):
-        c.parameters = [theta]
+        c.set_parameters([theta])
+        # c.parameters = [theta]
 
 # Numerical derivative helper --------------------------------------------------
 
@@ -75,7 +77,8 @@ def _finite_diff(f, x, y, h=1e-6):
 @given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_bounds(theta, u, v):
     c = AMHCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
+    # c.parameters = [theta]
     val = c.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
@@ -86,14 +89,16 @@ def test_cdf_monotone_in_u(theta, u1, u2, v):
     if u1 > u2:
         u1, u2 = u2, u1  # enforce order
     c = AMHCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
+    # c.parameters = [theta]
     assert c.get_cdf(u1, v) <= c.get_cdf(u2, v)
 
 
 @given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_symmetry(theta, u, v):
     c = AMHCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
+    # c.parameters = [theta]
     assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
 
 # -----------------------------------------------------------------------------
@@ -103,7 +108,8 @@ def test_cdf_symmetry(theta, u, v):
 @given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_pdf_nonnegative(theta, u, v):
     c = AMHCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
+    # c.parameters = [theta]
     pdf = c.get_pdf(u, v)
     assert pdf >= 0.0
 
@@ -116,7 +122,8 @@ def test_pdf_nonnegative(theta, u, v):
 @settings(max_examples=100)
 def test_partial_derivative_matches_finite_diff(theta, u, v):
     c = AMHCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
+    #c.parameters = [theta]
 
     def C(x, y):
         return c.get_cdf(x, y)
@@ -137,7 +144,8 @@ def test_partial_derivative_matches_finite_diff(theta, u, v):
 @given(theta=valid_theta())
 def test_tail_dependence_zero(theta):
     c = AMHCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
+    # c.parameters = [theta]
     assert c.LTDC() == 0.0
     assert c.UTDC() == 0.0
 
@@ -152,7 +160,8 @@ def test_empirical_kendall_tau_close(theta):
     import scipy.stats as stx  # local import for optional dependency
 
     c = AMHCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
+    # c.parameters = [theta]
 
     # Draw a moderately‑sized sample and compute empirical τ
     data = c.sample(5000)

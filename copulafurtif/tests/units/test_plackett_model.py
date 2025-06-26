@@ -33,14 +33,14 @@ def _fd(f, x, y, h=1e-5):
 
 @given(theta=θ_valid)
 def test_param_roundtrip(theta):
-    c = PlackettCopula(); c.parameters = [theta]
-    assert math.isclose(c.parameters[0], theta, rel_tol=1e-12)
+    c = PlackettCopula(); c.set_parameters([theta]) 
+    assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
 
 @given(theta=θ_invalid)
 def test_param_out_of_bounds(theta):
     c = PlackettCopula()
     with pytest.raises(ValueError):
-        c.parameters = [theta]
+        c.set_parameters([theta]) 
 
 # -----------------------------------------------------------------------------
 # CDF / PDF invariants
@@ -48,18 +48,18 @@ def test_param_out_of_bounds(theta):
 
 @given(theta=θ_valid, u=unit_interior, v=unit_interior)
 def test_cdf_bounds(theta, u, v):
-    c = PlackettCopula(); c.parameters = [theta]
+    c = PlackettCopula(); c.set_parameters([theta]) 
     val = c.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
 @given(theta=θ_valid, u=unit_interior, v=unit_interior)
 def test_pdf_nonneg(theta, u, v):
-    c = PlackettCopula(); c.parameters = [theta]
+    c = PlackettCopula(); c.set_parameters([theta]) 
     assert c.get_pdf(u, v) >= 0.0
 
 @given(theta=θ_valid, u=unit_interior, v=unit_interior)
 def test_cdf_symmetry(theta, u, v):
-    c = PlackettCopula(); c.parameters = [theta]
+    c = PlackettCopula(); c.set_parameters([theta]) 
     assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
 
 # -----------------------------------------------------------------------------
@@ -70,7 +70,7 @@ def test_cdf_symmetry(theta, u, v):
        u=unit_interior, v=unit_interior)
 @settings(max_examples=50)
 def test_partial_derivatives(theta, u, v):
-    c = PlackettCopula(); c.parameters = [theta]
+    c = PlackettCopula(); c.set_parameters([theta]) 
     def C(x, y):
         return c.get_cdf(x, y)
 
@@ -88,7 +88,7 @@ def test_partial_derivatives(theta, u, v):
 
 @given(theta=θ_valid)
 def test_tau_tail(theta):
-    c = PlackettCopula(); c.parameters = [theta]
+    c = PlackettCopula(); c.set_parameters([theta]) 
     tau = c.kendall_tau()
     expected_tau = (theta - 1) / (theta + 1)
     assert math.isclose(tau, expected_tau, rel_tol=1e-12)
@@ -99,7 +99,7 @@ def test_tau_tail(theta):
 # -----------------------------------------------------------------------------
 
 def test_sample_disabled():
-    c = PlackettCopula(); c.parameters = [5.0]
+    c = PlackettCopula(); c.set_parameters([5.0]) 
     samp = c.sample(400)
     assert samp.shape == (400, 2)
     assert np.isnan(c.IAD(None))

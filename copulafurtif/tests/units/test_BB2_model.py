@@ -40,7 +40,7 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.BB2 import BB2Copula
 def copula_default():
     """Default BB2 copula with (θ, δ) = (2.0, 1.5)."""
     c = BB2Copula()
-    c.parameters = [2.0, 1.5]
+    c.set_parameters([2.0, 1.5])
     return c
 
 
@@ -90,9 +90,9 @@ def _finite_diff(f, x, y, h=1e-6):
 @given(theta=valid_theta(), delta=valid_delta())
 def test_parameter_roundtrip(theta, delta):
     c = BB2Copula()
-    c.parameters = [theta, delta]
-    assert math.isclose(c.parameters[0], theta, rel_tol=1e-12)
-    assert math.isclose(c.parameters[1], delta, rel_tol=1e-12)
+    c.set_parameters([theta, delta])
+    assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
+    assert math.isclose(c.get_parameters()[1], delta, rel_tol=1e-12)
 
 
 @given(
@@ -105,7 +105,7 @@ def test_parameter_roundtrip(theta, delta):
 def test_theta_out_of_bounds(theta, delta):
     c = BB2Copula()
     with pytest.raises(ValueError):
-        c.parameters = [theta, delta]
+        c.set_parameters([theta, delta])
 
 
 @given(
@@ -115,7 +115,7 @@ def test_theta_out_of_bounds(theta, delta):
 def test_delta_out_of_bounds(theta, delta):
     c = BB2Copula()
     with pytest.raises(ValueError):
-        c.parameters = [theta, delta]
+        c.set_parameters([theta, delta])
 
 
 # -----------------------------------------------------------------------------
@@ -125,7 +125,7 @@ def test_delta_out_of_bounds(theta, delta):
 @given(theta=valid_theta(), delta=valid_delta(), u=unit_interval(), v=unit_interval())
 def test_cdf_bounds(theta, delta, u, v):
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
     val = c.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
@@ -136,14 +136,14 @@ def test_cdf_monotone_in_u(theta, delta, u1, u2, v):
     if u1 > u2:
         u1, u2 = u2, u1
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
     assert c.get_cdf(u1, v) <= c.get_cdf(u2, v)
 
 
 @given(theta=valid_theta(), delta=valid_delta(), u=unit_interval(), v=unit_interval())
 def test_cdf_symmetry(theta, delta, u, v):
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
     assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
 
 
@@ -154,7 +154,7 @@ def test_cdf_symmetry(theta, delta, u, v):
 @given(theta=valid_theta(), delta=valid_delta(), u=unit_interval(), v=unit_interval())
 def test_pdf_nonnegative(theta, delta, u, v):
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
     assert c.get_pdf(u, v) >= 0.0
 
 
@@ -166,7 +166,7 @@ def test_pdf_nonnegative(theta, delta, u, v):
 @settings(max_examples=100)
 def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
 
     def C(x, y):
         return c.get_cdf(x, y)
@@ -188,7 +188,7 @@ def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
 @given(theta=valid_theta(), delta=valid_delta())
 def test_tail_dependence(theta, delta):
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
 
     # Formulas from class docstring
     expected_lt = 2.0 - 2.0 ** (1.0 / delta)
@@ -205,7 +205,7 @@ def test_tail_dependence(theta, delta):
 @given(theta=valid_theta(), delta=valid_delta())
 def test_kendall_tau_formula(theta, delta):
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
     # Closed-form from implementation: τ = 1 − (2/δ)(1 − 1/θ) B(1 − 1/θ, 2/δ + 1)
     from scipy.special import beta
     expected = 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * beta(1.0 - 1.0 / theta,
@@ -223,7 +223,7 @@ def test_kendall_tau_formula(theta, delta):
 def test_empirical_kendall_tau_close(theta, delta):
     import scipy.stats as stx  # optional dependency
     c = BB2Copula()
-    c.parameters = [theta, delta]
+    c.set_parameters([theta, delta])
 
     data = c.sample(5000)
     tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])

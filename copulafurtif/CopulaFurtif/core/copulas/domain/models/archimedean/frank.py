@@ -16,7 +16,7 @@ Attributes:
 import numpy as np
 from scipy.special import spence
 from scipy.stats import uniform
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -30,8 +30,9 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "frank"
         self.bounds_param = [(-35.0, 35.0)]  # [theta]
         self.param_names = ["theta"]
-        self.parameters = [5.0]
+        # self.parameters = [5.0]
         self.default_optim_method = "SLSQP"
+        self.init_parameters(CopulaParameters([5.0],  [(-35.0, 35.0)], ["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -45,7 +46,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF values at (u, v).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         if np.isclose(theta, 0.0):
             return u * v
@@ -65,7 +66,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF values at (u, v).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         if np.isclose(theta, 0.0):
             return np.ones_like(u)
@@ -86,7 +87,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Array of shape (n, 2) of pseudo-observations.
         """
         if param is None:
-            theta = self.parameters[0]
+            theta = self.get_parameters()[0]
         else:
             theta = float(param[0])
 
@@ -115,7 +116,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau value.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         if np.isclose(theta, 0.0):
             return 0.0
@@ -179,7 +180,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
 
         theta = param[0]
 

@@ -8,14 +8,14 @@ def copula():
     return TawnCopula()
 
 def test_parameters_set_get(copula):
-    copula.parameters = [2.5, 0.7]
-    assert np.allclose(copula.parameters, [2.5, 0.7])
+    copula.set_parameters([2.5, 0.7])
+    assert np.allclose(copula.get_parameters(), [2.5, 0.7])
 
 def test_parameters_out_of_bounds(copula):
     with pytest.raises(ValueError):
-        copula.parameters = [0.5, 0.5]  # theta too low
+        copula.set_parameters([0.5, 0.5]) # theta too low
     with pytest.raises(ValueError):
-        copula.parameters = [2.5, 1.5]  # delta too high
+        copula.set_parameters([2.5, 1.5]) # delta too high
 
 def test_cdf_sample_shapes(copula):
     u = np.linspace(0.1, 0.9, 10)
@@ -28,7 +28,7 @@ def test_cdf_sample_shapes(copula):
 
 def test_kendall_tau(copula):
     tau = copula.kendall_tau()
-    theta, delta = copula.parameters
+    theta, delta = copula.get_parameters()
     expected = (theta * (1 - delta + delta)) / (theta + 2)
     assert np.isclose(tau, expected)
 

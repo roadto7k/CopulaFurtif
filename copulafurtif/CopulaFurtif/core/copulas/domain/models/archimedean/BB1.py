@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.special import beta
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -26,8 +26,9 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "bb1"
         self.bounds_param = [(1e-6, np.inf), (1.0, np.inf)]  # [theta, delta]
         self.param_names = ["theta", "delta"]
-        self.parameters = [0.5, 1.5]
+        # self.parameters = [0.5, 1.5]
         self.default_optim_method = "Powell"
+        self.init_parameters(CopulaParameters([0.5, 1.5],[(1e-6, np.inf), (1.0, np.inf)], ["theta", "delta"] ))
 
     def get_cdf(self, u, v, param=None):
         """
@@ -42,7 +43,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Copula CDF values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -65,7 +66,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Copula PDF values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -90,7 +91,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         return 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * beta(1.0 - 1.0 / theta, 2.0 / delta + 1.0)
 
@@ -106,7 +107,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Samples of shape (n, 2).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         V = np.random.gamma(1.0 / delta, 1.0, size=n)
         E1 = np.random.exponential(size=n)
@@ -126,7 +127,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Lower tail dependence.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         return 2.0 ** (-1.0 / (delta * theta))
 
@@ -141,7 +142,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Upper tail dependence.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         delta = param[1]
         return 2.0 - 2.0 ** (1.0 / delta)
 
@@ -158,7 +159,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         T = (u ** (-theta) - 1) ** delta + (v ** (-theta) - 1) ** delta
         factor = (1 + T ** (1.0 / delta)) ** (-1.0 / theta - 1)

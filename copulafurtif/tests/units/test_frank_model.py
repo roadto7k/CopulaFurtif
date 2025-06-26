@@ -53,8 +53,8 @@ def _finite_diff(f, x, y, h=1e-3):
 @given(theta=safe_theta())
 def test_set_get_parameters(theta):
     cop = FrankCopula()
-    cop.parameters = [theta]
-    assert math.isclose(cop.parameters[0], theta, rel_tol=1e-12)
+    cop.set_parameters([theta])
+    assert math.isclose(cop.get_parameters()[0], theta, rel_tol=1e-12)
 
 
 @given(theta=st.one_of(
@@ -64,7 +64,7 @@ def test_set_get_parameters(theta):
 def test_parameters_out_of_bounds(theta):
     cop = FrankCopula()
     with pytest.raises(ValueError):
-        cop.parameters = [theta]
+        cop.set_parameters([theta])
 
 # -----------------------------------------------------------------------------
 # Basic CDF/PDF sanity
@@ -72,14 +72,14 @@ def test_parameters_out_of_bounds(theta):
 
 @given(theta=safe_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_bounds(theta, u, v):
-    cop = FrankCopula(); cop.parameters = [theta]
+    cop = FrankCopula(); cop.set_parameters([theta])
     val = cop.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
 
 @given(theta=safe_theta(), u=unit_interval(), v=unit_interval())
 def test_pdf_nonnegative(theta, u, v):
-    cop = FrankCopula(); cop.parameters = [theta]
+    cop = FrankCopula(); cop.set_parameters([theta])
     assert cop.get_pdf(u, v) >= 0.0
 
 # -----------------------------------------------------------------------------
@@ -94,7 +94,7 @@ def test_pdf_nonnegative(theta, u, v):
 @settings(max_examples=50)
 def test_partial_derivative_matches_finite_diff(theta, u, v):
     cop = FrankCopula()
-    cop.parameters = [theta]
+    cop.set_parameters([theta])
 
     def C(x, y):
         return cop.get_cdf(x, y)
@@ -116,7 +116,7 @@ def test_partial_derivative_matches_finite_diff(theta, u, v):
 
 @given(theta=safe_theta())
 def test_kendall_tau_range(theta):
-    cop = FrankCopula(); cop.parameters = [theta]
+    cop = FrankCopula(); cop.set_parameters([theta])
     tau = cop.kendall_tau()
     assert math.isfinite(tau)
     # Slight overshoot possible for large |θ| due to spence numerical error
@@ -127,7 +127,7 @@ def test_kendall_tau_range(theta):
 # -----------------------------------------------------------------------------
 
 def test_tail_dependence_zero():
-    cop = FrankCopula(); cop.parameters = [10.0]
+    cop = FrankCopula(); cop.set_parameters([10.0])
     assert cop.LTDC() == 0.0
     assert cop.UTDC() == 0.0
 
@@ -136,7 +136,7 @@ def test_tail_dependence_zero():
 # -----------------------------------------------------------------------------
 
 def test_sample_shape():
-    cop = FrankCopula(); cop.parameters = [3.0]
+    cop = FrankCopula(); cop.set_parameters([3.0])
     samp = cop.sample(512)
     assert samp.shape == (512, 2)
 

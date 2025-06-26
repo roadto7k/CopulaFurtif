@@ -28,7 +28,7 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "galambos"
         self.bounds_param = [(0.01, 10.0)]  # [theta]
         self.param_names = ["theta"]
-        self.parameters = [1.5]
+        # self.parameters = [1.5]
         self.default_optim_method = "SLSQP"
 
     def get_cdf(self, u, v, param=None):

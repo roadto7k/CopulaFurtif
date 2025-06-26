@@ -14,7 +14,7 @@ Attributes:
 """
 
 import numpy as np
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -28,8 +28,9 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "tawn"
         self.bounds_param = [(1.01, 5.0), (0.0, 1.0)]  # [theta, delta]
         self.param_names = ["theta", "delta"]
-        self.parameters = [2.0, 0.5]
+        # self.parameters = [2.0, 0.5]
         self.default_optim_method = "SLSQP"
+        self.init_parameters(CopulaParameters([2.0, 0.5],[(1.01, 5.0), (0.0, 1.0)] , ["theta", "delta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -43,7 +44,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         x = -np.log(u)
         y = -np.log(v)
@@ -66,7 +67,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Placeholder value (1.0).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         return np.ones_like(u)
 
     def sample(self, n, param=None):
@@ -80,7 +81,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Samples of shape (n, 2).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         u = np.random.rand(n)
         v = np.random.rand(n)
         return np.column_stack((u, v))  # NOTE: Not exact sampling
@@ -95,7 +96,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         return (theta * (1 - delta + delta)) / (theta + 2)
 
@@ -120,7 +121,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: UTDC value.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         return 2 - 2 ** (1 / theta)
 
@@ -160,7 +161,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Placeholder (1.0).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         return np.ones_like(u)
 

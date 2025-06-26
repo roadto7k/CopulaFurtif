@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.special import beta
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB1 import BB1Copula
 
@@ -27,9 +27,9 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "bb2"
         self.bounds_param = [(1e-6, np.inf), (1.0, np.inf)]  # [theta, delta]
         self.param_names = ["theta", "delta"]
-        self.parameters = [2, 1.5]
+        # self.parameters = [2, 1.5]
         self.default_optim_method = "Powell"
-
+        self.init_parameters(CopulaParameters([2, 1.5],[(1e-6, np.inf), (1.0, np.inf)], ["theta", "delta"] ))
 
     def get_cdf(self, u, v, param=None):
         """
@@ -44,12 +44,12 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Copula CDF values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
         bb1 = BB1Copula()
-        bb1.parameters = param
+        bb1.set_parameters(param)
         cdf = u + v - 1.0 + bb1.get_cdf(1.0 - u, 1.0 - v, param)
         cdf += 1e-14  # nudge to keep monotone in double-precision
         return np.clip(cdf, 0.0, 1.0)
@@ -67,12 +67,12 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Copula PDF values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
         bb1 = BB1Copula()
-        bb1.parameters = param
+        bb1.set_parameters(param)
         pdf = bb1.get_pdf(1.0 - u, 1.0 - v, param)
         return np.nan_to_num(pdf, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
 
@@ -87,7 +87,7 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         if theta <= 1.0:
             # analytic limit θ→1⁺
@@ -107,9 +107,9 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Array of shape (n, 2).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         bb1 = BB1Copula()
-        bb1.parameters = param
+        bb1.set_parameters(param)
         samples = bb1.sample(n, param)
         return 1.0 - samples
 
@@ -124,7 +124,7 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Lower tail dependence.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         delta = param[1]
         return 2.0 - 2.0 ** (1.0 / delta)
 
@@ -139,7 +139,7 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Upper tail dependence.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         return 2.0 ** (-1.0 / (delta * theta))
 
@@ -156,12 +156,12 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-9  # smaller than Hypothesis’ h = 1e-6
         u = np.asarray(u)
         v = np.asarray(v)
         bb1 = BB1Copula();
-        bb1.parameters = param
+        bb1.set_parameters(param)
         bb1_du = bb1.partial_derivative_C_wrt_u(1.0 - u, 1.0 - v, param)
         raw = 1.0 - bb1_du
         return np.where(u <= eps, 0.5 * raw, raw)

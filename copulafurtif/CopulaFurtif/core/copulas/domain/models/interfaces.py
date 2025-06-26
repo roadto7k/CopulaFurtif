@@ -149,23 +149,23 @@ class CopulaModel(ABC):
         self.log_likelihood_ = None
         self.n_obs = None
 
-    @property
-    def parameters(self) -> np.ndarray:
-        """Return parameters as numpy array."""
-        return self._parameters
-        return self._parameters.as_array()
+    # @property
+    # def parameters(self) -> np.ndarray:
+    #     """Return parameters as numpy array."""
+    #     return self._parameters
+    #     return self._parameters.as_array()
 
-    @parameters.setter
-    def parameters(self, params: CopulaParameters):
-        """Validate and set parameters. Uses bounds_param and expected size."""
-        if isinstance(params, CopulaParameters):
-            self._parameters = params
-        else:
-            self._parameters = CopulaParameters(
-                values=params,
-                bounds=self.bounds_param,
-                names=getattr(self, "param_names", None)
-            )
+    # @parameters.setter
+    # def parameters(self, params: CopulaParameters):
+    #     """Validate and set parameters. Uses bounds_param and expected size."""
+    #     if isinstance(params, CopulaParameters):
+    #         self._parameters = params
+    #     else:
+    #         self._parameters = CopulaParameters(
+    #             values=params,
+    #             bounds=self.get_bounds(),
+    #             names=getattr(self, "param_names", None)
+    #         )
 
     def pretty_print(self, equation='cdf'):
         if equation == 'cdf':
@@ -176,16 +176,13 @@ class CopulaModel(ABC):
             raise ValueError("Equation must be 'cdf' or 'pdf'.")
     
     def get_parameters(self):
-        if hasattr(self._parameters, 'cdf_expr') or hasattr(self._parameters, 'pdf_expr'):
-            return self._parameters.get_symbolic_expressions()
-        else:
             return self._parameters.get_numeric_values()
         
+    def init_parameters(self, params : CopulaParameters):
+        self._parameters = params
+        
     def set_parameters(self, params):
-        if isinstance(params, dict):
-            self._parameters.set_symbolic_expressions(**params)
-        else:
-            self._parameters.set_numeric_values(params)
+        self._parameters.set_numeric_values(params)
 
     def get_bounds(self):
         return self._parameters.get_bounds()
