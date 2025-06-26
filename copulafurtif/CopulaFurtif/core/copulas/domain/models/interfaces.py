@@ -83,6 +83,49 @@ class CopulaParameters:
     def __repr__(self):
         return f"CopulaParameters({dict(zip(self.names, self.values))})"
     
+    def get_numeric_values(self):
+        return self.values.copy()
+
+    def set_numeric_values(self, new_values):
+        validated_values = self._validate(new_values)
+        self.values = validated_values
+
+    def get_symbolic_expressions(self):
+        return {
+            'cdf': self.cdf_expr,
+            'pdf': self.pdf_expr,
+            'partial_u': getattr(self, 'partial_u_expr', None),
+            'partial_v': getattr(self, 'partial_v_expr', None)
+        }
+    
+    def set_symbolic_expressions(self, cdf_expr=None, pdf_expr=None):
+        if cdf_expr:
+            self.cdf_expr = cdf_expr
+        if pdf_expr:
+            self.pdf_expr = pdf_expr
+
+    def set_symbolic_expressions(self, cdf_expr=None, pdf_expr=None):
+        if cdf_expr:
+            self.cdf_expr = cdf_expr
+        if pdf_expr:
+            self.pdf_expr = pdf_expr
+
+    def get_bounds(self):
+        return self.bounds.copy()
+    
+    def set_bounds(self, new_bounds):
+        if len(new_bounds) != self.expected_size:
+            raise ValueError("Length of bounds must match expected size.")
+        self.bounds = new_bounds
+
+    def get_names(self):
+        return self.names.copy()
+
+    def set_names(self, new_names):
+        if len(new_names) != self.expected_size:
+            raise ValueError("Length of names must match expected size.")
+        self.names = new_names
+
 class CopulaModel(ABC):
     """
     Abstract base class for all bivariate copula models.
@@ -131,7 +174,44 @@ class CopulaModel(ABC):
             print(pretty(self._parameters.pdf_expr))
         else:
             raise ValueError("Equation must be 'cdf' or 'pdf'.")
+    
+    def get_parameters(self):
+        if hasattr(self._parameters, 'cdf_expr') or hasattr(self._parameters, 'pdf_expr'):
+            return self._parameters.get_symbolic_expressions()
+        else:
+            return self._parameters.get_numeric_values()
         
+    def set_parameters(self, params):
+        if isinstance(params, dict):
+            self._parameters.set_symbolic_expressions(**params)
+        else:
+            self._parameters.set_numeric_values(params)
+
+    def get_bounds(self):
+        return self._parameters.get_bounds()
+
+    def set_bounds(self, bounds):
+        self._parameters.set_bounds(bounds)
+
+    def get_names(self):
+        return self._parameters.get_names()
+
+    def set_names(self, names):
+        self._parameters.set_names(names)
+
+
+    def get_log_likelihood(self):
+        return self.log_likelihood_
+
+    def set_log_likelihood(self, ll_value):
+        self.log_likelihood_ = ll_value
+
+    def get_n_obs(self):
+        return self.n_obs
+
+    def set_n_obs(self, n):
+        self.n_obs = n
+
     def get_cdf(self, u, v):
         """
         Compute the cumulative distribution function C(u, v).

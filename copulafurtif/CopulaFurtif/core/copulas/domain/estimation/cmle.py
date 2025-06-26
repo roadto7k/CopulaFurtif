@@ -23,19 +23,20 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
 
     try:
         u, v = pseudo_obs(data)
-        copula.n_obs = len(u)
+        copula.set_n_obs(len(u))
     except Exception as e:
         print("[CMLE ERROR] Failed to compute pseudo-observations:", e)
         return None
 
-    x0 = np.array(copula.parameters, dtype=float)
-    bounds = copula.bounds_param if hasattr(copula, "bounds_param") else [(None, None)] * len(x0)
+    x0 = np.array(copula.get_parameters(), dtype=float)
+    bounds = copula.get_bounds() if hasattr(copula, "bounds_param") else [(None, None)] * len(x0)
     bounds = [(low if low is not None else -1e10, high if high is not None else 1e10)
               for (low, high) in bounds]
 
     def log_likelihood(params):
         try:
-            pdf_vals = copula.get_pdf(u, v, params)
+            copula.set_parameters(params)
+            pdf_vals = copula.get_pdf(u, v)
             if np.any(pdf_vals <= 0):
                 return np.inf
             return -np.sum(np.log(pdf_vals))
@@ -49,8 +50,8 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
         return None
 
     if result.success:
-        copula.parameters = result.x
-        copula.log_likelihood_ = -result.fun
+        copula.set_parameters(result.x)
+        copula.set_log_likelihood(-result.fun)
         return result.x, -result.fun
     else:
         if verbose:

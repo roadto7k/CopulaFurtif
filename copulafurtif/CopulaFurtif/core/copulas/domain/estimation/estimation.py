@@ -109,15 +109,15 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
     # === 1. Preprocess input ===
     try:
         u, v = pseudo_obs(data)
-        copula.n_obs = len(u)
+        copula.set_n_obs(len(u))
     except Exception as e:
         print("[CMLE ERROR] Failed to compute pseudo-observations:", e)
         return None
 
     # === 2. Sanitize initial guess and bounds ===
     try:
-        x0 = np.array(copula.parameters, dtype=float)
-        bounds = copula.bounds_param if hasattr(copula, "bounds_param") else [(None, None)] * len(x0)
+        x0 = np.array(copula.get_parameters(), dtype=float)
+        bounds = copula.get_bounds() if hasattr(copula, "bounds_param") else [(None, None)] * len(x0)
 
         # Fix values if out-of-bounds
         for i, (low, high) in enumerate(bounds):
@@ -146,10 +146,10 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
             else:
                 params = list(params_raw)
 
-            if len(params) != len(copula.parameters):
-                raise ValueError(f"Parameter length mismatch: expected {len(copula.parameters)}, got {len(params)}")
-
-            pdf_vals = copula.get_pdf(u, v, params)
+            if len(params) != len(copula.get_parameters()):
+                raise ValueError(f"Parameter length mismatch: expected {len(copula.get_parameters())}, got {len(params)}")
+            copula.set_parameters(params)
+            pdf_vals = copula.get_pdf(u, v)
             if np.any(pdf_vals <= 0) or np.any(np.isnan(pdf_vals)):
                 return np.inf
 
@@ -172,8 +172,8 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
     if result.success:
         fitted_params = result.x
         loglik = -result.fun
-        copula.parameters = list(fitted_params)
-        copula.log_likelihood_ = loglik
+        copula.set_parameters(list(fitted_params))
+        copula.set_log_likelihood(loglik)
         return fitted_params, loglik
     else:
         if verbose:
@@ -212,7 +212,8 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
         raise ValueError("MLE estimation for mixture copulas is not supported. Use CMLE instead.")
 
     X, Y = data
-    copula.n_obs = len(data[0])
+    copula.set_n_obs(len(data[0]))
+    # copula.n_obs = len(data[0])
 
     # -------------------------------------------------------------------------
     # Auto-initialize marginals if parameters are missing
@@ -272,7 +273,7 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
     # -------------------------------------------------------------------------
 
     # Flatten copula parameter starts into a list
-    theta0 = flatten_theta(copula.parameters)
+    theta0 = flatten_theta(copula.get_parameters())
 
     # -------------------------------------------------------------------------
     # 3) Build the optimization function
@@ -292,7 +293,7 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
         # ---------------------------------------------------------------------
 
         x0 = np.array(theta0, dtype=float)
-        bounds = copula.bounds_param if hasattr(copula, "bounds_param") else None
+        bounds = copula.get_bounds() if hasattr(copula, "bounds_param") else None
 
         # define an objective function that calls the external log-likelihood
         def objective(theta_array):
@@ -315,8 +316,8 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
             final_loglike = -results.fun
 
             # STORE TO COPULA OBJECT
-            copula.parameters = final_params[:len(theta0)]  # only copula params
-            copula.log_likelihood_ = final_loglike
+            copula.set_parameters(final_params[:len(theta0)] )
+            copula.set_log_likelihood(final_loglike)
 
             return final_params, final_loglike
         else:
@@ -352,8 +353,8 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
         # (the user might define copula.bounds_param for copula params,
         #  but shape params rarely have universal bounds, except maybe positivity for Beta, etc.)
         bounds = []
-        if hasattr(copula, "bounds_param") and (copula.bounds_param is not None):
-            bounds.extend(copula.bounds_param)
+        if hasattr(copula, "bounds_param") and (copula.get_bounds() is not None):
+            bounds.extend(copula.get_bounds())
         else:
             # If no bounds are specified for copula params, just do None
             for _ in theta0:
@@ -407,9 +408,8 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
             final_loglike = -results.fun
 
             # STORE TO COPULA OBJECT
-            copula.parameters = final_params[:len(theta0)]  # copula params only
-            copula.log_likelihood_ = final_loglike
-
+            copula.set_parameters(final_params[:len(theta0)])
+            copula.set_log_likelihood(final_loglike)
             return final_params, final_loglike
 
         else:
@@ -555,7 +555,7 @@ def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=
                 return np.inf
             return -np.sum(np.log(pdf_vals))
 
-        x0 = np.array(copula.parameters, dtype=float)
+        x0 = np.array(copula.get_parameters(), dtype=float)
         bounds = getattr(copula, "bounds_param", None) or [(None, None)] * len(x0)
 
         # Replace None with large finite for numeric stability
@@ -571,8 +571,8 @@ def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=
         if result.success:
             copula_params = result.x
             loglik = -result.fun
-            copula.parameters = list(copula_params)
-            copula.log_likelihood_ = loglik
+            copula.set_parameters(list(copula_params))
+            copula.set_log_likelihood(loglik)
 
             return copula_params, loglik
         else:

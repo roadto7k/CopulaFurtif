@@ -307,3 +307,53 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
     #         float or np.ndarray: Conditional CDF values.
     #     """
     #     return self.partial_derivative_C_wrt_u(u, v, param)
+
+
+def main():
+    gaussian_copula = GaussianCopula(rho=0.5)
+
+    # Test générique des paramètres
+    print("Valeurs initiales des paramètres:", gaussian_copula.get_parameters())
+
+    gaussian_copula.set_parameters([0.7])
+    print("Nouvelles valeurs numériques:", gaussian_copula.get_parameters())
+
+    # Affichage pretty print
+    gaussian_copula.pretty_print(equation='pdf')
+
+    # Test d'échantillonnage
+    samples = gaussian_copula.sample(n=1000)
+    print("Échantillons (5 premiers):", samples[:5])
+
+    # Test Kendall tau
+    tau = gaussian_copula.kendall_tau()
+    print("Kendall tau:", tau)
+
+    # Test des nouvelles propriétés
+    gaussian_copula.set_log_likelihood(-123.45)
+    gaussian_copula.set_n_obs(1000)
+
+    print("Log-likelihood:", gaussian_copula.get_log_likelihood())
+    print("Nombre d'observations:", gaussian_copula.get_n_obs())
+
+    # Test des setters supplémentaires via proxy dans CopulaModel
+    gaussian_copula.set_bounds([(-0.9, 0.9)])
+    gaussian_copula.set_names(["correlation_coefficient"])
+
+    print("Nouveaux bounds:", gaussian_copula.get_bounds())
+    print("Nouveaux noms:", gaussian_copula.get_names())
+
+    # Test des valeurs limites pour bounds (doit lever une exception)
+    try:
+        gaussian_copula.set_bounds([(-1.1, 1.1)])
+    except ValueError as e:
+        print("Erreur capturée lors de la définition des bounds invalides:", e)
+
+    # Test des valeurs limites pour names (doit lever une exception)
+    try:
+        gaussian_copula.set_names(["rho", "extra_name"])
+    except ValueError as e:
+        print("Erreur capturée lors de la définition des noms invalides:", e)
+
+if __name__ == '__main__':
+    main()
