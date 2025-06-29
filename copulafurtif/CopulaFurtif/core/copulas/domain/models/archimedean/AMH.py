@@ -73,6 +73,12 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         denominator = (1 - theta * (1 - u) * (1 - v)) ** 2
         return numerator / denominator
 
+    def _inv_phi(self, s, theta):
+        if abs(theta) < 1e-8:
+            return np.exp(-s)
+        exp_term = np.exp(-(1 - theta) * s)
+        return 1 - (1 - exp_term) / (theta + (1 - theta) * exp_term)
+
     def sample(self, n, param=None):
         """Generate n samples from the AMH copula (placeholder implementation).
 
@@ -85,10 +91,37 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
-        theta = param[0]
+        theta = float(param[0])
+
+        if abs(theta) < 1e-12:
+            return np.random.rand(n, 2)
+
         u = np.random.rand(n)
-        v = np.random.rand(n)
-        return np.column_stack((u, v))  # NOTE: Placeholder, not real AMH sampling
+        z = np.random.rand(n)
+
+        a = theta
+        k = 1.0 - u
+        b = 1.0 - a * k
+        c = a * k
+        d = 1.0 - a
+
+        A = z * c * c - a
+        B = 2.0 * z * b * c - d
+        C = z * b * b
+
+        disc = np.maximum(B * B - 4.0 * A * C, 0.0)
+        sqrt_disc = np.sqrt(disc)
+
+        v1 = (-B + sqrt_disc) / (2.0 * A)
+        v2 = (-B - sqrt_disc) / (2.0 * A)
+
+        v = np.where((v1 > 0.0) & (v1 < 1.0), v1, v2)
+
+        mask = np.abs(A) < 1e-12
+        v[mask] = -C[mask] / B[mask]
+
+        v = np.clip(v, 1e-12, 1.0 - 1e-12)
+        return np.column_stack((u, v))
 
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the AMH copula.
@@ -102,7 +135,9 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
-        return 1 - 2 * (theta / (3 * (1 + theta)))
+        if abs(theta) < 1e-12:
+            return 0.0
+        return 1.0 - 2.0 * ((1 - theta) ** 2 * np.log1p(-theta) + theta) / (3 * theta ** 2)
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (always 0 for AMH copula).

@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 from CopulaFurtif.core.copulas.domain.models.archimedean.AMH import AMHCopula
+import scipy.stats as stx
 
 # -----------------------------------------------------------------------------
 # Fixtures & helpers
@@ -36,7 +37,9 @@ def copula_default():
 @st.composite
 def valid_theta(draw):
     # AMH admits θ ∈ (‑1, 1)  – exclude the boundaries strictly.
-    return draw(st.floats(min_value=-0.999, max_value=0.999, allow_nan=False, allow_infinity=False))
+    return draw(st.floats(min_value=-0.999, max_value=0.999,
+                          exclude_min=False, exclude_max=False,
+                          allow_nan=False, allow_infinity=False))
 
 @st.composite
 def unit_interval(draw):
@@ -157,7 +160,6 @@ def test_tail_dependence_zero(theta):
 @given(theta=valid_theta())
 @settings(max_examples=20)
 def test_empirical_kendall_tau_close(theta):
-    import scipy.stats as stx  # local import for optional dependency
 
     c = AMHCopula()
     c.set_parameters([theta])
