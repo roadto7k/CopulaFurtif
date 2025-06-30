@@ -18,6 +18,7 @@ from scipy.special import spence
 from scipy.stats import uniform
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from scipy.integrate import quad
 
 
 class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -106,6 +107,12 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         v = -1.0 / theta * np.log(1 + numerator / denominator)
         return np.column_stack((u, v))
 
+    def _debye1_fallback(self, theta):
+
+        integrand = lambda t: t / np.expm1(t)  # t/(eᵗ−1)
+        val, _ = quad(integrand, 0.0, theta, limit=100)
+        return val / theta
+
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the Frank copula.
 
@@ -118,9 +125,12 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
-        if np.isclose(theta, 0.0):
-            return 0.0
-        return 1 + 4 / theta * (1 - spence(1 - np.exp(-theta)) / np.exp(-theta))
+        if abs(theta) < 1e-8:
+            t = theta
+            return t / 9 - t ** 3 / 135 + 2 * t ** 5 / 945
+
+        D1 = self._debye1_fallback(theta)
+        return 1.0 - 4.0/theta + 4.0*D1/theta
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (always 0 for Frank copula).

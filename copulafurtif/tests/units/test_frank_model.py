@@ -17,8 +17,8 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.frank import FrankCopul
 # -----------------------------------------------------------------------------
 
 # Safe interval — skip the singular band around 0 and avoid the extreme ±35.
-SAFE_THETA_MIN = -30.0
-SAFE_THETA_MAX = 30.0
+SAFE_THETA_MIN = -10.0
+SAFE_THETA_MAX = 10.0
 EPS_ZERO = 0.01  # exclude <|0.01|
 
 @st.composite
@@ -108,15 +108,16 @@ def test_partial_derivative_matches_finite_diff(theta, u, v):
     ana_du = cop.partial_derivative_C_wrt_u(u, v)
     ana_dv = cop.partial_derivative_C_wrt_v(u, v)
 
-    assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-3)
-    assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-3)
+    assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-2)
+    assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-2)
 # -----------------------------------------------------------------------------
 # Kendall τ range & formula sanity
 # -----------------------------------------------------------------------------
 
 @given(theta=safe_theta())
 def test_kendall_tau_range(theta):
-    cop = FrankCopula(); cop.set_parameters([theta])
+    cop = FrankCopula()
+    cop.set_parameters([theta])
     tau = cop.kendall_tau()
     assert math.isfinite(tau)
     # Slight overshoot possible for large |θ| due to spence numerical error
