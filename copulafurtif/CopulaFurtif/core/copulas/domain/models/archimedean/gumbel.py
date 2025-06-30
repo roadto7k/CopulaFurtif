@@ -14,7 +14,7 @@ Attributes:
 """
 
 import numpy as np
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -26,10 +26,11 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Gumbel Copula"
         self.type = "gumbel"
-        self.bounds_param = [(1.01, 30.0)]  # [theta]
-        self.param_names = ["theta"]
-        self.parameters = [2.0]
+        # self.bounds_param = [(1.01, 30.0)]  # [theta]
+        # self.param_names = ["theta"]
+        # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
+        self.init_parameters(CopulaParameters([2.0], [(1, 30)], ["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).

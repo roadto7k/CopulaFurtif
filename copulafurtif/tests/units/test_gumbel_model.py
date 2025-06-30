@@ -52,7 +52,7 @@ def test_parameter_roundtrip(theta):
 def test_parameter_out_of_bounds(theta):
     cop = GumbelCopula()
     with pytest.raises(ValueError):
-        cop.parameters = [theta]
+        cop.set_parameters([theta])
 
 # -----------------------------------------------------------------------------
 # CDF / PDF invariants
