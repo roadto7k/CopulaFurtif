@@ -16,6 +16,7 @@ Attributes:
 import numpy as np
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from numpy.random import default_rng
 
 
 class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -26,15 +27,13 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "AMH Copula"
         self.type = "amh"
-        self.bounds_param = [(-1.0, 1.0)]
-        self.param_names = ["theta"]
+        # self.bounds_param = [(-1.0, 1.0)]
+        # self.param_names = ["theta"]
         # self.parameters = [0.3]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([0.3], 
                             [(-1.0, 1.0)], 
                             ["theta"]))
-        self.set_bounds([(-1.0, 1.0)])
-        self.set_names(["theta"])
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -48,7 +47,6 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF value(s).
         """
         if param is None:
-            print(self.get_parameters())
             param = self.get_parameters()
         theta = param[0]
         num = u * v
@@ -79,49 +77,74 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         exp_term = np.exp(-(1 - theta) * s)
         return 1 - (1 - exp_term) / (theta + (1 - theta) * exp_term)
 
-    def sample(self, n, param=None):
-        """Generate n samples from the AMH copula (placeholder implementation).
-
-        Args:
-            n (int): Number of samples to generate.
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            np.ndarray: Samples of shape (n, 2).
+    def sample(self, n, param=None, rng=None):
         """
+        Draw `n` i.i.d. samples from the 2-D AMH copula.
+
+        Parameters
+        ----------
+        n : int
+            Sample size.
+        param : array-like, optional
+            Single element `[theta]`. If None, uses current parameters.
+        rng : numpy.random.Generator, optional
+            Pass your own RNG for repeatability.
+
+        Returns
+        -------
+        ndarray, shape (n, 2)
+            Pseudo-observations (U, V) in (0,1)².
+        """
+        # ---------------- RNG + θ -------------------------------------
+        if rng is None:
+            rng = default_rng()
+
         if param is None:
-            param = self.get_parameters()
-        theta = float(param[0])
+            theta = float(self.get_parameters()[0])
+        else:
+            theta = float(param[0])
 
+        # domain check  (−1 < θ < 1, θ≠1)
+        if not (-1.0 < theta < 1.0):
+            raise ValueError("AMH parameter must be in (−1, 1).")
+
+        # independence
         if abs(theta) < 1e-12:
-            return np.random.rand(n, 2)
+            return rng.random((n, 2))
 
-        u = np.random.rand(n)
-        z = np.random.rand(n)
+        # ---------------- core algorithm ------------------------------
+        # 1) U ~ Unif(0,1),  Z ~ Unif(0,1)
+        U = rng.random(n)
+        Z = rng.random(n)
 
         a = theta
-        k = 1.0 - u
-        b = 1.0 - a * k
-        c = a * k
-        d = 1.0 - a
+        k = 1.0 - U
+        b = 1.0 - a * k          # = 1 − θ(1−U)
+        c = a * k                # = θ(1−U)
+        d = 1.0 - a              # = 1 − θ
 
-        A = z * c * c - a
-        B = 2.0 * z * b * c - d
-        C = z * b * b
+        # Quadratic coefficients in V  (derived from C_{2|1}(v|u) = z)
+        A = Z * c * c - a
+        B = 2.0 * Z * b * c - d
+        C = Z * b * b
 
         disc = np.maximum(B * B - 4.0 * A * C, 0.0)
         sqrt_disc = np.sqrt(disc)
 
-        v1 = (-B + sqrt_disc) / (2.0 * A)
-        v2 = (-B - sqrt_disc) / (2.0 * A)
+        V1 = (-B + sqrt_disc) / (2.0 * A)
+        V2 = (-B - sqrt_disc) / (2.0 * A)
 
-        v = np.where((v1 > 0.0) & (v1 < 1.0), v1, v2)
+        # pick the root that falls in (0,1)
+        V = np.where((V1 > 0.0) & (V1 < 1.0), V1, V2)
 
+        # handle the (rare) A ≈ 0 limit numerically
         mask = np.abs(A) < 1e-12
-        v[mask] = -C[mask] / B[mask]
+        V[mask] = -C[mask] / B[mask]
 
-        v = np.clip(v, 1e-12, 1.0 - 1e-12)
-        return np.column_stack((u, v))
+        # clip to avoid exact 0/1
+        eps = 1e-15
+        np.clip(V, eps, 1.0 - eps, out=V)
+        return np.column_stack((U, V))
 
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the AMH copula.

@@ -16,6 +16,7 @@ Attributes:
 import numpy as np
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from numpy.random import default_rng
 
 
 class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -26,8 +27,8 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Clayton Copula"
         self.type = "clayton"
-        self.bounds_param = [(0.01, 30.0)]  # [theta]
-        self.param_names = ["theta"]
+        # self.bounds_param = [(0.01, 30.0)]  # [theta]
+        # self.param_names = ["theta"]
         # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([2.0],[(0.01, 30.0)] , ["theta"] ))
@@ -62,27 +63,79 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
-        num = (theta + 1) * (u * v) ** (-theta - 1)
-        denom = (u ** -theta + v ** -theta - 1) ** (2 + 1 / theta)
-        return num / denom
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
 
-    def sample(self, n, param=None):
-        """Generate random samples from the Clayton copula.
+        # --- keep a hair away from the boundaries
+        eps = 1e-15
+        u_safe = np.clip(u, eps, 1.0 - eps)
+        v_safe = np.clip(v, eps, 1.0 - eps)
 
-        Args:
-            n (int): Number of samples to generate.
-            param (np.ndarray, optional): Copula parameter [theta].
+        # --- log-form to prevent overflow / 0**neg → inf
+        log_num = np.log(theta + 1) - (theta + 1) * (np.log(u_safe) + np.log(v_safe))
+        log_denom = (2 + 1 / theta) * np.log(u_safe ** (-theta) + v_safe ** (-theta) - 1.0)
+        pdf = np.exp(log_num - log_denom)
 
-        Returns:
-            np.ndarray: Samples of shape (n, 2).
+        # exact boundaries → density tends to 0
+        mask = (u <= 0) | (v <= 0) | (u >= 1) | (v >= 1)
+        if np.any(mask):
+            pdf = np.where(mask, 0.0, pdf)
+
+        return pdf
+
+    def sample(self, n, param=None, rng=None):
         """
+        Draw `n` i.i.d. samples from a 2-D Clayton copula.
+
+        Parameters
+        ----------
+        n : int
+            Size of the sample.
+        param : array-like, optional
+            `[theta]`. If None, uses current parameters.
+        rng : np.random.Generator, optional
+            Reproducible random generator.
+
+        Returns
+        -------
+        ndarray, shape (n, 2)
+            Pseudo-observations (U, V) in (0, 1)².
+        """
+        if rng is None:
+            rng = default_rng()
+
+        # ---- parameter -------------------------------------------------
         if param is None:
-            param = self.get_parameters()
-        theta = param[0]
-        u = np.random.rand(n)
-        w = np.random.gamma(1 / theta, 1, n)
-        v = (1 - np.log(np.random.rand(n)) / w) ** (-1 / theta)
-        return np.column_stack((u, np.clip(v, 1e-12, 1 - 1e-12)))
+            theta = float(self.get_parameters()[0])
+        else:
+            theta = float(param[0])
+
+        # independence limit
+        if abs(theta) < 1e-8:
+            return rng.random((n, 2))
+
+        if theta <= 0:
+            raise ValueError("Clayton sampler requires theta > 0.")
+
+        k = 1.0 / theta                       # Gamma shape parameter
+
+        # 1) shared mixing variable S ~ Gamma(k, 1)
+        S = rng.gamma(shape=k, scale=1.0, size=n)
+
+        # 2) independent exponentials
+        E1 = rng.exponential(scale=1.0, size=n)
+        E2 = rng.exponential(scale=1.0, size=n)
+
+        # 3) transform
+        U = (1.0 + E1 / S) ** (-1.0 / theta)
+        V = (1.0 + E2 / S) ** (-1.0 / theta)
+
+        # tiny clipping for numerical safety (optional)
+        eps = 1e-15
+        np.clip(U, eps, 1.0 - eps, out=U)
+        np.clip(V, eps, 1.0 - eps, out=V)
+
+        return np.column_stack((U, V))
 
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the Clayton copula.
@@ -161,8 +214,15 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
-        top = (u ** -theta + v ** -theta - 1) ** (-1 / theta - 1)
-        return top * u ** (-theta - 1)
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
+        eps = 1e-15
+        u_safe = np.clip(u, eps, 1.0 - eps)
+        v_safe = np.clip(v, eps, 1.0 - eps)
+
+        log_top = (-1 / theta - 1) * np.log(u_safe ** (-theta) + v_safe ** (-theta) - 1)
+        log_top += (-theta - 1) * np.log(u_safe)
+        return np.exp(log_top)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """Compute ∂C(u, v)/∂v via symmetry.

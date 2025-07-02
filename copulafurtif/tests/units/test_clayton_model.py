@@ -31,12 +31,11 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.clayton import ClaytonC
 def copula_default():
     """Default Clayton copula with θ = 2.0 (moderate positive dependence)."""
     c = ClaytonCopula()
-    c.parameters = [2.0]
+    c.set_parameters([2])
     return c
 
 
 # In the library implementation, θ is constrained to (0, 30] (0 not allowed, >30 raises).
-# Adjust bounds to your exact implementation if they differ.
 
 @st.composite
 def valid_theta(draw):
@@ -75,8 +74,8 @@ def _finite_diff(f, x, y, h=1e-6):
 @given(theta=valid_theta())
 def test_parameter_roundtrip(theta):
     c = ClaytonCopula()
-    c.parameters = [theta]
-    assert math.isclose(c.parameters[0], theta, rel_tol=1e-12)
+    c.set_parameters([theta])
+    assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
 
 
 @given(theta=st.one_of(
@@ -86,7 +85,7 @@ def test_parameter_roundtrip(theta):
 def test_parameter_out_of_bounds(theta):
     c = ClaytonCopula()
     with pytest.raises(ValueError):
-        c.parameters = [theta]
+        c.set_parameters([theta])
 
 
 # -----------------------------------------------------------------------------
@@ -96,7 +95,7 @@ def test_parameter_out_of_bounds(theta):
 @given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_bounds(theta, u, v):
     c = ClaytonCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
     val = c.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
@@ -106,14 +105,14 @@ def test_cdf_monotone_in_u(theta, u1, u2, v):
     if u1 > u2:
         u1, u2 = u2, u1
     c = ClaytonCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
     assert c.get_cdf(u1, v) <= c.get_cdf(u2, v)
 
 
 @given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_symmetry(theta, u, v):
     c = ClaytonCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
     assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
 
 
@@ -124,7 +123,7 @@ def test_cdf_symmetry(theta, u, v):
 @given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_pdf_nonnegative(theta, u, v):
     c = ClaytonCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
     assert c.get_pdf(u, v) >= 0.0
 
 
@@ -132,21 +131,25 @@ def test_pdf_nonnegative(theta, u, v):
 # Derivative cross‑check
 # -----------------------------------------------------------------------------
 
-@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
+EPS = 1e-4
+
+open_unit = st.floats(min_value=EPS, max_value=1.0-EPS,
+                      allow_nan=False, allow_infinity=False)
+
+@given(theta=valid_theta(), u=open_unit, v=open_unit)
 @settings(max_examples=100)
 def test_partial_derivative_matches_finite_diff(theta, u, v):
     c = ClaytonCopula()
-    c.parameters = [theta]
-
-    def C(x, y):
-        return c.get_cdf(x, y)
-
-    num_du = _finite_diff(C, u, v)
-    num_dv = _finite_diff(lambda x, y: C(y, x), v, u)
+    c.set_parameters([theta])
 
     ana_du = c.partial_derivative_C_wrt_u(u, v)
     ana_dv = c.partial_derivative_C_wrt_v(u, v)
 
+    # finite-difference helpers
+    num_du = _finite_diff(c.get_cdf, u, v)
+    num_dv = _finite_diff(lambda x, y: c.get_cdf(y, x), v, u)
+
+    assert math.isfinite(ana_du) and math.isfinite(ana_dv)
     assert math.isclose(ana_du, num_du, rel_tol=1e-3, abs_tol=1e-4)
     assert math.isclose(ana_dv, num_dv, rel_tol=1e-3, abs_tol=1e-4)
 
@@ -158,7 +161,7 @@ def test_partial_derivative_matches_finite_diff(theta, u, v):
 @given(theta=valid_theta())
 def test_tail_dependence(theta):
     c = ClaytonCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
 
     # Clayton lower‑tail dependence: λ_L = 2^(-1/θ)
     expected_lt = 2 ** (-1.0 / theta)
@@ -174,7 +177,7 @@ def test_tail_dependence(theta):
 @given(theta=valid_theta())
 def test_kendall_tau_formula(theta):
     c = ClaytonCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
     expected = theta / (theta + 2.0)
     assert math.isclose(c.kendall_tau(), expected, rel_tol=1e-12)
 
@@ -189,7 +192,7 @@ def test_kendall_tau_formula(theta):
 def test_empirical_kendall_tau_close(theta):
     import scipy.stats as stx  # optional dependency
     c = ClaytonCopula()
-    c.parameters = [theta]
+    c.set_parameters([theta])
 
     data = c.sample(5000)
     tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])

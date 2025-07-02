@@ -16,6 +16,7 @@ Attributes:
 import numpy as np
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from numpy.random import default_rng
 
 
 class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -44,7 +45,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         log_u = -np.log(u)
         log_v = -np.log(v)
@@ -63,7 +64,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         log_u = -np.log(u)
         log_v = -np.log(v)
@@ -78,28 +79,78 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return part1 * (part2 + part3) / denom
 
-    def sample(self, n, param=None):
-        """Generate random samples from the Gumbel copula.
-
-        Args:
-            n (int): Number of samples to generate.
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            np.ndarray: Samples of shape (n, 2).
+    @staticmethod
+    def _rpositive_stable(alpha, size, rng):
         """
-        if param is None:
-            param = self.parameters
-        theta = param[0]
-        from scipy.stats import expon
-        e = expon.rvs(size=(n, 2))
-        w = expon.rvs(size=n)
-        t = (e[:, 0] / w) ** (1 / theta)
-        s = (e[:, 1] / w) ** (1 / theta)
-        u = np.exp(-t)
-        v = np.exp(-s)
-        return np.column_stack((u, v))
+        Draw `size` i.i.d. positive α-stable variables S
+        with Laplace transform  E[e^{-t S}] = exp(-t^{α}),  α∈(0,1].
+        """
+        if alpha == 1.0:  # degenerate at 1
+            return np.ones(size)
 
+        U = rng.uniform(low=0.0, high=np.pi, size=size)
+        E = rng.exponential(scale=1.0, size=size)
+
+        sinαU = np.sin(alpha * U)
+        sinU = np.sin(U)
+        cosU = np.cos(U)
+
+        factor1 = (sinαU / sinU) ** (1.0 / alpha)
+        factor2 = (np.sin((1.0 - alpha) * U) / E) ** ((1.0 - alpha) / alpha)
+
+        return factor1 * factor2
+
+    def sample(self, n, param=None, rng=None):
+        """
+        Generate `n` samples from a 2-D Gumbel copula.
+
+        Parameters
+        ----------
+        n : int
+            Sample size.
+        param : array-like ([theta]), optional
+        rng : numpy.random.Generator, optional
+
+        Returns
+        -------
+        ndarray, shape (n, 2)
+            (U, V) in (0, 1)² following Gumbel(θ).
+        """
+        if rng is None:
+            rng = default_rng()
+
+        # -------- parameter handling ----------------------------------
+        if param is None:
+            theta = float(self.get_parameters()[0])
+        else:
+            theta = float(param[0])
+
+        # independence (θ≈1)
+        if abs(theta - 1.0) < 1e-8:
+            return rng.random((n, 2))
+
+        if theta < 1.0:
+            raise ValueError("Gumbel copula requires θ ≥ 1.")
+
+        alpha = 1.0 / theta                     # stable index ∈ (0,1]
+
+        # -------- 1) mixing variable S ~ positive stable (α)
+        S = self._rpositive_stable(alpha, n, rng)
+
+        # -------- 2) independent exponentials
+        E1 = rng.exponential(scale=1.0, size=n)
+        E2 = rng.exponential(scale=1.0, size=n)
+
+        # -------- 3) transform via generator inverse
+        U = np.exp(-E1 / S)
+        V = np.exp(-E2 / S)
+
+        # tiny clip for numerical safety
+        eps = 1e-15
+        np.clip(U, eps, 1.0 - eps, out=U)
+        np.clip(V, eps, 1.0 - eps, out=V)
+
+        return np.column_stack((U, V))
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the Gumbel copula.
 
@@ -110,7 +161,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return 1 - 1 / theta
 
@@ -135,7 +186,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: UTDC value.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return 2 - 2 ** (1 / theta)
 
@@ -175,7 +226,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         log_u = -np.log(u)
         log_v = -np.log(v)

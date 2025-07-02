@@ -16,6 +16,8 @@ Attributes:
 import numpy as np
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from numpy.random import default_rng
+from scipy.special import digamma, polygamma
 
 
 class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -26,9 +28,9 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Joe Copula"
         self.type = "joe"
-        self.bounds_param = [(1.01, 30.0)]  # [theta]
-        self.param_names = ["theta"]
-        self.parameters = [2.0]
+        # self.bounds_param = [(1.01, 30.0)]  # [theta]
+        # self.param_names = ["theta"]
+        # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([2.0],[(1.01, 30.0)] , ["theta"]))
 
@@ -44,11 +46,16 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Value(s) of the CDF.
         """
         if param is None:
-            param = self.parameters
-        theta = param[0]
-        term1 = (1 - (1 - u) ** theta)
-        term2 = (1 - (1 - v) ** theta)
-        return 1 - ((1 - term1 * term2) ** (1 / theta))
+            theta = float(self.get_parameters()[0])
+        else:
+            theta = float(param[0])
+
+        ubar = 1.0 - u
+        vbar = 1.0 - v
+
+        # S = ū^θ + v̄^θ  − ū^θ v̄^θ
+        S = ubar ** theta + vbar ** theta - (ubar ** theta) * (vbar ** theta)
+        return 1.0 - S ** (1.0 / theta)
 
     def get_pdf(self, u, v, param=None):
         """Compute the copula PDF c(u, v).
@@ -62,45 +69,117 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF value(s).
         """
         if param is None:
-            param = self.parameters
-        theta = param[0]
-        a = (1 - u) ** theta
-        b = (1 - v) ** theta
+            theta = float(self.get_parameters()[0])
+        else:
+            theta = float(param[0])
+            # shorthand
+        ubar = 1.0 - u
+        vbar = 1.0 - v
+        a = ubar ** theta
+        b = vbar ** theta
         ab = a * b
-        one_minus_ab = 1 - (1 - ab) ** (1 / theta)
-        term = (1 - ab) ** (1 / theta - 2) * (a * (1 - v) ** (theta - 1) + b * (1 - u) ** (theta - 1))
-        pdf = (1 - ab) ** (1 / theta - 1) * theta * (1 - u) ** (theta - 1) * (1 - v) ** (theta - 1) * term / (u * v)
-        return pdf
+        S = a + b - ab  # = ū^θ + v̄^θ − ū^θ v̄^θ
 
-    def sample(self, n, param=None):
-        """Generate samples from the Joe copula (placeholder implementation).
+        # c(u,v) = S^(1/θ − 2) * ū^(θ−1) * v̄^(θ−1) * [θ − 1 + S]
+        coef = S ** (1.0 / theta - 2.0)
+        marg = (ubar ** (theta - 1.0)) * (vbar ** (theta - 1.0))
+        hook = (theta - 1.0) + S
 
-        Args:
-            n (int): Number of samples to generate.
-            param (np.ndarray, optional): Copula parameter [theta].
+        return coef * marg * hook
 
-        Returns:
-            np.ndarray: Samples of shape (n, 2).
+    def sample(self, n, param=None, rng=None, tol=1e-12, max_iter=60):
         """
-        if param is None:
-            param = self.parameters
-        u = np.random.rand(n)
-        v = np.random.rand(n)
-        return np.column_stack((u, v))  # NOTE: Not an exact sampler
+        Draw n samples from a Joe copula (θ ≥ 1) using conditional
+        inversion with a monotone bisection solver.
+
+        Parameters
+        ----------
+        n : int
+        param : [θ], optional
+        rng : np.random.Generator, optional
+        tol : float
+            Absolute tolerance for the root solver.
+        max_iter : int
+            Maximum bisection iterations.
+
+        Returns
+        -------
+        (n, 2) ndarray of (U, V)
+        """
+        if rng is None:
+            rng = default_rng()
+
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
+        if theta < 1.0:
+            raise ValueError("Joe copula requires θ ≥ 1.")
+        if abs(theta - 1.0) < 1e-12:              # independence limit
+            return rng.random((n, 2))
+
+        # Step 1: draw U ~ Unif(0,1) and W ~ Unif(0,1)
+        U = rng.random(n)
+        W = rng.random(n)
+
+        # Pre-compute constants for each sample
+        u_bar  = 1.0 - U
+        a      = u_bar**theta
+        u_fac  = u_bar**(theta - 1.0)            # (1-u)^{θ-1}
+
+        # Storage for V
+        V = np.empty(n)
+
+        # Bisection on b = (1-v)^θ in (0,1)
+        for i in range(n):
+            ai  = a[i]
+            ui  = u_fac[i]
+            wi  = W[i]
+
+            # f(b) = C_{2|1}(v|u) - w   (monotonically ↓ in b)
+            def f(b):
+                S = ai + b - ai*b
+                return ( S**(1.0/theta - 1.0) * ui * (1.0 - b) ) - wi
+
+            lo, hi = 0.0, 1.0
+            f_lo   = f(lo)      # ≈ +1
+            f_hi   = f(hi - tol)  # ≈ −w  (negative)
+
+            # Bisection
+            for _ in range(max_iter):
+                mid = 0.5*(lo + hi)
+                f_mid = f(mid)
+                if abs(f_mid) < tol:
+                    break
+                if f_mid * f_lo > 0:   # same sign => root in upper half
+                    lo, f_lo = mid, f_mid
+                else:
+                    hi = mid
+            b_root = 0.5*(lo + hi)
+
+            # back-transform to v
+            V[i] = 1.0 - b_root**(1.0/theta)
+
+        # Light clipping
+        eps = 1e-15
+        np.clip(V, eps, 1.0 - eps, out=V)
+        return np.column_stack((U, V))
 
     def kendall_tau(self, param=None):
-        """Compute Kendall's tau for the Joe copula.
-
-        Args:
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float: Kendall's tau.
         """
-        if param is None:
-            param = self.parameters
-        theta = param[0]
-        return 1 - 1 / theta
+        Closed-form Kendall's τ for the Joe copula (θ ≥ 1).
+
+        τ(θ)=1+2/(2−θ)·[ψ(2)−ψ(2/θ+1)].
+        Handles θ≈1 (independence) and θ≈2 (removable singularity).
+        """
+        θ = float(self.get_parameters()[0]) if param is None else float(param[0])
+
+        # independence
+        if abs(θ - 1.0) < 1e-12:
+            return 0.0
+
+        # removable singularity at θ = 2
+        if abs(θ - 2.0) < 1e-10:
+            return 1.0 - polygamma(1, 2.0)  # trigamma(2)
+
+        return 1.0 + 2.0 * (digamma(2.0) - digamma(2.0 / θ + 1.0)) / (2.0 - θ)
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (0 for Joe copula).
@@ -123,8 +202,10 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: UTDC value.
         """
         if param is None:
-            param = self.parameters
-        theta = param[0]
+            theta = float(self.get_parameters()[0])
+        else:
+            theta = float(param[0])
+
         return 2 - 2 ** (1 / theta)
 
     def IAD(self, data):
@@ -163,8 +244,9 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         if param is None:
-            param = self.parameters
-        theta = param[0]
+            theta = float(self.get_parameters()[0])
+        else:
+            theta = float(param[0])
 
         A = (1 - u) ** theta
         B = (1 - v) ** theta

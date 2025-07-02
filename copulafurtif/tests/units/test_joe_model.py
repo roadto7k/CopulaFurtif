@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from hypothesis import given, strategies as st, settings
 from CopulaFurtif.core.copulas.domain.models.archimedean.joe import JoeCopula
+import scipy.stats as stx
 
 # ----------------------------------------------------------------------------
 # Strategies
@@ -34,8 +35,9 @@ def _fd(f, x, y, h=1e-5):
 
 @given(theta=theta_valid)
 def test_roundtrip(theta):
-    c = JoeCopula(); c.set_parameters([theta])
-    assert math.isclose(c.parameters[0], theta, rel_tol=1e-12)
+    c = JoeCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
 
 
 @given(theta=theta_invalid)
@@ -57,7 +59,8 @@ def test_cdf_bounds(theta, u, v):
 
 @given(theta=theta_valid, u=unit_interior, v=unit_interior)
 def test_pdf_nonneg(theta, u, v):
-    c = JoeCopula(); c.set_parameters([theta])
+    c = JoeCopula()
+    c.set_parameters([theta])
     assert c.get_pdf(u, v) >= 0.0
 
 
@@ -73,7 +76,8 @@ def test_cdf_symmetry(theta, u, v):
 @given(theta=st.floats(min_value=1.1, max_value=10.0), u=unit_interior, v=unit_interior)
 @settings(max_examples=40)
 def test_partial_derivatives(theta, u, v):
-    c = JoeCopula(); c.set_parameters([theta])
+    c = JoeCopula()
+    c.set_parameters([theta])
     def C(x, y):
         return c.get_cdf(x, y)
     num_du = _fd(C, u, v)
@@ -88,19 +92,46 @@ def test_partial_derivatives(theta, u, v):
 # ----------------------------------------------------------------------------
 
 @given(theta=theta_valid)
-def test_tau_tail(theta):
-    c = JoeCopula(); c.set_parameters([theta])
-    assert math.isclose(c.kendall_tau(), 1 - 1/theta, rel_tol=1e-12)
+def test_tail_dependence(theta):
+    c = JoeCopula()
+    c.set_parameters([theta])
+
+    # Lower tail (Joe is upper-tail only)
     assert c.LTDC() == 0.0
-    expected = 2 - 2 ** (1/theta)
-    assert math.isclose(c.UTDC(), expected, rel_tol=1e-12)
+
+    # Upper tail λ_U = 2 − 2^{1/θ}
+    expected_u = 2.0 - 2.0**(1.0/theta)
+    assert math.isclose(c.UTDC(), expected_u, rel_tol=1e-12)
+
+
+@pytest.mark.slow
+@settings(max_examples=20, deadline=None)
+@given(theta=theta_valid)
+def test_kendall_tau_monte_carlo(theta):
+    n = 10_000
+    c = JoeCopula()
+    c.set_parameters([theta])
+
+    rng  = np.random.default_rng(seed=0)
+    data = c.sample(n, rng=rng)
+    tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])
+
+    tau_theo = c.kendall_tau()
+
+    se = math.sqrt(2 * (2 * n + 5) / (9 * n * (n - 1)))
+    sigma_eff = se + 0.5 * (1.0 - tau_theo) ** 2
+
+    assert math.isclose(tau_emp, tau_theo, abs_tol=3 * sigma_eff + 0.005), (
+        f"θ={theta:.3f}: emp τ={tau_emp:.4f}, theo τ={tau_theo:.4f}"
+    )
 
 # ----------------------------------------------------------------------------
 # Sample & disabled metrics
 # ----------------------------------------------------------------------------
 
 def test_sample_disabled():
-    c = JoeCopula(); c.set_parameters([2.5])
+    c = JoeCopula()
+    c.set_parameters([2.5])
     samp = c.sample(300)
     assert samp.shape == (300, 2)
     assert np.isnan(c.IAD(None))

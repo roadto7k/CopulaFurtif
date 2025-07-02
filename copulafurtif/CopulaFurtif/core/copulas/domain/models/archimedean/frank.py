@@ -19,6 +19,7 @@ from scipy.stats import uniform
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from scipy.integrate import quad
+from numpy.random import default_rng
 
 
 class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -77,7 +78,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         denom = (1 - np.exp(-theta) + (e_theta_u - 1) * (e_theta_v - 1)) ** 2
         return num / denom
 
-    def sample(self, n, param=None):
+    def sample(self, n, param=None, rng=None):
         """Generate samples from the Frank copula.
 
         Args:
@@ -92,25 +93,43 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         else:
             theta = float(param[0])
 
-        if abs(theta) < 1e-8:
-            u = uniform.rvs(size=n)
-            v = uniform.rvs(size=n)
-            return np.column_stack((u, v))
+        if rng is None:
+            rng = default_rng()
 
-        u = uniform.rvs(size=n)
-        w = uniform.rvs(size=n)
-        exp_neg_t = np.exp(-theta)
-        exp_neg_t_u = np.exp(-theta * u)
-        numerator = np.log(1 - w * (1 - exp_neg_t))
-        denominator = exp_neg_t_u - 1
-        denominator = np.where(np.abs(denominator) < 1e-12, 1e-12, denominator)
-        v = -1.0 / theta * np.log(1 + numerator / denominator)
+            # --- independence limit ------------------------------------------
+        if abs(theta) < 1e-8:
+            return rng.random((n, 2))
+
+            # --- core algorithm ----------------------------------------------
+        u = rng.random(n)
+        w = rng.random(n)
+
+        D = np.exp(-theta) - 1.0  # common denominator   D = e^{-θ} − 1
+        A = np.exp(-theta * u) - 1.0  # A = e^{-θu} − 1
+
+        B = (w * D) / (A + 1.0 - w * A)  # inversion term  B = w D /(A+1−w A)
+        v = -1.0 / theta * np.log1p(B)  # v = −(1/θ)·ln(1+B)
+
         return np.column_stack((u, v))
 
-    def _debye1_fallback(self, theta):
+    @staticmethod
+    def debye1(theta, *, epsabs=1e-12, epsrel=1e-12):
+        """
+        Compute the Debye function of order 1:
+            D1(θ) = (1/θ) ∫₀^θ t / (eᵗ − 1) dt
 
-        integrand = lambda t: t / np.expm1(t)  # t/(eᵗ−1)
-        val, _ = quad(integrand, 0.0, theta, limit=100)
+        Uses a Maclaurin series for |θ|<1e-4, and adaptive quadrature otherwise.
+        """
+        # Maclaurin series for small |θ|
+        if abs(theta) < 1e-4:
+            t = theta
+            t2 = t * t
+            return 1 - t / 4 + t2 / 36 - t2 * t2 / 3600 + t2 * t2 * t2 / 211_680
+
+        # Adaptive quadrature for everything else
+        integrand = lambda t: t / np.expm1(t)  # t / (eᵗ − 1)
+        val, _ = quad(integrand, 0.0, theta,
+                      limit=200, epsabs=epsabs, epsrel=epsrel)
         return val / theta
 
     def kendall_tau(self, param=None):
@@ -125,12 +144,14 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
+
         if abs(theta) < 1e-8:
             t = theta
-            return t / 9 - t ** 3 / 135 + 2 * t ** 5 / 945
+            t2 = t * t
+            return t / 9 - t2 * t / 900 + t2 * t2 / 52920  # θ/9 − θ³/900 + θ⁵/52920
 
-        D1 = self._debye1_fallback(theta)
-        return 1.0 - 4.0/theta + 4.0*D1/theta
+        D1 = self.debye1(theta)
+        return 1.0 + 4.0 * (D1 - 1.0) / theta
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (always 0 for Frank copula).

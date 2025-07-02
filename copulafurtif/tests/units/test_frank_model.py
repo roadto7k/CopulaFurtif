@@ -10,6 +10,9 @@ import math
 import numpy as np
 import pytest
 from hypothesis import given, strategies as st, settings
+from scipy.stats import kendalltau
+from mpmath import mp
+
 from CopulaFurtif.core.copulas.domain.models.archimedean.frank import FrankCopula
 
 # -----------------------------------------------------------------------------
@@ -17,14 +20,16 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.frank import FrankCopul
 # -----------------------------------------------------------------------------
 
 # Safe interval — skip the singular band around 0 and avoid the extreme ±35.
-SAFE_THETA_MIN = -10.0
-SAFE_THETA_MAX = 10.0
-EPS_ZERO = 0.01  # exclude <|0.01|
+SAFE_MIN, SAFE_MAX = -20.0, 20.0          # keep things reasonable
+EPS_ZERO           = 1e-3                 # avoid the 0-singularity
+RNG = np.random.default_rng(seed=42)
+THETAS = [-8.0, -2.0, -0.5, 0.5, 2.0, 8.0]
 
 @st.composite
 def safe_theta(draw):
-    neg = st.floats(SAFE_THETA_MIN, -EPS_ZERO, allow_nan=False, allow_infinity=False)
-    pos = st.floats(EPS_ZERO, SAFE_THETA_MAX, allow_nan=False, allow_infinity=False)
+    """θ ∈ (−20,−1e-3] ∪ [1e-3,20).  No NaN / ±∞."""
+    neg = st.floats(SAFE_MIN, -EPS_ZERO, allow_nan=False, allow_infinity=False)
+    pos = st.floats(EPS_ZERO,  SAFE_MAX, allow_nan=False, allow_infinity=False)
     return draw(st.one_of(neg, pos))
 
 @st.composite
@@ -114,15 +119,37 @@ def test_partial_derivative_matches_finite_diff(theta, u, v):
 # Kendall τ range & formula sanity
 # -----------------------------------------------------------------------------
 
-@given(theta=safe_theta())
-def test_kendall_tau_range(theta):
+@pytest.mark.parametrize("theta", THETAS)
+def test_kendall_tau_vs_empirical(theta):
+    """
+    For each θ, generate N samples, estimate empirical Kendall τ,
+    and assert it matches the theoretical τ within 3·SE + ε.
+    """
+
+    N   = 40_000                              #  big enough ⇒ tiny SE
+    EPS = 0.003                               #  fudge for copula variance
+
     cop = FrankCopula()
     cop.set_parameters([theta])
-    tau = cop.kendall_tau()
-    assert math.isfinite(tau)
-    # Slight overshoot possible for large |θ| due to spence numerical error
-    assert -1.001 <= tau <= 1.001
 
+    # ---------- generate pseudo-observations
+    uv = cop.sample(N, param=[theta])
+
+    # ---------- empirical Kendall τ
+    tau_emp, _ = kendalltau(uv[:, 0], uv[:, 1])
+
+    # ---------- theoretical Kendall τ
+    tau_theo = cop.kendall_tau()
+
+    # ---------- standard error of τ̂  (conservative: independence formula)
+    se = math.sqrt(2 * (2 * N + 5) / (9 * N * (N - 1)))
+
+    # ---------- assertion
+    assert abs(tau_emp - tau_theo) < 3 * se + EPS, (
+        f"θ={theta}: empirical τ={tau_emp:.6f}, "
+        f"theoretical τ={tau_theo:.6f}, "
+        f"allowed ±{3*se+EPS:.6f}"
+    )
 # -----------------------------------------------------------------------------
 # Tail dependence zeros
 # -----------------------------------------------------------------------------

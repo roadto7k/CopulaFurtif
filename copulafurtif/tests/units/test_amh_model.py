@@ -53,7 +53,6 @@ def unit_interval(draw):
 def test_parameter_roundtrip(theta):
     c = AMHCopula()
     c.set_parameters([theta])
-    # c.parameters = [theta]
     assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
 
 @given(theta=st.one_of(
