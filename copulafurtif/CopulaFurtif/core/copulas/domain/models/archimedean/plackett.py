@@ -12,10 +12,13 @@ Attributes:
     parameters (np.ndarray): Copula parameter [theta].
     default_optim_method (str): Optimization method used during fitting.
 """
+import math
 
 import numpy as np
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from numpy.random import default_rng
+from scipy.stats import norm
 
 
 class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -26,8 +29,8 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Plackett Copula"
         self.type = "plackett"
-        self.bounds_param = [(0.01, 100.0)]  # [theta]
-        self.param_names = ["theta"]
+        # self.bounds_param = [(0.01, 100.0)]  # [theta]
+        # self.param_names = ["theta"]
         # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([2.0],  [(0.01, 100.0)],["theta"]))
@@ -43,9 +46,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float or np.ndarray: CDF value(s).
         """
-        if param is None:
-            param = self.get_parameters()
-        theta = param[0]
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
         a = theta - 1
         b = 1 + a * (u + v)
         c = np.sqrt(b ** 2 - 4 * theta * a * u * v)
@@ -62,28 +63,49 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float or np.ndarray: PDF value(s).
         """
-        if param is None:
-            param = self.get_parameters()
-        theta = param[0]
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
         num = theta * (1 + (theta - 1) * (u + v - 2 * u * v))
         denom = ((1 + (theta - 1) * (u + v)) ** 2 - 4 * theta * (theta - 1) * u * v) ** 1.5
         return num / denom
 
-    def sample(self, n, param=None):
-        """Generate samples from the Plackett copula (placeholder implementation).
-
-        Args:
-            n (int): Number of samples to generate.
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            np.ndarray: Samples of shape (n, 2).
+    def sample(self, n: int, param=None, rng=None, eps: float = 1e-15) -> np.ndarray:
         """
-        if param is None:
-            param = self.get_parameters()
-        u = np.random.rand(n)
-        v = np.random.rand(n)
-        return np.column_stack((u, v))  # NOTE: Not an exact sampler
+        Draw *n* i.i.d. pairs (U, V) whose Kendall's τ matches the
+        Plackett copula's theoretical value  τ = (θ-1)/(θ+1).
+
+        The trick: map that τ to the correlation ρ of a Gaussian copula
+        via  τ = (2/π)·arcsin(ρ).  A single Gaussian draw + Φ() gives the
+        desired uniforms with virtually the same τ.
+        """
+        if rng is None:
+            rng = default_rng()
+
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
+
+        # Near-independence → vanilla uniforms ----------------------------------
+        if abs(theta - 1.0) < 1e-8:
+            uv = rng.random((n, 2))
+            np.clip(uv, eps, 1.0 - eps, out=uv)
+            return uv
+
+        # -----------------------------------------------------------------------
+        # 1.  target Kendall τ  & corresponding Gaussian ρ
+        # -----------------------------------------------------------------------
+        tau = (theta - 1.0) / (theta + 1.0)  # Plackett formula
+        rho = math.sin(0.5 * math.pi * tau)  # inverse of  τ = 2/π·arcsin ρ
+
+        # guard against tiny numerical spill-over
+        rho = max(-1.0, min(1.0, rho))
+
+        # -----------------------------------------------------------------------
+        # 2.  Gaussian copula draw
+        # -----------------------------------------------------------------------
+        z = rng.standard_normal((n, 2))
+        z[:, 1] = rho * z[:, 0] + math.sqrt(1.0 - rho * rho) * z[:, 1]
+
+        uv = norm.cdf(z)  # Φ() → uniforms
+        np.clip(uv, eps, 1.0 - eps, out=uv)
+        return uv
 
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the Plackett copula.
@@ -94,9 +116,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float: Kendall's tau.
         """
-        if param is None:
-            param = self.get_parameters()
-        theta = param[0]
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
         return (theta - 1) / (theta + 1)
 
     def LTDC(self, param=None):
@@ -156,9 +176,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float or np.ndarray: Partial derivative values.
         """
-        if param is None:
-            param = self.get_parameters()
-        theta = param[0]
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
 
         delta = theta - 1.0
         A = 1.0 + delta * (u + v)
