@@ -20,7 +20,7 @@ def main():
     # === Step 1: Instantiate copula ===
     copula = CopulaFactory.create(CopulaType.GAUSSIAN)
     
-    copula.parameters = [0.9]
+    copula.set_parameters([0.9])
     # === Step 2: Fit (CMLE) ===
     print("→ Step 1: CMLE")
     usecase = CopulaFitter()

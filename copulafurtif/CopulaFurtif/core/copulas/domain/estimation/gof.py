@@ -15,7 +15,7 @@ def compute_aic(copula):
         float: AIC score.
     """
 
-    k = len(copula.bounds_param)
+    k = len(copula.get_bounds())
     return 2 * k - 2 * copula.log_likelihood_
 
 
@@ -39,7 +39,7 @@ def compute_bic(copula):
     if not hasattr(copula, "n_obs") or copula.n_obs is None:
         raise ValueError("n_obs (number of observations) is missing in copula object.")
 
-    k = len(copula.bounds_param)
+    k = len(copula.get_bounds())
     return k * np.log(copula.n_obs) - 2 * copula.log_likelihood_
 
 
@@ -67,7 +67,7 @@ def compute_iad_score(copula, data):
         raise ValueError("Mismatch: len(u) != len(v)")
 
     # Use the fitted parameters of the copula
-    params = copula.parameters
+    params = copula.get_parameters()
 
     # --- Construct the empirical copula ---
     # Sort the pseudo-observations to define the grid points.
@@ -123,7 +123,7 @@ def AD_score(copula, data):
 
     # Use fitted parameters if requested
 
-    params = copula.parameters
+    params = copula.get_parameters()
 
     # Extract pseudo-observations
     u, v = data
@@ -185,7 +185,7 @@ def kendall_tau_distance(copula, data):
     tau_empirical, _ = kendalltau(X, Y)
 
     try:
-        tau_theoretical = copula.kendall_tau(copula.parameters)
+        tau_theoretical = copula.kendall_tau(copula.get_parameters())
     except Exception as e:
         print(f"[WARNING] Failed to compute theoretical Kendall's tau: {e}")
         return np.nan

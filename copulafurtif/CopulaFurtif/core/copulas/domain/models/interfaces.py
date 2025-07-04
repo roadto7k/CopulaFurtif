@@ -222,7 +222,7 @@ class CopulaModel(ABC):
             float or np.ndarray: Value(s) of the CDF.
         """
         if self._parameters.cdf_numeric:
-            return self._parameters.cdf_numeric(u, v, *self.parameters)
+            return self._parameters.cdf_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("CDF not defined symbolically. Override get_cdf method.")
 
     def get_pdf(self, u, v):
@@ -238,7 +238,7 @@ class CopulaModel(ABC):
             float or np.ndarray: Value(s) of the PDF.
         """
         if self._parameters.pdf_numeric:
-            return self._parameters.pdf_numeric(u, v, *self.parameters)
+            return self._parameters.pdf_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("PDF not defined symbolically. Override get_pdf method.")
 
     @abstractmethod
@@ -284,7 +284,7 @@ class CopulaModel(ABC):
         """
 
         if self._parameters.partial_u_numeric:
-            return self._parameters.partial_u_numeric(u, v, *self.parameters)
+            return self._parameters.partial_u_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("Partial derivative wrt u not defined symbolically.")
 
     def partial_derivative_C_wrt_v(self, u, v):
@@ -303,7 +303,7 @@ class CopulaModel(ABC):
         """
 
         if self._parameters.partial_v_numeric:
-            return self._parameters.partial_v_numeric(u, v, *self.parameters)
+            return self._parameters.partial_v_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("Partial derivative wrt v not defined symbolically.")
 
     def conditional_cdf_u_given_v(self, u, v):

@@ -15,7 +15,8 @@ class CopulaFitter:
 
         res = cmle(copula, data)
         if res:
-            copula.parameters, copula.log_likelihood_ = res
+            copula.set_parameters(res[0][:len(copula.get_parameters())]) 
+            copula.log_likelihood_ = res[1]
         return res
 
     def fit_mle(self, data, copula, marginals, known_parameters=True):
@@ -34,7 +35,8 @@ class CopulaFitter:
 
         res = fit_mle(data, copula, marginals, known_parameters=known_parameters)
         if res:
-            copula.parameters, copula.log_likelihood_ = res[0][:len(copula.parameters)], res[1]
+            copula.set_parameters(res[0][:len(copula.get_parameters())]) 
+            copula.log_likelihood_ = res[1]
         return res
 
     def fit_ifm(self, data, copula, marginals):
@@ -51,5 +53,6 @@ class CopulaFitter:
 
         res = fit_ifm(data, copula, marginals)
         if res:
-            copula.parameters, copula.log_likelihood_ = res
+            copula.set_parameters(res[0][:len(copula.get_parameters())])
+            copula.log_likelihood_ = res[1]
         return res

@@ -14,7 +14,7 @@ Attributes:
 """
 
 import numpy as np
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -30,7 +30,8 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.param_names = ["theta"]
         # self.parameters = [0.3]
         self.default_optim_method = "SLSQP"
-
+        self.init_parameters(CopulaParameters([0.3],  [(-1.0, 1.0)], ["theta"]))
+        
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
 

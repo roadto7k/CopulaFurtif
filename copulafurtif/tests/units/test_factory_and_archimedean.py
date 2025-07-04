@@ -12,4 +12,4 @@ def test_factory_creates_copula(copula_name):
     # register_all_copulas()
     copula = CopulaFactory.create(copula_name)
     # assert copula.name.lower().startswith(copula_name)
-    assert copula._parameters is not None
+    assert copula.get_parameters() is not None

@@ -30,7 +30,7 @@ class CopulaDiagnostics:
         result = {
             "Copula": copula.name,
             "LogLik": copula.log_likelihood_,
-            "Params": len(copula.parameters),
+            "Params": len(copula.get_parameters()),
             "Obs": copula.n_obs,
             "AIC": copula.AIC() if hasattr(copula, 'AIC') else np.nan,
             "BIC": copula.BIC() if hasattr(copula, 'BIC') else np.nan,

@@ -25,11 +25,11 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB2 Copula"
         self.type = "bb2"
-        self.bounds_param = [(1e-6, np.inf), (1.0, np.inf)]  # [theta, delta]
+        self.bounds_param = [(0.05, 30.0), (1.0, 10.0)]  # [theta, delta]
         self.param_names = ["theta", "delta"]
         # self.parameters = [2, 1.5]
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([2, 1.5],[(1e-6, np.inf), (1.0, np.inf)], ["theta", "delta"] ))
+        self.init_parameters(CopulaParameters([2, 1.5],[(0.05, 30.0), (1.0, 10.0)], ["theta", "delta"] ))
 
     def get_cdf(self, u, v, param=None):
         """

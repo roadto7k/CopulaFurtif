@@ -50,7 +50,7 @@ def valid_theta(draw):
     return draw(
         st.floats(
             min_value=0.05, max_value=30.0,
-            exclude_min=True, exclude_max=False,
+            exclude_min=True, exclude_max=True,
             allow_nan=False, allow_infinity=False,
         )
     )
@@ -60,8 +60,8 @@ def valid_theta(draw):
 def valid_delta(draw):
     return draw(
         st.floats(
-            min_value=1.05, max_value=10.0,
-            exclude_min=True, exclude_max=False,
+            min_value=1.00, max_value=10.0,
+            exclude_min=True, exclude_max=True,
             allow_nan=False, allow_infinity=False,
         )
     )
@@ -98,7 +98,7 @@ def test_parameter_roundtrip(theta, delta):
 @given(
     theta=st.one_of(
         st.floats(max_value=0.0, allow_nan=False, allow_infinity=False),
-        st.floats(max_value=0.99, allow_nan=False, allow_infinity=False),
+        st.floats(max_value=0.05, allow_nan=False, allow_infinity=False, exclude_max=True),
     ),
     delta=valid_delta(),
 )
@@ -110,7 +110,7 @@ def test_theta_out_of_bounds(theta, delta):
 
 @given(
     theta=valid_theta(),
-    delta=st.floats(max_value=1.0, allow_nan=False, allow_infinity=False),
+    delta=st.floats(max_value=1.0, allow_nan=False, allow_infinity=False, exclude_max = True),
 )
 def test_delta_out_of_bounds(theta, delta):
     c = BB2Copula()
