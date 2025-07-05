@@ -2,6 +2,7 @@ import numpy as np
 from scipy.special import beta
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from numpy.random import default_rng
 
 
 class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -24,8 +25,8 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB1 Copula"
         self.type = "bb1"
-        self.bounds_param = [(1e-6, np.inf), (1.0, np.inf)]  # [theta, delta]
-        self.param_names = ["theta", "delta"]
+        # self.bounds_param = [(1e-6, np.inf), (1.0, np.inf)]  # [theta, delta]
+        # self.param_names = ["theta", "delta"]
         # self.parameters = [0.5, 1.5]
         self.default_optim_method = "Powell"
         self.init_parameters(CopulaParameters([0.5, 1.5],[(1e-6, np.inf), (1.0, np.inf)], ["theta", "delta"] ))
@@ -82,39 +83,84 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def kendall_tau(self, param=None):
         """
-        Compute Kendall's tau.
+        Closed-form Kendall's tau for the BB1 copula:
 
-        Args:
-            param (np.ndarray, optional): Copula parameters [theta, delta].
-
-        Returns:
-            float: Kendall's tau.
+        τ(θ, δ) = 1 − 2 / [ δ (θ + 2) ]      (Joe 1997, Eq. 4.32)
         """
         if param is None:
             param = self.get_parameters()
-        theta, delta = param
-        return 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * beta(1.0 - 1.0 / theta, 2.0 / delta + 1.0)
+        theta, delta = map(float, param)
+        return 1.0 - 2.0 / (delta * (theta + 2.0))
 
-    def sample(self, n, param=None):
+    def _invert_conditional_v(self, u, target_cdf, theta, delta,
+                              eps=1e-12, max_iter=40):
         """
-        Generate samples using the Marshall–Olkin method.
+        Solve for v in (0,1) such that
 
-        Args:
-            n (int): Number of samples.
-            param (np.ndarray, optional): Copula parameters [theta, delta].
+            F_{V|U}(v | u) = ∂C(u,v)/∂u = target_cdf
 
-        Returns:
-            np.ndarray: Samples of shape (n, 2).
+        by vectorized bisection.
         """
+        lo = np.full_like(target_cdf, eps)
+        hi = np.full_like(target_cdf, 1.0 - eps)
+
+        for _ in range(max_iter):
+            mid = 0.5 * (lo + hi)
+            cdf_mid = self.partial_derivative_C_wrt_u(u, mid, [theta, delta])
+            # when CDF(mid) > target, decrease upper bound
+            hi = np.where(cdf_mid > target_cdf, mid, hi)
+            # when CDF(mid) <= target, increase lower bound
+            lo = np.where(cdf_mid <= target_cdf, mid, lo)
+
+        return 0.5 * (lo + hi)
+
+    def sample(self,
+               n: int,
+               param=None,
+               rng=None,
+               eps: float = 1e-12,
+               max_iter: int = 40) -> np.ndarray:
+        """
+        Generate n i.i.d. pairs (U, V) from the BB1 copula by conditional inversion.
+
+        Parameters
+        ----------
+        n        : int
+            Number of samples.
+        param    : sequence-like, optional
+            Copula parameters [theta, delta].  If None, uses current parameters.
+        rng      : numpy.random.Generator, optional
+            Random number generator for reproducibility.
+        eps      : float
+            Small epsilon to keep values in (0,1).
+        max_iter : int
+            Maximum number of bisection iterations.
+
+        Returns
+        -------
+        ndarray of shape (n, 2)
+            Columns are U and V.
+        """
+        if rng is None:
+            rng = default_rng()
+
         if param is None:
-            param = self.get_parameters()
-        theta, delta = param
-        V = np.random.gamma(1.0 / delta, 1.0, size=n)
-        E1 = np.random.exponential(size=n)
-        E2 = np.random.exponential(size=n)
-        U = (1 + (E1 / V) ** (1.0 / delta)) ** (-1.0 / theta)
-        W = (1 + (E2 / V) ** (1.0 / delta)) ** (-1.0 / theta)
-        return np.column_stack((U, W))
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        # 1) draw U uniform and target probabilities P
+        u = rng.random(n)
+        p = rng.random(n)
+
+        # 2) invert conditional CDF ∂C/∂u to obtain V
+        v = self._invert_conditional_v(u, p, theta, delta,
+                                       eps=eps, max_iter=max_iter)
+
+        # 3) final clipping and pack
+        np.clip(u, eps, 1.0 - eps, out=u)
+        np.clip(v, eps, 1.0 - eps, out=v)
+        return np.column_stack((u, v))
 
     def LTDC(self, param=None):
         """

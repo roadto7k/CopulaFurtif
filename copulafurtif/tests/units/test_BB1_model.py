@@ -11,16 +11,17 @@ from hypothesis import given, strategies as st, settings
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB1 import BB1Copula
 from hypothesis import assume
 from scipy.stats import kendalltau
+from hypothesis import assume
 
 # -----------------------------------------------------------------------------
 # Strategies
 # -----------------------------------------------------------------------------
 
-θ_valid = st.floats(min_value=0.05, max_value=5.0, allow_nan=False, allow_infinity=False)
-δ_valid = st.floats(min_value=1.05, max_value=5.0, allow_nan=False, allow_infinity=False)
+theta_valid = st.floats(min_value=0.05, max_value=5.0, allow_nan=False, allow_infinity=False)
+delta_valid = st.floats(min_value=1.05, max_value=5.0, allow_nan=False, allow_infinity=False)
 
-θ_invalid = st.floats(max_value=0.0, allow_nan=False)  # θ ≤ 0
-δ_invalid = st.floats(max_value=1.0, exclude_max=True, allow_nan=False)  # δ < 1
+theta_invalid = st.floats(max_value=0.0, allow_nan=False)  # θ ≤ 0
+delta_invalid = st.floats(max_value=1.0, exclude_max=True, allow_nan=False)  # δ < 1
 
 unit = st.floats(min_value=1e-3, max_value=0.999, allow_nan=False)
 
@@ -33,21 +34,21 @@ def _fd(f, x, y, h=1e-5):
 # Parameter tests
 # -----------------------------------------------------------------------------
 
-@given(theta=θ_valid, delta=δ_valid)
+@given(theta=theta_valid, delta=delta_valid)
 def test_param_roundtrip(theta, delta):
     c = BB1Copula(); c.set_parameters([theta, delta])
     assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
     assert math.isclose(c.get_parameters()[1], delta, rel_tol=1e-12)
 
 
-@given(theta=θ_invalid, delta=δ_valid)
+@given(theta=theta_invalid, delta=delta_valid)
 def test_theta_out_of_bounds(theta, delta):
     c = BB1Copula()
     with pytest.raises(ValueError):
         c.set_parameters([theta, delta])
 
 
-@given(theta=θ_valid, delta=δ_invalid)
+@given(theta=theta_valid, delta=delta_invalid)
 def test_delta_out_of_bounds(theta, delta):
     c = BB1Copula()
     with pytest.raises(ValueError):
@@ -57,20 +58,20 @@ def test_delta_out_of_bounds(theta, delta):
 # CDF/PDF invariants
 # -----------------------------------------------------------------------------
 
-@given(theta=θ_valid, delta=δ_valid, u=unit, v=unit)
+@given(theta=theta_valid, delta=delta_valid, u=unit, v=unit)
 def test_cdf_bounds(theta, delta, u, v):
     cop = BB1Copula(); cop.set_parameters([theta, delta])
     val = cop.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
 
-@given(theta=θ_valid, delta=δ_valid, u=unit, v=unit)
+@given(theta=theta_valid, delta=delta_valid, u=unit, v=unit)
 def test_pdf_nonneg(theta, delta, u, v):
     cop = BB1Copula(); cop.set_parameters([theta, delta])
     assert cop.get_pdf(u, v) >= 0.0
 
 
-@given(theta=θ_valid, delta=δ_valid, u=unit, v=unit)
+@given(theta=theta_valid, delta=delta_valid, u=unit, v=unit)
 def test_cdf_symmetry(theta, delta, u, v):
     cop = BB1Copula(); cop.set_parameters([theta, delta])
     assert math.isclose(cop.get_cdf(u, v), cop.get_cdf(v, u), rel_tol=1e-12)
@@ -101,7 +102,7 @@ def test_partial_derivatives(theta, delta, u, v):
 # Kendall τ & tail dependence
 # -----------------------------------------------------------------------------
 
-@given(theta=θ_valid, delta=δ_valid)
+@given(theta=theta_valid, delta=delta_valid)
 def test_tail(theta, delta):
 
     cop = BB1Copula(); cop.set_parameters([theta, delta])
@@ -123,7 +124,6 @@ def test_kendall_tau_montecarlo(theta, delta):
     tau_emp, _ = kendalltau(data[:,0], data[:,1])
     tau_theo   = cop.kendall_tau()
 
-    from hypothesis import assume
     assume(math.isfinite(tau_theo))
 
     # borne 3 σ

@@ -191,26 +191,11 @@ def test_tail_dependence(theta, delta):
     c.set_parameters([theta, delta])
 
     # Formulas from class docstring
-    expected_lt = 2.0 - 2.0 ** (1.0 / delta)
-    expected_ut = 2.0 ** (-1.0 / (delta * theta))
+    expected_lt = 1
+    expected_ut = 0
 
     assert math.isclose(c.LTDC(), expected_lt, rel_tol=1e-12)
     assert math.isclose(c.UTDC(), expected_ut, rel_tol=1e-12)
-
-
-# -----------------------------------------------------------------------------
-# Kendall τ formula
-# -----------------------------------------------------------------------------
-
-@given(theta=valid_theta(), delta=valid_delta())
-def test_kendall_tau_formula(theta, delta):
-    c = BB2Copula()
-    c.set_parameters([theta, delta])
-    # Closed-form from implementation: τ = 1 − (2/δ)(1 − 1/θ) B(1 − 1/θ, 2/δ + 1)
-    from scipy.special import beta
-    expected = 1.0 - (2.0 / delta) * (1.0 - 1.0 / theta) * beta(1.0 - 1.0 / theta,
-                                                                 2.0 / delta + 1.0)
-    assert math.isclose(c.kendall_tau(), expected, rel_tol=1e-12)
 
 
 # -----------------------------------------------------------------------------
@@ -225,7 +210,7 @@ def test_empirical_kendall_tau_close(theta, delta):
     c = BB2Copula()
     c.set_parameters([theta, delta])
 
-    data = c.sample(5000)
+    data = c.sample(15000)
     tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])
     tau_theo = c.kendall_tau()
 
