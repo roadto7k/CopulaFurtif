@@ -36,7 +36,8 @@ def _fd(f, x, y, h=1e-5):
 
 @given(theta=theta_valid, delta=delta_valid)
 def test_param_roundtrip(theta, delta):
-    c = BB1Copula(); c.set_parameters([theta, delta])
+    c = BB1Copula()
+    c.set_parameters([theta, delta])
     assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
     assert math.isclose(c.get_parameters()[1], delta, rel_tol=1e-12)
 
@@ -67,13 +68,15 @@ def test_cdf_bounds(theta, delta, u, v):
 
 @given(theta=theta_valid, delta=delta_valid, u=unit, v=unit)
 def test_pdf_nonneg(theta, delta, u, v):
-    cop = BB1Copula(); cop.set_parameters([theta, delta])
+    cop = BB1Copula()
+    cop.set_parameters([theta, delta])
     assert cop.get_pdf(u, v) >= 0.0
 
 
 @given(theta=theta_valid, delta=delta_valid, u=unit, v=unit)
 def test_cdf_symmetry(theta, delta, u, v):
-    cop = BB1Copula(); cop.set_parameters([theta, delta])
+    cop = BB1Copula()
+    cop.set_parameters([theta, delta])
     assert math.isclose(cop.get_cdf(u, v), cop.get_cdf(v, u), rel_tol=1e-12)
 
 # -----------------------------------------------------------------------------
@@ -85,7 +88,8 @@ def test_cdf_symmetry(theta, delta, u, v):
        u=unit, v=unit)
 @settings(max_examples=40)
 def test_partial_derivatives(theta, delta, u, v):
-    cop = BB1Copula(); cop.set_parameters([theta, delta])
+    cop = BB1Copula()
+    cop.set_parameters([theta, delta])
 
     def C(x, y):
         return cop.get_cdf(x, y)
@@ -118,7 +122,8 @@ def test_tail(theta, delta):
     )
 @settings(max_examples=20)
 def test_kendall_tau_montecarlo(theta, delta):
-    cop = BB1Copula(); cop.set_parameters([theta, delta])
+    cop = BB1Copula()
+    cop.set_parameters([theta, delta])
     n = 10000
     data = cop.sample(n)
     tau_emp, _ = kendalltau(data[:,0], data[:,1])
@@ -135,7 +140,8 @@ def test_kendall_tau_montecarlo(theta, delta):
 # -----------------------------------------------------------------------------
 
 def test_sample_disabled():
-    cop = BB1Copula(); cop.set_parameters([0.8, 1.8])
+    cop = BB1Copula()
+    cop.set_parameters([0.8, 1.8])
     samp = cop.sample(500)
     assert samp.shape == (500, 2)
     assert np.isnan(cop.IAD(None)) and np.isnan(cop.AD(None))

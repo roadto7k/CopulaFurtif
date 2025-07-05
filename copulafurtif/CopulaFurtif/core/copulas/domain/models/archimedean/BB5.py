@@ -246,8 +246,10 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.parameters
+
+        theta = param[0]
         delta = param[1]
-        return 2.0 - 2.0 ** (1.0 / delta)
+        return 2.0 - (2.0 - 2.0 ** (-1.0 / delta)) ** (1.0 / theta)
 
     def IAD(self, data):
         """

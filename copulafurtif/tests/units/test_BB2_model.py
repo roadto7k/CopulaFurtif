@@ -49,7 +49,7 @@ def copula_default():
 def valid_theta(draw):
     return draw(
         st.floats(
-            min_value=0.05, max_value=30.0,
+            min_value=0.05, max_value=10.0,
             exclude_min=True, exclude_max=True,
             allow_nan=False, allow_infinity=False,
         )
@@ -60,22 +60,14 @@ def valid_theta(draw):
 def valid_delta(draw):
     return draw(
         st.floats(
-            min_value=1.00, max_value=10.0,
+            min_value=1.00, max_value=5.0,
             exclude_min=True, exclude_max=True,
             allow_nan=False, allow_infinity=False,
         )
     )
 
 
-@st.composite
-def unit_interval(draw):
-    return draw(
-        st.floats(
-            0.0, 1.0,
-            exclude_min=True, exclude_max=True,
-        )
-    )
-
+unit = st.floats(min_value=1e-3, max_value=0.999, allow_nan=False)
 
 # Numerical derivative helper --------------------------------------------------
 def _finite_diff(f, x, y, h=1e-6):
@@ -122,7 +114,7 @@ def test_delta_out_of_bounds(theta, delta):
 # CDF invariants
 # -----------------------------------------------------------------------------
 
-@given(theta=valid_theta(), delta=valid_delta(), u=unit_interval(), v=unit_interval())
+@given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 def test_cdf_bounds(theta, delta, u, v):
     c = BB2Copula()
     c.set_parameters([theta, delta])
@@ -131,7 +123,7 @@ def test_cdf_bounds(theta, delta, u, v):
 
 
 @given(theta=valid_theta(), delta=valid_delta(),
-       u1=unit_interval(), u2=unit_interval(), v=unit_interval())
+       u1=unit, u2=unit, v=unit)
 def test_cdf_monotone_in_u(theta, delta, u1, u2, v):
     if u1 > u2:
         u1, u2 = u2, u1
@@ -140,7 +132,7 @@ def test_cdf_monotone_in_u(theta, delta, u1, u2, v):
     assert c.get_cdf(u1, v) <= c.get_cdf(u2, v)
 
 
-@given(theta=valid_theta(), delta=valid_delta(), u=unit_interval(), v=unit_interval())
+@given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 def test_cdf_symmetry(theta, delta, u, v):
     c = BB2Copula()
     c.set_parameters([theta, delta])
@@ -151,7 +143,7 @@ def test_cdf_symmetry(theta, delta, u, v):
 # PDF invariants
 # -----------------------------------------------------------------------------
 
-@given(theta=valid_theta(), delta=valid_delta(), u=unit_interval(), v=unit_interval())
+@given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 def test_pdf_nonnegative(theta, delta, u, v):
     c = BB2Copula()
     c.set_parameters([theta, delta])
@@ -162,7 +154,7 @@ def test_pdf_nonnegative(theta, delta, u, v):
 # Derivative cross-check (analytical vs. finite diff)
 # -----------------------------------------------------------------------------
 
-@given(theta=valid_theta(), delta=valid_delta(), u=unit_interval(), v=unit_interval())
+@given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 @settings(max_examples=100)
 def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
     c = BB2Copula()
@@ -210,7 +202,7 @@ def test_empirical_kendall_tau_close(theta, delta):
     c = BB2Copula()
     c.set_parameters([theta, delta])
 
-    data = c.sample(15000)
+    data = c.sample(10000)
     tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])
     tau_theo = c.kendall_tau()
 

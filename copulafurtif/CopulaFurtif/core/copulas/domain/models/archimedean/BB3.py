@@ -77,12 +77,12 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         d, q = param
-        g = np.log1p(s) / d
-        r = 1.0 / q - 1.0
+        inv_q = 1.0 / q  # r in the notes above
+        g = np.log1p(s) / d  # g = log(1+s)/d
 
-        return g ** (r - 1) / (q * d ** 2 * (1.0 + s) ** 2) * (
-                (r * d) - (1.0 + s) * g
-        )
+        return (inv_q * g ** (inv_q - 2) /
+                (d ** 2 * (1.0 + s) ** 2) *
+                ((inv_q - 1.0) - d * g))
 
     def get_cdf(self, u, v, param=None):
         """

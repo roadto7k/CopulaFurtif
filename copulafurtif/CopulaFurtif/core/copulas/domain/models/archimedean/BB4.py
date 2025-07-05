@@ -137,7 +137,10 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: LTDC value (0.0 for this copula).
         """
 
-        return 0.0
+        if param is None:
+            param = self.parameters
+        mu, delta = param
+        return (2.0 - 2.0 ** (-1.0 / delta)) ** (-1.0 / mu)
 
     def UTDC(self, param=None):
         """
@@ -153,7 +156,7 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         delta = param[1]
-        return 2.0 - 2.0 ** (1.0 / delta)
+        return 2.0 - 2.0 ** (-1.0 / delta)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """

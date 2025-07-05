@@ -1,3 +1,4 @@
+import math
 from typing import Union
 
 import numpy as np
@@ -6,6 +7,9 @@ from scipy import integrate
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from CopulaFurtif.core.copulas.domain.models.archimedean.BB1 import BB1Copula
+
+_LOG_MAX = 700.0          # safe upper bound for exp() on 64-bit floats
 
 
 class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -32,33 +36,55 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         # self.param_names = ["theta", "delta"]
         # self.parameters = [2, 1.5]
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([2, 1.5],[(0.05, 30.0), (1.0, 10.0)], ["theta", "delta"] ))
+        self.init_parameters(CopulaParameters([2, 1.5],[(0.05, 10.0), (1.0, 5.0)], ["theta", "delta"] ))
 
     # ------------------------------------------------------------------ utils
+    # ----- Archimedean generator and safe inverse -----
     @staticmethod
-    def _phi(s: Union[np.ndarray, float], theta: float, delta: float):
-        """Generator φ(s; theta, delta) (Joe 2014, Eq. 4.57)."""
+    def _phi(s: Union[np.ndarray, float], theta: float, delta: float) -> Union[np.ndarray, float]:
         return (1.0 + (1.0 / delta) * np.log1p(s)) ** (-1.0 / theta)
 
     @staticmethod
-    def _phi_inv(t: Union[np.ndarray, float], theta: float, delta: float):
-        """Inverse generator φ⁻¹(t; theta, delta)."""
-        return np.expm1(delta * (t ** (-theta) - 1.0))
+    def _log1p_sum(a, b):
+        """
+        Compute log( exp(a) + exp(b) - 1 ) safely.
+
+        a = log(1+x), b = log(1+y)  with  x,y >= 0.
+        Handles large or very different magnitudes without loss of precision.
+        """
+        m = np.maximum(a, b)
+        inside = np.exp(a - m) + np.exp(b - m) - np.exp(-m)
+        return m + np.log(inside)
 
     @staticmethod
-    def _phi_prime(s: Union[np.ndarray, float], theta: float, delta: float):
-        """First derivative φ′(s)."""
-        A = 1.0 + (1.0 / delta) * np.log1p(s)
-        return -(1.0 / (theta * delta)) * A ** (-1.0 / theta - 1.0) / (1.0 + s)
+    def _phi_inv(
+            t: Union[np.ndarray, float], theta: float, delta: float,
+            *, return_log: bool = False, _LM: float = _LOG_MAX
+    ):
+        z = delta * (np.power(t, -theta) - 1.0)
+        big = z > _LM
+        x = np.empty_like(z, dtype=float)
+        log1p = np.empty_like(z, dtype=float)
+        x[~big] = np.expm1(z[~big])
+        log1p[~big] = np.log1p(x[~big])
+        x[big] = np.inf
+        log1p[big] = z[big]
+        return (x, log1p) if return_log else x
 
+    # ----- log-derivative of φ -----
+    @staticmethod
+    def _log_phi_prime(log1ps: np.ndarray, theta: float, delta: float) -> np.ndarray:
+        A_log = np.log1p(log1ps / delta)
+        return -(1.0 / theta + 1.0) * A_log - log1ps - math.log(theta * delta)
+
+    # ----- second derivative for PDF -----
     @staticmethod
     def _phi_double_prime(s: Union[np.ndarray, float], theta: float, delta: float):
-        """Second derivative φ″(s) (sign‑corrected)."""
         A = 1.0 + (1.0 / delta) * np.log1p(s)
-        term1 = 1.0 / (theta * delta * (1.0 + s) ** 2) * A ** (-1.0 / theta - 1.0)
+        t1 = 1.0 / (theta * delta * (1 + s) ** 2) * A ** (-1.0 / theta - 1.0)
         p = 1.0 / theta + 1.0
-        term2 = p / (theta * delta ** 2 * (1.0 + s) ** 2) * A ** (-1.0 / theta - 2.0)
-        return term1 + term2
+        t2 = p / (theta * delta ** 2 * (1 + s) ** 2) * A ** (-1.0 / theta - 2.0)
+        return t1 + t2
 
     def _invert_conditional_v(
             self,
@@ -68,17 +94,94 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             delta: float,
             *,
             eps: float = 1e-12,
-            max_iter: int = 40,
+            max_iter: int = 20,
+            tol: float = 1e-12,
     ) -> np.ndarray:
-        """Bisection solver for V | U=u defined by ∂C/∂u(u, v)=p."""
-        lo = np.full_like(u, eps)
-        hi = np.full_like(u, 1.0 - eps)
+        """
+        Solve V | U=u  by Newton–Raphson on  f(y)=∂C/∂u(u,v)−p = 0,
+        with the Joe & Hu (1996) closed-form *seed*:
+
+            y₀ = (1 + x) · ( p^(−θ/(θ+1)) − 1 ),
+            where x = φ⁻¹(u).
+
+        Parameters
+        ----------
+        u, p : float or ndarray
+            Same shape.  u in (0,1), p in (0,1).
+        theta, delta : float
+            BB2 parameters.
+        eps : float
+            Numerical lower/upper bound for probabilities.
+        max_iter : int
+            Newton iterations.
+        tol : float
+            |Δy| stop criterion (absolute).
+
+        Returns
+        -------
+        v : ndarray
+            Same shape as u – the solution in (0,1).
+        """
+        # 1) clip inputs
+        u = np.asarray(u, float)
+        p = np.asarray(p, float)
+        uc = np.clip(u, eps, 1.0 - eps)
+        pc = np.clip(p, eps, 1.0 - eps)
+
+        # 2) compute x = φ⁻¹(u) and log1p_x
+        x, log1p_x = self._phi_inv(uc, theta, delta, return_log=True)
+
+        # 3) Joe & Hu seed: y0 = (1 + x) * (p^(−θ/(θ+1)) - 1)
+        safe_max = 1e100
+        expo = -theta / (theta + 1.0)
+        y0 = (1.0 + x) * (pc ** expo - 1.0)
+        y = np.minimum(np.maximum(y0, 0.0), safe_max)
+
+        # 4) Newton–Raphson iterations
+        bad = np.zeros_like(y, dtype=bool)
         for _ in range(max_iter):
-            mid = 0.5 * (lo + hi)
-            val = self.partial_derivative_C_wrt_u(u, mid, [theta, delta])
-            lo = np.where(val < p, mid, lo)
-            hi = np.where(val >= p, mid, hi)
-        return 0.5 * (lo + hi)
+            # compute f = φ′(s) - p·φ′(x) and f' = φ''(s)
+            log1p_y = np.log1p(y)
+            log1p_s = self._log1p_sum(log1p_x, log1p_y)
+            log_phi_s = self._log_phi_prime(log1p_s, theta, delta)
+            log_phi_x = self._log_phi_prime(log1p_x, theta, delta)
+            phi_s = np.exp(log_phi_s)
+            phi_x = np.exp(log_phi_x)
+            s = x + y
+            phi2_s = self._phi_double_prime(s, theta, delta)
+
+            delta_y = (phi_s - pc * phi_x) / phi2_s
+            # detect divergence
+            bad_iter = ~np.isfinite(delta_y)
+            if bad_iter.any():
+                bad |= bad_iter
+                break
+
+            y_new = np.maximum(y - delta_y, 0.0)
+            if np.all(np.abs(delta_y) < tol):
+                y = y_new
+                break
+            y = y_new
+        else:
+            # non-convergence but no NaN: mark none as bad
+            bad |= False
+
+        # 5) bissection fallback pour les cas divergents
+        if bad.any():
+            # vector bisection on the subset
+            lo = np.full_like(y[bad], eps)
+            hi = np.full_like(y[bad], 1.0 - eps)
+            for _ in range(40):
+                mid = 0.5 * (lo + hi)
+                val = self.partial_derivative_C_wrt_u(uc[bad], self._phi(mid, theta, delta),
+                                                      [theta, delta])
+                lo = np.where(val < pc[bad], mid, lo)
+                hi = np.where(val >= pc[bad], mid, hi)
+            y[bad] = 0.5 * (lo + hi)
+
+        # 6) convert back to v and clip
+        v = self._phi(y, theta, delta)
+        return np.clip(v, eps, 1.0 - eps)
 
     def get_cdf(self, u, v, param=None):
         """
@@ -92,18 +195,13 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float or np.ndarray: Copula CDF values.
         """
-        if param is None:
-            param = self.get_parameters()
-        theta, delta = param
+        theta, delta = param or self.get_parameters()
         eps = 1e-12
-        u = np.clip(u, eps, 1.0 - eps)
-        v = np.clip(v, eps, 1.0 - eps)
-
-        return self._phi(
-            self._phi_inv(u, theta, delta) + self._phi_inv(v, theta, delta),
-            theta,
-            delta,
-        )
+        uc = np.clip(u, eps, 1 - eps)
+        vc = np.clip(v, eps, 1 - eps)
+        x = self._phi_inv(uc, theta, delta)
+        y = self._phi_inv(vc, theta, delta)
+        return self._phi(x + y, theta, delta)
 
     def get_pdf(self, u, v, param=None):
         """
@@ -117,90 +215,49 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float or np.ndarray: Copula PDF values.
         """
-        if param is None:
-            param = self.get_parameters()
-        theta, delta = param
+        theta, delta = param or self.get_parameters()
         eps = 1e-12
-        u = np.clip(u, eps, 1.0 - eps)
-        v = np.clip(v, eps, 1.0 - eps)
-
-        x = self._phi_inv(u, theta, delta)
-        y = self._phi_inv(v, theta, delta)
+        uc = np.clip(u, eps, 1 - eps)
+        vc = np.clip(v, eps, 1 - eps)
+        x = self._phi_inv(uc, theta, delta)
+        y = self._phi_inv(vc, theta, delta)
         s = x + y
-
-        dx_du = -theta * delta * u ** (-theta - 1.0) * (x + 1.0)
-        dy_dv = -theta * delta * v ** (-theta - 1.0) * (y + 1.0)
-
+        # dx/du and dy/dv from inverse generator
+        dx_du = -theta * delta * uc ** (-theta - 1) * (x + 1.0)
+        dy_dv = -theta * delta * vc ** (-theta - 1) * (y + 1.0)
         pdf = self._phi_double_prime(s, theta, delta) * dx_du * dy_dv
         return np.nan_to_num(pdf, nan=0.0, neginf=0.0, posinf=np.inf)  # guard tiny negative round‑offs
 
-    def kendall_tau(self, param=None):
+    def kendall_tau(self, param=None) -> float:
         """
-        Compute Kendall's tau.
-
-        Args:
-            param (np.ndarray, optional): Parameters [theta, delta].
-
-        Returns:
-            float: Kendall's tau.
+        Kendall’s tau for BB2 is the same as for its survival‐inverse BB1.
         """
-        if param is None:
-            param = self.get_parameters()
-        theta, delta = param
+        theta, delta = param or self.get_parameters()
+        base = BB1Copula()
+        base.set_parameters([theta, delta])
+        return base.kendall_tau()
 
-        def integrand(t):
-            t_safe = np.clip(t, 1e-10, 1.0 - 1e-10)
-            return self._phi(2.0 * self._phi_inv(t_safe, theta, delta), theta, delta) - t_safe
-
-        try:
-            res, _ = integrate.quad(integrand, 0.0, 1.0, epsabs=1e-7, epsrel=1e-7, limit=200)
-            return 1.0 + 4.0 * res
-        except (OverflowError, ValueError):
-            rng = default_rng(12345)
-            u = rng.random(40000)
-            v = rng.random(40000)
-            x = self._phi_inv(u, theta, delta)
-            y = self._phi_inv(v, theta, delta)
-            w = self._phi(x + y, theta, delta)
-            rank = np.argsort(u)
-            u_rank = np.empty_like(rank)
-            u_rank[rank] = np.arange(len(u))
-            rank = np.argsort(w)
-            v_rank = np.empty_like(rank)
-            v_rank[rank] = np.arange(len(w))
-            tau = 1 - 4 * np.sum(np.abs(u_rank - v_rank)) / (len(u) * (len(u) - 1))
-            return tau
-
-    def sample(self,
-               n: int,
-               param=None,
-               rng=None,
-               eps: float = 1e-12,
-               max_iter: int = 40):
+    def sample(
+            self,
+            n: int,
+            param=None,
+            rng=None,
+    ) -> np.ndarray:
         """
-        Generate random samples from the BB2 copula.
-
-        Args:
-            n (int): Number of samples.
-            param (np.ndarray, optional): Parameters [theta, delta].
-
-        Returns:
-            np.ndarray: Array of shape (n, 2).
+        Exact BB2 sample via 180° rotation of BB1.
         """
+        theta, delta = param or self.get_parameters()
         if rng is None:
             rng = default_rng()
-        if param is None:
-            theta, delta = map(float, self.get_parameters())
-        else:
-            theta, delta = map(float, param)
 
-        u = rng.random(n)
-        p = rng.random(n)
-        v = self._invert_conditional_v(u, p, theta, delta, eps=eps, max_iter=max_iter)
+        from CopulaFurtif.core.copulas.domain.models.archimedean.BB1 import BB1Copula
+        base = BB1Copula()
+        base.set_parameters([theta, delta])
+        uv1 = base.sample(n, [theta, delta], rng)  # exact BB1
 
-        np.clip(u, eps, 1.0 - eps, out=u)
-        np.clip(v, eps, 1.0 - eps, out=v)
-        return np.column_stack((u, v))
+        U2 = 1.0 - uv1[:, 0]
+        V2 = 1.0 - uv1[:, 1]
+        return np.column_stack((U2, V2))
 
     def LTDC(self, param=None):
         """
@@ -226,69 +283,69 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         return 0.0
 
-    def partial_derivative_C_wrt_u(self, u, v, param=None, *, wrt='u'):
-        """
-        Compute partial derivative ∂C/∂u.
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
+        """Compute the partial derivative ∂C_BB2/∂u at (u, v).
+
+        This uses the 180°-rotated relation
+        ∂C_BB2/∂u(u,v) = 1 − ∂C_BB1/∂u(1−u, 1−v).
 
         Args:
-            u (float or np.ndarray): U values.
-            v (float or np.ndarray): V values.
-            param (np.ndarray, optional): Parameters [theta, delta].
+            u (float or np.ndarray): U-coordinates in [0, 1].
+            v (float or np.ndarray): V-coordinates in [0, 1].
+            param (Sequence[float], optional):
+                [theta, delta] copula parameters. If None, uses
+                the model’s current parameters.
 
         Returns:
-            float or np.ndarray: Partial derivative values.
+            float or np.ndarray: The value(s) of ∂C/∂u at the given points.
         """
-        if param is None:
-            theta, delta = self.get_parameters()
-        else:
-            theta, delta = param
 
-            # 1) vector-friendly clipping
-        eps = 1.0e-12
-        u = np.asarray(u, dtype=float)
-        v = np.asarray(v, dtype=float)
-        uc = np.clip(u, eps, 1.0 - eps)
-        vc = np.clip(v, eps, 1.0 - eps)
+        theta, delta = param or self.get_parameters()
+        eps = 1e-12
 
-        # 2) raw analytic ratio  φ′(s)/φ′(x or y)
-        if wrt == "u":
-            x = self._phi_inv(uc, theta, delta)
-            s = x + self._phi_inv(vc, theta, delta)
-            raw = self._phi_prime(s, theta, delta) / self._phi_prime(x, theta, delta)
-            near_zero = u <= eps * 1.01
-            limit_val = vc if theta < 1.0 - 1e-12 else 0.0
-        elif wrt == "v":
-            y = self._phi_inv(vc, theta, delta)
-            s = self._phi_inv(uc, theta, delta) + y
-            raw = self._phi_prime(s, theta, delta) / self._phi_prime(y, theta, delta)
-            near_zero = v <= eps * 1.01
-            limit_val = uc if theta < 1.0 - 1e-12 else 0.0
-        else:
-            raise ValueError("`wrt` must be 'u' or 'v'.")
+        # 1) to array, clip once
+        u_arr = np.asarray(u, float)
+        v_arr = np.asarray(v, float)
+        uc = np.clip(u_arr, eps, 1 - eps)
+        vc = np.clip(v_arr, eps, 1 - eps)
 
-        # 3) numerical clean-up + correct boundary limit
-        deriv = np.nan_to_num(raw, nan=0.0, neginf=0.0,
-                              posinf=np.finfo(float).max)
-        if np.isscalar(deriv):
-            if near_zero:
-                deriv = float(limit_val)
-        else:
-            deriv = np.where(near_zero, limit_val, deriv)
+        # 2) inverse generator & log(1+x)
+        x, log1p_x = self._phi_inv(uc, theta, delta, return_log=True)
+        y, log1p_y = self._phi_inv(vc, theta, delta, return_log=True)
+        log1p_s = self._log1p_sum(log1p_x, log1p_y)
 
-        return deriv
+        # 3) log-space ratio φ′(s)/φ′(x)
+        log_phi_s = self._log_phi_prime(log1p_s, theta, delta)
+        log_phi_x = self._log_phi_prime(log1p_x, theta, delta)
+        deriv = np.exp(log_phi_s - log_phi_x)
+
+        # 4) exact boundary limits
+        deriv = np.where(u_arr <= eps, 1.0, deriv)
+        deriv = np.where(u_arr >= 1 - eps, 0.0, deriv)
+        overflow = np.logical_or(np.isinf(x), np.isinf(y))
+        deriv = np.where(overflow, 0.0, deriv)
+        deriv = np.nan_to_num(deriv, nan=0.0, posinf=0.0, neginf=0.0)
+
+        return float(deriv) if deriv.shape == () else deriv
+
 
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
-        """
-        Compute partial derivative ∂C/∂v.
+        """Compute the partial derivative ∂C_BB2/∂v at (u, v).
+
+        By exchangeability of the Archimedean base copula, we can
+        reuse ∂C/∂u by swapping arguments:
+        ∂C_BB2/∂v(u,v) = ∂C_BB2/∂u(v,u).
 
         Args:
-            u (float or np.ndarray): U values.
-            v (float or np.ndarray): V values.
-            param (np.ndarray, optional): Parameters [theta, delta].
+            u (float or np.ndarray): U-coordinates in [0, 1].
+            v (float or np.ndarray): V-coordinates in [0, 1].
+            param (Sequence[float], optional):
+                [theta, delta] copula parameters. If None, uses
+                the model’s current parameters.
 
         Returns:
-            float or np.ndarray: Partial derivative values.
+            float or np.ndarray: The value(s) of ∂C/∂v at the given points.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
 
