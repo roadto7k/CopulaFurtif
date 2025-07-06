@@ -26,11 +26,13 @@ Checks implemented
 """
 
 import math
+
 import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
-from CopulaFurtif.core.copulas.domain.models.archimedean.BB1 import BB1Copula
+
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB2 import BB2Copula
+
 
 # -----------------------------------------------------------------------------
 # Fixtures & helpers

@@ -1,6 +1,8 @@
 import numpy as np
+from numpy.random import default_rng
 from scipy.optimize import brentq
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -21,28 +23,27 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB3 Copula"
         self.type = "bb3"
-        self.bounds_param = [(1e-6, 30), (1.0, 5.0)] # [d, q]
-        self.param_names = ["d", "q"] # d = δ, q = θ
-        self.parameters = [2.0, 1.2] # safe
+        # self.bounds_param = [(1e-6, 30), (1.0, 5.0)] # [d, q]
+        # self.param_names = ["d", "q"] # d = δ, q = θ
+        # self.parameters = [2.0, 1.2] # safe
         self.default_optim_method = "Powell"
+        self.init_parameters(CopulaParameters([2, 1.5], [(1.0, 10.0),(0.05, 10.0) ], ["theta", "delta"]))
 
 
     def _h(self, s, param=None):
         """
-        Compute the generator function h(s) = (log1p(s) / d)^(1/q).
+        Compute the generator function h(s) = (log1p(s) / theta)^(1/delta).
 
         Args:
             s (float or array-like): Input to the generator.
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float or np.ndarray: Value of h(s).
         """
 
-        if param is None:
-            param = self.parameters
-        d, q = param
-        return (np.log1p(s) / d) ** (1.0 / q)
+        theta, delta = self.get_parameters() if param is None else param
+        return (np.log1p(s) / delta) ** (1.0 / theta)
 
     def _h_prime(self, s, param=None):
         """
@@ -50,17 +51,15 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             s (float or array-like): Input to the generator.
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float or np.ndarray: Value of hʼ(s).
         """
 
-        if param is None:
-            param = self.parameters
-        d, q = param
-        g = np.log1p(s) / d
-        return g ** (1.0 / q - 1.0) / (q * d * (1.0 + s))
+        theta, delta = self.get_parameters() if param is None else param
+        g = np.log1p(s) / delta
+        return g ** (1.0 / theta - 1.0) / (theta * delta * (1.0 + s))
 
     def _h_double(self, s, param=None):
         """
@@ -68,68 +67,62 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             s (float or array-like): Input to the generator.
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float or np.ndarray: Value of h″(s).
         """
 
-        if param is None:
-            param = self.parameters
-        d, q = param
-        inv_q = 1.0 / q  # r in the notes above
-        g = np.log1p(s) / d  # g = log(1+s)/d
+        theta, delta = self.get_parameters() if param is None else param
+        inv_theta = 1.0 / theta
+        g = np.log1p(s) / delta
 
-        return (inv_q * g ** (inv_q - 2) /
-                (d ** 2 * (1.0 + s) ** 2) *
-                ((inv_q - 1.0) - d * g))
+        return (inv_theta * g ** (inv_theta - 2) /
+                (delta ** 2 * (1.0 + s) ** 2) *
+                ((inv_theta - 1.0) - delta * g))
 
     def get_cdf(self, u, v, param=None):
         """
-        Evaluate the copula CDF at points (u, v) using the Gumbel generator.
+        Evaluate the copula CDF at points (u, v) using the  BB3 positive-stable stopped-gamma.
 
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float or np.ndarray: CDF value C(u, v).
         """
 
-        if param is None:
-            param = self.parameters
-        d, q = param
+        theta, delta = self.get_parameters() if param is None else param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
+        s_u = np.expm1(delta * (-np.log(u)) ** theta)
+        s_v = np.expm1(delta * (-np.log(v)) ** theta)
         return np.exp(-self._h(s_u + s_v, param))
 
     def get_pdf(self, u, v, param=None):
         """
-        Evaluate the copula PDF at points (u, v) using the Gumbel generator.
+        Evaluate the copula PDF at points (u, v) using the  BB3 positive-stable stopped-gamma.
 
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float or np.ndarray: PDF value c(u, v).
         """
 
-        if param is None:
-            param = self.parameters
-        d, q = param
+        theta, delta = self.get_parameters() if param is None else param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
+        s_u = np.expm1(delta * (-np.log(u)) ** theta)
+        s_v = np.expm1(delta * (-np.log(v)) ** theta)
         s = s_u + s_v
 
         h = self._h(s, param)
@@ -137,84 +130,131 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         h2 = self._h_double(s, param)
         phi_dd = np.exp(-h) * (h1 ** 2 - h2)
 
-        inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (-np.log(u)) ** (q - 1) / u
-        inv_v_prime = -d * q * np.exp(d * (-np.log(v)) ** q) * (-np.log(v)) ** (q - 1) / v
+        inv_u_prime = -delta * theta * np.exp(delta * (-np.log(u)) ** theta) * \
+                      (-np.log(u)) ** (theta - 1) / u
+        inv_v_prime = -delta * theta * np.exp(delta * (-np.log(v)) ** theta) * \
+                      (-np.log(v)) ** (theta - 1) / v
+
         pdf = phi_dd * inv_u_prime * inv_v_prime
-        # avoid NaN / inf caused by overflows
         return np.nan_to_num(pdf, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
 
-    def kendall_tau(self, param=None, n=401):
+    def kendall_tau(self, param=None, m: int = 800) -> float:
         """
-        Compute Kendall’s tau implied by the copula via numerical integration.
+        Compute Kendall’s tau for the BB3 copula by numerical integration
+        over a uniform m×m grid on [0,1]^2:
 
-        Args:
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
-            n (int, optional): Number of grid points per margin. Defaults to 201.
+            τ = 4 * E[C(U,V)] − 1,   (U,V) ∼ Uniform[0,1]^2
 
-        Returns:
-            float: Theoretical Kendall’s tau (4∫∫C(u,v)dudv − 1).
+        Parameters
+        ----------
+        param : sequence of two floats, optional
+            Copula parameters [theta, delta]. If None, the model’s current
+            parameters are used.
+        m : int, default=800
+            Number of grid points per dimension. A larger m increases
+            accuracy at the cost of more computation.
+
+        Returns
+        -------
+        float
+            Theoretical Kendall’s tau in [−1, 1].
         """
+        # 1) unpack parameters
+        theta, delta = (self.get_parameters() if param is None else param)
 
-        if param is None:
-            param = self.parameters
-        eps = 1e-6
-        u = np.linspace(eps, 1 - eps, n)
-        U, V = np.meshgrid(u, u)
-        Z = self.get_cdf(U, V, param)
-        integral = np.trapz(np.trapz(Z, u, axis=1), u)
-        return 4.0 * integral - 1.0
+        # 2) build a regular grid avoiding the exact boundaries 0 and 1
+        #    by centering points in each cell: (i − 0.5) / m
+        grid = (np.arange(1, m + 1, dtype=float) - 0.5) / m
+        U, V = np.meshgrid(grid, grid)
 
-    def sample(self, n, param=None):
+        C = self.get_cdf(U, V, [theta, delta])
+        pdf = self.get_pdf(U, V, [theta, delta])
+
+        # 4) weight C by pdf, average and scale to get τ
+        return float(4.0 * (C * pdf).mean() - 1.0)
+
+    def sample(
+            self,
+            n: int,
+            param=None,
+            rng=None,
+            eps: float = 1e-12,
+            max_iter: int = 40,
+    ) -> np.ndarray:
         """
-        Generate random samples from the copula using conditional inversion.
+        Generate n i.i.d. samples from the BB3 copula via conditional inversion.
 
-        Args:
-            n (int): Number of samples to generate.
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+        Parameters
+        ----------
+        n        : int
+            Number of sample pairs.
+        param    : sequence-like, optional
+            Copula parameters [theta, delta].  If None, uses current parameters.
+        rng      : numpy.random.Generator, optional
+            Random generator for reproducibility.
+        eps      : float
+            Clip guard to keep values in (0,1).
+        max_iter : int
+            Max Newton/bisection iterations inside the inverter.
 
-        Returns:
-            numpy.ndarray: Array of shape (n, 2) with uniform samples on [0,1]².
+        Returns
+        -------
+        ndarray, shape (n, 2)
+            Columns are U and V.
         """
+        if rng is None:
+            rng = default_rng()
 
-        if param is None:
-            param = self.parameters
-        out = np.empty((n, 2))
+        # unpack parameters
+        theta, delta = (
+            self.get_parameters() if param is None else param
+        )
+
+        # 1) draw uniforms
+        u = rng.random(n)
+        p = rng.random(n)
+
+        # 2) invert ∂C/∂u(u,v) = p  →  v
+        v = np.empty_like(u)
         for i in range(n):
-            u = np.random.rand()
-            p = np.random.rand()
-            out[i, 0] = u
-            out[i, 1] = brentq(
-                lambda vv: self.conditional_cdf_v_given_u(u, vv, param) - p,
-                1e-9, 1 - 1e-9
+            v[i] = brentq(
+                lambda vv: self.conditional_cdf_v_given_u(u[i], vv, [theta, delta]) - p[i],
+                eps,
+                1.0 - eps,
+                maxiter=max_iter,
             )
-        return out
+
+        # 3) clip & pack
+        np.clip(u, eps, 1.0 - eps, out=u)
+        np.clip(v, eps, 1.0 - eps, out=v)
+        return np.column_stack((u, v))
 
     def LTDC(self, param=None):
         """
         Compute the lower tail dependence coefficient (LTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float: LTDC value
         """
-        d, q = (self.parameters if param is None else param)
-        return 1.0 if q > 1.0 else 2.0 ** (-1.0 / d)
+        theta, delta = self.get_parameters() if param is None else param
+        return 1.0 if theta > 1.0 else 2.0 ** (-1.0 / delta)
 
     def UTDC(self, param=None):
         """
         Compute the upper tail dependence coefficient (UTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float: UTDC value (2 − 2^(1/q)).
         """
 
-        q = (self.parameters if param is None else param)[1]
-        return 2.0 - 2.0 ** (1.0 / q)
+        theta, delta = self.get_parameters() if param is None else param
+        return 2.0 - 2.0 ** (1.0 / theta)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
@@ -223,32 +263,36 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
 
         Returns:
             float or numpy.ndarray: Value of ∂C/∂u at (u,v).
         """
 
-        if param is None:
-            param = self.parameters
-        d, q = param
+        theta, delta = self.get_parameters() if param is None else param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        s_u = np.expm1(d * (-np.log(u)) ** q)
-        s_v = np.expm1(d * (-np.log(v)) ** q)
+        s_u = np.expm1(delta * (-np.log(u)) ** theta)
+        s_v = np.expm1(delta * (-np.log(v)) ** theta)
         s = s_u + s_v
 
+        # φ_p = -h'(s) · exp(-h(s))
         h1 = self._h_prime(s, param)
         phi_p = -h1 * np.exp(-self._h(s, param))
 
-        inv_u_prime = -d * q * np.exp(d * (-np.log(u)) ** q) * (-np.log(u)) ** (q - 1) / u
+        # d/du [exp(δ·(-log u)^θ)] = exp(...) * δ·θ·(-log u)^(θ-1)·(1/u)
+        inv_u_prime = (
+                -delta * theta
+                * np.exp(delta * (-np.log(u)) ** theta)
+                * (-np.log(u)) ** (theta - 1)
+                / u
+        )
+
         deriv = phi_p * inv_u_prime
-        # numerical guard
-        deriv = np.nan_to_num(deriv, nan=0.0, neginf=0.0,
-                              posinf=np.finfo(float).max)
-        # match finite-diff plateau at the extreme left edge
+
+        deriv = np.nan_to_num(deriv, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
         deriv = np.where(u <= 1e-9, 0.5 * deriv, deriv)
         return deriv
 
