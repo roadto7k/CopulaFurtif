@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize
-
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 from CopulaFurtif.core.copulas.domain.estimation.utils import auto_initialize_marginal_params, flatten_theta, adapt_theta, \
     log_likelihood_only_copula, log_likelihood_joint
 
@@ -85,7 +85,7 @@ def pseudo_obs(data):
     return u, v
 
 
-def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
+def cmle(copula : CopulaModel, data, opti_method='SLSQP', options=None, verbose=True):
     """
     Estimate copula parameters via canonical maximum likelihood using pseudo-observations.
 
@@ -126,7 +126,6 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
             if high is not None and x0[i] > high:
                 x0[i] = high - 1e-4
 
-        # Replace None bounds with large finite values for SLSQP compatibility
         clean_bounds = []
         for low, high in bounds:
             low = low if low is not None else -1e10
@@ -137,10 +136,8 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
         print("[CMLE ERROR] Invalid initial parameters or bounds:", e)
         return None
 
-    # === 3. Define log-likelihood ===
     def log_likelihood(params_raw):
         try:
-            # Force into list of floats
             if isinstance(params_raw, (float, int, np.float64)):
                 params = [params_raw]
             else:
@@ -161,14 +158,12 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
                 print("→ Params received:", params_raw)
             return np.inf
 
-    # === 4. Run optimizer ===
     try:
         result = minimize(log_likelihood, x0, method=opti_method, bounds=clean_bounds, options=options)
     except Exception as e:
         print("[CMLE ERROR] Optimizer crashed:", e)
         return None
 
-    # === 5. Handle result ===
     if result.success:
         fitted_params = result.x
         loglik = -result.fun
@@ -184,7 +179,7 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
         return None
 
 
-def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False):
+def fit_mle(data, copula : CopulaModel, marginals, opti_method='SLSQP', known_parameters=False):
     """
     Fit a bivariate copula and marginal distributions by maximum likelihood.
 
@@ -418,7 +413,7 @@ def fit_mle(data, copula, marginals, opti_method='SLSQP', known_parameters=False
 
 
 
-def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=True):
+def fit_ifm(data, copula : CopulaModel, marginals, opti_method='SLSQP', options=None, verbose=True):
     """
     Fit a bivariate copula by Inference Functions for Margins (IFM).
 
@@ -446,7 +441,6 @@ def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=
     if options is None:
         options = {}
 
-    # 1) Fit marginals individually if missing shape/loc/scale
     X, Y = data
 
     if len(X) != len(Y):
@@ -457,53 +451,37 @@ def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=
         dist = marg["distribution"]
         xvals = data[i]
 
-        # Gather known shape/loc/scale
         shape_keys = [k for k in marg if k not in ("distribution", "loc", "scale")]
         known_shape_params = [marg[k] for k in shape_keys]
         loc_ = marg.get("loc", None)
         scale_ = marg.get("scale", None)
 
-        # If any of them are missing => we do a dist.fit
-        # If user gave shape and loc/scale => we assume it's fully known
-        # If user only partially gave shape => it's a bit ambiguous
-        # => We'll do a quick check: if "shape_keys" doesn't match the distribution's needed shapes, we still do fit
         needs_fit = False
 
-        # Check if we have a full specification for shape params
-        # For example, Beta needs 2 shape params (a,b). If we only have 1, or none, we do fit.
-        # We can't easily parse it from scipy, so we'll just guess from dist.shapes if it exists
         if hasattr(dist, "shapes") and dist.shapes is not None:
-            # e.g. for Beta: shapes='a, b' => 2 shape params needed
             shape_names = [s.strip() for s in dist.shapes.split(',')]
             if len(shape_names) != len(shape_keys):
                 needs_fit = True
 
-        # Check loc/scale
         if loc_ is None or scale_ is None:
             needs_fit = True
 
-        # If we need to fit, do it now
         if needs_fit:
-            # dist.fit returns (shapes..., loc, scale)
             fit_res = dist.fit(xvals)
-            # We'll parse them out. The number of shape params depends on dist.shapes
             if hasattr(dist, "shapes") and dist.shapes is not None:
                 shape_count = len(dist.shapes.split(','))
                 shape_vals = fit_res[:shape_count]
                 loc_val = fit_res[shape_count]
                 scale_val = fit_res[shape_count + 1]
             else:
-                # if shapes is None => no shape param => typical for e.g. norm
                 shape_vals = []
                 loc_val = fit_res[0]
                 scale_val = fit_res[1]
 
-            # Overwrite the dict with the newly fitted params
-            # If user had partially provided shape, we overwrite everything
+
             marg_final = {
                 "distribution": dist
             }
-            # put shape i in the dict with some name. We can't be sure of the name so we'll do shape_0, shape_1, ...
             for j, sv in enumerate(shape_vals):
                 marg_final[f"shape_{j}"] = sv
             marg_final["loc"] = loc_val
@@ -511,30 +489,22 @@ def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=
 
             fitted_marginals.append(marg_final)
         else:
-            # We trust the user-provided shape, loc, scale as known
-            # Just store them in a cleaned-up dict
             marg_final = {"distribution": dist}
-            # shapes
             for k in shape_keys:
                 marg_final[k] = marg[k]
             marg_final["loc"] = loc_ if loc_ is not None else 0.0
             marg_final["scale"] = scale_ if scale_ is not None else 1.0
             fitted_marginals.append(marg_final)
 
-    # 2) Build the pseudo-observations (U, V) from fitted marginals
-    #    For each margin i => CDF_i(X_i,...)
-    #    Then MLE only on the copula with these uniform (U, V).
     try:
         m0, m1 = fitted_marginals
         dist0, dist1 = m0["distribution"], m1["distribution"]
 
-        # Gather final shape/loc/scale for margin 0
         shape0_keys = [k for k in m0 if k not in ("distribution", "loc", "scale")]
         shape0_vals = [m0[k] for k in shape0_keys]
         loc0 = m0["loc"]
         scale0 = m0["scale"]
 
-        # Gather final shape/loc/scale for margin 1
         shape1_keys = [k for k in m1 if k not in ("distribution", "loc", "scale")]
         shape1_vals = [m1[k] for k in shape1_keys]
         loc1 = m1["loc"]
@@ -547,10 +517,8 @@ def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=
         U = np.clip(U, eps, 1 - eps)
         V = np.clip(V, eps, 1 - eps)
 
-        # 3) Fit the copula by MLE on (U, V)
         def neg_log_likelihood(theta):
             pdf_vals = copula.get_pdf(U, V, theta)
-            # handle invalid pdf
             if np.any(pdf_vals <= 0) or np.any(np.isnan(pdf_vals)):
                 return np.inf
             return -np.sum(np.log(pdf_vals))
@@ -558,7 +526,6 @@ def fit_ifm(data, copula, marginals, opti_method='SLSQP', options=None, verbose=
         x0 = np.array(copula.get_parameters(), dtype=float)
         bounds = getattr(copula, "bounds_param", None) or [(None, None)] * len(x0)
 
-        # Replace None with large finite for numeric stability
         clean_bounds = []
         for b in bounds:
             low, high = b

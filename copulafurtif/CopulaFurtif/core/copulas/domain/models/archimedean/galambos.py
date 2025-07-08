@@ -28,9 +28,6 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Galambos Copula"
         self.type = "galambos"
-        # self.bounds_param = [(0.01, 10.0)]  # [theta]
-        # self.param_names = ["theta"]
-        # self.parameters = [1.5]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([1.5], [(1e-4, 50.0)], ["delta"]))
 

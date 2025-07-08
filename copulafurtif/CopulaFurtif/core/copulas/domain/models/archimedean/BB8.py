@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import root_scalar
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -24,11 +24,9 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB8 Copula (Durante)"
         self.type = "bb8"
-        self.bounds_param = [(1.0, None), (0.0, 1.0)]  # [theta, delta]
-        self.param_names = ["theta", "delta"]
-        self.parameters = [2.0, 0.7]
         self.default_optim_method = "Powell"
-
+        self.init_parameters(CopulaParameters([2.0, 0.7], [(1.0, np.inf), (0.0, 1.0)], ["theta", "delta"]))
+        
     def get_cdf(self, u, v, param=None):
         """
         Evaluate the BB8 copula cumulative distribution function at (u, v).
@@ -36,14 +34,14 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: CDF value C(u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -60,14 +58,14 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Approximate PDF c(u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-6
         c = self.get_cdf
         return (
@@ -82,14 +80,14 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Approximate ∂C/∂u at (u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-6
         c = self.get_cdf
         return (c(u+eps, v, param) - c(u, v, param)) / eps
@@ -101,14 +99,14 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Approximate ∂C/∂v at (u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-6
         c = self.get_cdf
         return (c(u, v+eps, param) - c(u, v, param)) / eps
@@ -120,7 +118,7 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Conditioning value of U in (0,1).
             v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Conditional CDF of V given U.
@@ -135,7 +133,7 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Value of U in (0,1).
             v (float or array-like): Conditioning value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Conditional CDF of U given V.
@@ -149,14 +147,14 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             n (int): Number of samples to generate.
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             numpy.ndarray: Array of shape (n, 2) with uniform samples on [0,1]^2.
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         samples = np.empty((n, 2))
         eps = 1e-6
         for i in range(n):
@@ -174,14 +172,14 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the lower tail dependence coefficient (LTDC) for the BB8 copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float: LTDC value = lim_{u→0} C(u,u)/u.
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         u = 1e-6
         return self.get_cdf(u, u, param) / u
 
@@ -190,14 +188,14 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the upper tail dependence coefficient (UTDC) for the BB8 copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float: UTDC value = lim_{u→1} [1 − 2u + C(u,u)]/(1−u).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         u = 1.0 - 1e-6
         return (1 - 2*u + self.get_cdf(u, u, param)) / (1 - u)
 
@@ -223,7 +221,7 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         # unpack parameters and basic validation
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         if theta <= 1 or not (0 < delta < 1):
             raise ValueError("BB8 requires θ>1 and 0<δ<1")

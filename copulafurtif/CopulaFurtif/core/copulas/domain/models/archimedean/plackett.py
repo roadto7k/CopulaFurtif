@@ -29,9 +29,6 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Plackett Copula"
         self.type = "plackett"
-        # self.bounds_param = [(0.01, 100.0)]  # [theta]
-        # self.param_names = ["theta"]
-        # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([2.0],  [(0.01, 100.0)],["theta"]))
 

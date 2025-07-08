@@ -58,11 +58,11 @@ def run_axiom_test(copula_class, params):
     all_ok = True
     for axiom, passed in results.items():
         if not passed:
-            print(f"❌ {cop.name} | Param: {params} | Failed Axiom: {axiom}")
+            print(f"❌ {cop.get_name()} | Param: {params} | Failed Axiom: {axiom}")
             all_ok = False
 
     if all_ok:
-        print(f"✅ {cop.name} passed all axioms.")
+        print(f"✅ {cop.get_name()} passed all axioms.")
 
 if __name__ == "__main__":
     print("=== Running copula axiom checks ===\n")

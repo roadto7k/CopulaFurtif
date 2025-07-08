@@ -28,9 +28,6 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Joe Copula"
         self.type = "joe"
-        # self.bounds_param = [(1.01, 30.0)]  # [theta]
-        # self.param_names = ["theta"]
-        # self.parameters = [2.0]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([2.0],[(1.01, 30.0)] , ["theta"]))
 

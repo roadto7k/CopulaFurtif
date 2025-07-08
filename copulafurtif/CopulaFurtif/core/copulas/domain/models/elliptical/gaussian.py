@@ -335,7 +335,7 @@ def main():
     gaussian_copula.set_names(["correlation_coefficient"])
 
     print("Nouveaux bounds:", gaussian_copula.get_bounds())
-    print("Nouveaux noms:", gaussian_copula.get_names())
+    print("Nouveaux noms:", gaussian_copula.get_parameters_names())
 
     try:
         gaussian_copula.set_bounds([(-1.1, 1.1)])

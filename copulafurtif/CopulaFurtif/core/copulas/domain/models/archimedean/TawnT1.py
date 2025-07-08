@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import root_scalar
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -21,25 +21,23 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Tawn Type-1 Copula"
         self.type = "tawn1"
-        self.bounds_param = [(1.0, None), (0.0, 1.0)]  # [theta, delta]
-        self.param_names = ["theta", "delta"]
-        self.parameters = [2.0, 0.5]
         self.default_optim_method = "Powell"
-
+        self.init_parameters(CopulaParameters([2.0, 0.5],[(1.0, None), (0.0, 1.0)] , ["theta", "delta"]))
+        
     def _A(self, t, param=None):
         """
         Compute the dependence function A(t) for the copula.
 
         Args:
             t (float or array-like): Proportion x/(x+y) on [0,1].
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of A(t) = (1−β)t + ((1−t)^θ + (βt)^θ)^(1/θ).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, beta = param
         return (1 - beta) * t + ((1 - t)**theta + (beta * t)**theta)**(1.0 / theta)
 
@@ -49,14 +47,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             t (float or array-like): Proportion x/(x+y) on [0,1].
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of A′(t).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, beta = param
         h = (1 - t)**theta + (beta * t)**theta
         hp = -theta * (1 - t)**(theta - 1) + theta * beta * (beta * t)**(theta - 1)
@@ -68,14 +66,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             t (float or array-like): Proportion x/(x+y) on [0,1].
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of A″(t).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, beta = param
         h = (1 - t)**theta + (beta * t)**theta
         hp = -theta * (1 - t)**(theta - 1) + theta * beta * (beta * t)**(theta - 1)
@@ -91,14 +89,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: CDF value C(u, v) = exp(−(x+y) A(x/(x+y))).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
@@ -114,14 +112,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: PDF value c(u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
@@ -144,14 +142,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of ∂C/∂u.
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         x, y = -np.log(u), -np.log(v)
         s = x + y
         t = x / s
@@ -167,14 +165,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of ∂C/∂v.
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         x, y = -np.log(u), -np.log(v)
         s = x + y
         t = x / s
@@ -190,7 +188,7 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Conditioning value of U in (0,1).
             v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Conditional CDF of V given U.
@@ -205,7 +203,7 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Value of U in (0,1).
             v (float or array-like): Conditioning value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Conditional CDF of U given V.
@@ -219,14 +217,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             n (int): Number of samples to generate.
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             numpy.ndarray: Array of shape (n, 2) with uniform samples on [0,1]^2.
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         u = np.random.rand(n)
         v = np.empty(n)
         eps = 1e-6
@@ -244,14 +242,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute Kendall’s tau implied by the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float: Theoretical Kendall’s tau = 1 − 4∫₀¹ A(t) dt.
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         integral, _ = quad(lambda t: self._A(t, param), 0.0, 1.0)
         return 1.0 - 4.0 * integral
 
@@ -260,7 +258,7 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the lower tail dependence coefficient (LTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float: LTDC value (0.0 for this copula).
@@ -273,14 +271,14 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the upper tail dependence coefficient (UTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, beta). Defaults to self.get_parameters().
 
         Returns:
             float: UTDC value = 2 − 2^(1/θ).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return 2.0 - 2.0**(1.0 / theta)
 

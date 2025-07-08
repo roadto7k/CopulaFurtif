@@ -1,9 +1,10 @@
 from scipy.optimize import minimize
 from CopulaFurtif.core.copulas.domain.estimation.utils import pseudo_obs
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 import numpy as np
 
 
-def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
+def cmle(copula : CopulaModel, data, opti_method='SLSQP', options=None, verbose=True):
     """
     Estimate copula parameters using canonical maximum likelihood.
 

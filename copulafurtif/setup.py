@@ -19,7 +19,8 @@ setup(
         "pandas",
         "numpy",
         "scipy",
-        "yfinance"
+        "yfinance",
+        "sympy"
     ],
     python_requires=">=3.9",
 

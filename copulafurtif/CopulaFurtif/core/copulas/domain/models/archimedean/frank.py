@@ -30,9 +30,6 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Frank Copula"
         self.type = "frank"
-        # self.bounds_param = [(-35.0, 35.0)]  # [theta]
-        # self.param_names = ["theta"]
-        # self.parameters = [5.0]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([5.0],  [(-35.0, 35.0)], ["theta"]))
 

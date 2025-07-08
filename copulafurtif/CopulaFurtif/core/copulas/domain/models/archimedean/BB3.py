@@ -25,7 +25,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "bb3"
         # self.bounds_param = [(1e-6, 30), (1.0, 5.0)] # [d, q]
         # self.param_names = ["d", "q"] # d = δ, q = θ
-        # self.parameters = [2.0, 1.2] # safe
+        # self.get_parameters() = [2.0, 1.2] # safe
         self.default_optim_method = "Powell"
         self.init_parameters(CopulaParameters([2, 1.5], [(1.0, 10.0),(0.05, 10.0) ], ["theta", "delta"]))
 
@@ -36,7 +36,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             s (float or array-like): Input to the generator.
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of h(s).
@@ -51,7 +51,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             s (float or array-like): Input to the generator.
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of hʼ(s).
@@ -67,7 +67,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             s (float or array-like): Input to the generator.
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of h″(s).
@@ -88,7 +88,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: CDF value C(u, v).
@@ -110,7 +110,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: PDF value c(u, v).
@@ -234,7 +234,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the lower tail dependence coefficient (LTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float: LTDC value
@@ -247,7 +247,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the upper tail dependence coefficient (UTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float: UTDC value (2 − 2^(1/q)).
@@ -263,7 +263,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or numpy.ndarray: Value of ∂C/∂u at (u,v).
@@ -303,7 +303,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Conditioning value of U in (0,1).
             v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.get_parameters().
 
         Returns:
             float or numpy.ndarray: Conditional CDF of V given U.
@@ -318,7 +318,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Conditioning value of U in (0,1).
             v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.get_parameters().
 
         Returns:
             float or numpy.ndarray: Conditional CDF of V given U.
@@ -333,7 +333,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Conditioning value of U in (0,1).
             v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.get_parameters().
 
         Returns:
             float or numpy.ndarray: Conditional CDF of V given U.

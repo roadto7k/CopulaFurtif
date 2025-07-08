@@ -26,9 +26,6 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Tawn Copula"
         self.type = "tawn"
-        self.bounds_param = [(1.01, 5.0), (0.0, 1.0)]  # [theta, delta]
-        self.param_names = ["theta", "delta"]
-        # self.parameters = [2.0, 0.5]
         self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters([2.0, 0.5],[(1.01, 5.0), (0.0, 1.0)] , ["theta", "delta"]))
 

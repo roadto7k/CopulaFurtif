@@ -148,7 +148,7 @@ class CopulaModel(ABC):
         self._parameters = None
         self.log_likelihood_ = None
         self.n_obs = None
-
+        self.name = ""
     # @property
     # def parameters(self) -> np.ndarray:
     #     """Return parameters as numpy array."""
@@ -190,12 +190,14 @@ class CopulaModel(ABC):
     def set_bounds(self, bounds):
         self._parameters.set_bounds(bounds)
 
-    def get_names(self):
+    def get_parameters_names(self):
         return self._parameters.get_names()
 
     def set_names(self, names):
         self._parameters.set_names(names)
 
+    def get_name(self):
+        return self.name
 
     def get_log_likelihood(self):
         return self.log_likelihood_

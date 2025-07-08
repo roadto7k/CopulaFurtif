@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import beta, lognorm
 # from CopulaFurtif.core.copulas.infrastructure.registry import register_all_copulas
-from copulafurtif.CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm
+from CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm
 from CopulaFurtif.copulas import CopulaFactory, CopulaType
 from CopulaFurtif.visualization import MatplotlibCopulaVisualizer
 from CopulaFurtif.copulas import CopulaFitter

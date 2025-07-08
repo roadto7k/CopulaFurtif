@@ -100,7 +100,7 @@ def plot_pdf(copula : CopulaModel, plot_type: Plot_type, Nsplit: int = 50, level
 
     U, V = np.meshgrid(np.linspace(lo, hi, Nsplit), np.linspace(lo, hi, Nsplit))
     Z = np.array([
-        copula.get_pdf(u, v, copula.get_parameters())
+        copula.get_pdf(u, v)
         for u, v in zip(U.ravel(), V.ravel())
     ]).reshape(U.shape)
     title = f"{copula.name} Copula PDF ({plot_type})"
@@ -218,7 +218,7 @@ def plot_mpdf(copula : CopulaModel, margins, plot_type: Plot_type, Nsplit: int =
     U = dist1.cdf(X, loc=loc1, scale=scale1)
     V = dist2.cdf(Y, loc=loc2, scale=scale2)
     Zc = np.array([
-        copula.get_pdf(u, v, copula.get_parameters())
+        copula.get_pdf(u, v)
         for u, v in zip(U.ravel(), V.ravel())
     ]).reshape(U.shape)
     f1 = dist1.pdf(X, loc=loc1, scale=scale1)

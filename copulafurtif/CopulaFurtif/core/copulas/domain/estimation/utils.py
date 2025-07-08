@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.stats as stats
 from scipy.stats import rv_continuous
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 
 def auto_initialize_marginal_params(data, dist_name):
     """
@@ -61,7 +62,7 @@ def auto_initialize_marginal_params(data, dist_name):
 
     return param_dict
 
-def adapt_theta(theta_array, copula):
+def adapt_theta(theta_array, copula : CopulaModel):
     """
     Convert a flattened array of parameters back to the copula's required format.
 
@@ -73,12 +74,12 @@ def adapt_theta(theta_array, copula):
         tuple or list: Parameters formatted to match copula.parameters.
     """
 
-    if isinstance(copula.parameters, tuple):
-        return tuple(theta_array[:len(copula.parameters)])
-    elif isinstance(copula.parameters, np.ndarray) and copula.parameters.shape == ():
+    if isinstance(copula.get_parameters(), tuple):
+        return tuple(theta_array[:len(copula.get_parameters())])
+    elif isinstance(copula.get_parameters(), np.ndarray) and copula.get_parameters().shape == ():
         return [theta_array[0]]
     else:
-        return list(theta_array[:len(copula.parameters)])
+        return list(theta_array[:len(copula.get_parameters())])
 
 def flatten_theta(param):
     """
@@ -98,7 +99,7 @@ def flatten_theta(param):
         return list(param)
 
 
-def log_likelihood_only_copula(theta_array, copula, X, Y, marginals, adapt_theta_func):
+def log_likelihood_only_copula(theta_array, copula : CopulaModel, X, Y, marginals, adapt_theta_func):
     """
     Compute the negative log-likelihood for the copula alone assuming fixed marginals.
 
@@ -145,7 +146,7 @@ def log_likelihood_only_copula(theta_array, copula, X, Y, marginals, adapt_theta
 
 
 def log_likelihood_joint(param_vec,
-                         copula,
+                         copula : CopulaModel,
                          X, Y,
                          marginals,
                          margin_shapes_count,

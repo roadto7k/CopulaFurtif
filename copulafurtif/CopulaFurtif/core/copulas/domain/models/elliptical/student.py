@@ -34,12 +34,12 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Student Copula"
         self.type = "student"
-        self.bounds_param = [(-0.999, 0.999), (2.01, 30.0)] 
-        self.param_names = ["rho", "nu"]
+        # self.bounds_param = [(-0.999, 0.999), (2.01, 30.0)] 
+        # self.param_names = ["rho", "nu"]
         self.parameters = [0.5, 4.0] 
         self.default_optim_method = "SLSQP"
         self.n_nodes = 64
-
+        self.init_parameters(CopulaParameters([0.5, 4.0],[(-0.999, 0.999), (2.01, 30.0)], ["rho", "nu"] ))
     def get_cdf(self, u, v, param=None):
         """Numerically compute the CDF C(u,v) using Gauss-Laguerre quadrature.
 

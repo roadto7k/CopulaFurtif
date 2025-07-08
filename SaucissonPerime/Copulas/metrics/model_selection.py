@@ -42,7 +42,7 @@ def copula_diagnostics(data, copulas, verbose=True, quick=True):
 
     for cop in copulas:
         if verbose:
-            print(f"\nEvaluating: {cop.name}")
+            print(f"\nEvaluating: {cop.get_name()}")
 
         # Extract required data
         try:
@@ -50,7 +50,7 @@ def copula_diagnostics(data, copulas, verbose=True, quick=True):
             n_param = len(cop.bounds_param)
             n_obs = cop.n_obs
         except Exception as e:
-            print(f"[ERROR] Missing attributes in copula '{cop.name}': {e}")
+            print(f"[ERROR] Missing attributes in copula '{cop.get_name()}': {e}")
             continue
 
         # Model selection criteria
@@ -65,24 +65,24 @@ def copula_diagnostics(data, copulas, verbose=True, quick=True):
             try:
                 iad = cop.IAD(cdf)
             except Exception as e:
-                print(f"[ERROR] IAD computation failed for {cop.name}: {e}")
+                print(f"[ERROR] IAD computation failed for {cop.get_name()}: {e}")
                 iad = np.nan
 
             try:
                 ad = cop.AD(cdf)
             except Exception as e:
-                print(f"[ERROR] AD computation failed for {cop.name}: {e}")
+                print(f"[ERROR] AD computation failed for {cop.get_name()}: {e}")
                 ad = np.nan
 
         # Kendall's tau
         try:
             tau_error = cop.kendall_tau_error(data)
         except Exception as e:
-            print(f"[ERROR] Kendall's tau error computation failed for {cop.name}: {e}")
+            print(f"[ERROR] Kendall's tau error computation failed for {cop.get_name()}: {e}")
             tau_error = np.nan
 
         results.append({
-            "Copula": cop.name,
+            "Copula": cop.get_name(),
             "Family": cop.type,
             "LogLik": loglik,
             "Params": n_param,

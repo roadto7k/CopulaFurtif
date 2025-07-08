@@ -1,7 +1,9 @@
 import numpy as np
 from scipy.stats import beta, lognorm
+import matplotlib
+matplotlib.use("TkAgg") 
 # from CopulaFurtif.core.copulas.infrastructure.registry import register_all_copulas
-from copulafurtif.CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm, \
+from CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_lognorm, \
     generate_data_beta_lognorm_student
 
 from CopulaFurtif.copulas import CopulaFitter

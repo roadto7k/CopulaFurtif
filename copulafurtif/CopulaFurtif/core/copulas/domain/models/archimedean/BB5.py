@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import root_scalar
 from scipy.integrate import quad
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
@@ -22,11 +22,9 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB5 Copula"
         self.type = "bb5"
-        self.bounds_param = [(1.0, None), (1e-6, None)]  # [theta, delta]
-        self.param_names = ["theta", "delta"]
-        self.parameters = [1.0, 1.0]
         self.default_optim_method = "Powell"
-
+        self.init_parameters(CopulaParameters([1.0, 1.0], [(1.0, None), (1e-6, None)], ["theta", "delta"]))
+        
     def get_cdf(self, u, v, param=None):
         """
         Evaluate the copula cumulative distribution function at (u, v).
@@ -34,14 +32,14 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: CDF value C(u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -63,14 +61,14 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: PDF value c(u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -106,14 +104,14 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute Kendall’s tau implied by the copula via numerical integration.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float: Theoretical Kendall’s tau (1 − 4 ∫₀¹ A(t) dt).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         def A(t):
             return (t ** theta + (1 - t) ** theta - (t ** (-delta * theta) + (1 - t) ** (-delta * theta)) ** (-1.0 / delta)) ** (1.0 / theta)
@@ -127,14 +125,14 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of ∂C/∂u at (u, v).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -157,7 +155,7 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First margin in (0,1).
             v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Value of ∂C/∂v at (u, v).
@@ -172,7 +170,7 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Value of U in (0,1).
             v (float or array-like): Conditioning value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Conditional CDF of U given V.
@@ -187,7 +185,7 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): Conditioning value of U in (0,1).
             v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: Conditional CDF of V given U.
@@ -201,14 +199,14 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Args:
             n (int): Number of samples to generate.
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             numpy.ndarray: Array of shape (n, 2) with uniform samples on [0,1]^2.
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         u = np.random.rand(n)
         v = np.empty(n)
         for i in range(n):
@@ -225,7 +223,7 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the lower tail dependence coefficient (LTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float: LTDC value (0.0 for this copula).
@@ -238,14 +236,14 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute the upper tail dependence coefficient (UTDC) of the copula.
 
         Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.parameters.
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float: UTDC value (2 − 2^(1/δ)).
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
 
         theta = param[0]
         delta = param[1]
