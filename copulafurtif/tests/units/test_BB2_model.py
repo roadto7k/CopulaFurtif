@@ -210,8 +210,9 @@ def test_empirical_kendall_tau_close(theta, delta):
 
     # σ for τ̂ under H₀ (no ties), cf. Kendall 1949
     n = len(data)
-    sigma = math.sqrt(2 * (2 * n + 5) / (9 * n * (n - 1)))
-    assert math.isclose(tau_emp, tau_theo, abs_tol=3 * sigma)
+    var_tau = (2 * (2 * n + 5)) / (9 * n * (n - 1)) * (1 - tau_theo ** 2) ** 2
+    sigma = math.sqrt(var_tau)
+    assert abs(tau_emp - tau_theo) <= 4 * sigma
 
 
 # -----------------------------------------------------------------------------

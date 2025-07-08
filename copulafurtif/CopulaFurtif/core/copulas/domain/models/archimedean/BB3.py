@@ -1,6 +1,9 @@
+import math
+
 import numpy as np
 from numpy.random import default_rng
 from scipy.optimize import brentq
+from scipy.stats import levy_stable
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
@@ -138,96 +141,102 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         pdf = phi_dd * inv_u_prime * inv_v_prime
         return np.nan_to_num(pdf, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
 
+    # def kendall_tau(self, param=None, m: int = 800) -> float:
+    #     """
+    #     Compute Kendall’s tau for the BB3 copula by numerical integration
+    #     over a uniform m×m grid on [0,1]^2:
+    #
+    #         τ = 4 * E[C(U,V)] − 1,   (U,V) ∼ Uniform[0,1]^2
+    #
+    #     Parameters
+    #     ----------
+    #     param : sequence of two floats, optional
+    #         Copula parameters [theta, delta]. If None, the model’s current
+    #         parameters are used.
+    #     m : int, default=800
+    #         Number of grid points per dimension. A larger m increases
+    #         accuracy at the cost of more computation.
+    #
+    #     Returns
+    #     -------
+    #     float
+    #         Theoretical Kendall’s tau in [−1, 1].
+    #     """
+    #     # 1) unpack parameters
+    #     theta, delta = (self.get_parameters() if param is None else param)
+    #
+    #     # 2) build a regular grid avoiding the exact boundaries 0 and 1
+    #     #    by centering points in each cell: (i − 0.5) / m
+    #     grid = (np.arange(1, m + 1, dtype=float) - 0.5) / m
+    #     U, V = np.meshgrid(grid, grid)
+    #
+    #     C = self.get_cdf(U, V, [theta, delta])
+    #     pdf = self.get_pdf(U, V, [theta, delta])
+    #
+    #     # 4) weight C by pdf, average and scale to get τ
+    #     return float(4.0 * (C * pdf).mean() - 1.0)
+
+    # def sample(
+    #         self,
+    #         n: int,
+    #         param=None,
+    #         rng=None,
+    #         eps: float = 1e-8,
+    #         max_iter: int = 30,
+    # ) -> np.ndarray:
+    #     """
+    #     Generate n i.i.d. samples from the BB3 copula via conditional inversion.
+    #
+    #     Parameters
+    #     ----------
+    #     n        : int
+    #         Number of sample pairs.
+    #     param    : sequence-like, optional
+    #         Copula parameters [theta, delta].  If None, uses current parameters.
+    #     rng      : numpy.random.Generator, optional
+    #         Random generator for reproducibility.
+    #     eps      : float
+    #         Clip guard to keep values in (0,1).
+    #     max_iter : int
+    #         Max Newton/bisection iterations inside the inverter.
+    #
+    #     Returns
+    #     -------
+    #     ndarray, shape (n, 2)
+    #         Columns are U and V.
+    #     """
+    #     if rng is None:
+    #         rng = default_rng()
+    #
+    #     theta, delta = self.get_parameters() if param is None else param
+    #
+    #     S = levy_stable.rvs(1 / theta, 1, size=n, random_state=rng)
+    #     # éviter S ≤ 0 (rare artefact num.)
+    #     S = np.where(S <= 0, np.nextafter(0, 1), S)
+    #
+    #     G = rng.gamma(delta, 1.0, size=(n, 2))
+    #     T = (G / S[:, None]) ** (1 / theta)
+    #
+    #     U = np.exp(-T)
+    #
+    #     # === anti-ties : étale en linéaire ===
+    #     mask_low = U < eps
+    #     mask_high = U > 1 - eps
+    #     k_low = mask_low.sum()
+    #     k_high = mask_high.sum()
+    #     # remplace pile par valeurs uniformes dans [0, eps] ou [1-eps, 1-eps/2]
+    #     if k_low:
+    #         U[mask_low] = rng.uniform(0.0, eps, size=k_low)
+    #     if k_high:
+    #         U[mask_high] = rng.uniform(1 - eps, 1 - eps / 2, size=k_high)
+    #
+    #     return U
+
+    def sample(self, n, param=None, rng=None, eps=1e-12):
+        raise NotImplementedError("BB3 sampling not implemented")
+
     def kendall_tau(self, param=None, m: int = 800) -> float:
-        """
-        Compute Kendall’s tau for the BB3 copula by numerical integration
-        over a uniform m×m grid on [0,1]^2:
-
-            τ = 4 * E[C(U,V)] − 1,   (U,V) ∼ Uniform[0,1]^2
-
-        Parameters
-        ----------
-        param : sequence of two floats, optional
-            Copula parameters [theta, delta]. If None, the model’s current
-            parameters are used.
-        m : int, default=800
-            Number of grid points per dimension. A larger m increases
-            accuracy at the cost of more computation.
-
-        Returns
-        -------
-        float
-            Theoretical Kendall’s tau in [−1, 1].
-        """
-        # 1) unpack parameters
-        theta, delta = (self.get_parameters() if param is None else param)
-
-        # 2) build a regular grid avoiding the exact boundaries 0 and 1
-        #    by centering points in each cell: (i − 0.5) / m
-        grid = (np.arange(1, m + 1, dtype=float) - 0.5) / m
-        U, V = np.meshgrid(grid, grid)
-
-        C = self.get_cdf(U, V, [theta, delta])
-        pdf = self.get_pdf(U, V, [theta, delta])
-
-        # 4) weight C by pdf, average and scale to get τ
-        return float(4.0 * (C * pdf).mean() - 1.0)
-
-    def sample(
-            self,
-            n: int,
-            param=None,
-            rng=None,
-            eps: float = 1e-12,
-            max_iter: int = 40,
-    ) -> np.ndarray:
-        """
-        Generate n i.i.d. samples from the BB3 copula via conditional inversion.
-
-        Parameters
-        ----------
-        n        : int
-            Number of sample pairs.
-        param    : sequence-like, optional
-            Copula parameters [theta, delta].  If None, uses current parameters.
-        rng      : numpy.random.Generator, optional
-            Random generator for reproducibility.
-        eps      : float
-            Clip guard to keep values in (0,1).
-        max_iter : int
-            Max Newton/bisection iterations inside the inverter.
-
-        Returns
-        -------
-        ndarray, shape (n, 2)
-            Columns are U and V.
-        """
-        if rng is None:
-            rng = default_rng()
-
-        # unpack parameters
-        theta, delta = (
-            self.get_parameters() if param is None else param
-        )
-
-        # 1) draw uniforms
-        u = rng.random(n)
-        p = rng.random(n)
-
-        # 2) invert ∂C/∂u(u,v) = p  →  v
-        v = np.empty_like(u)
-        for i in range(n):
-            v[i] = brentq(
-                lambda vv: self.conditional_cdf_v_given_u(u[i], vv, [theta, delta]) - p[i],
-                eps,
-                1.0 - eps,
-                maxiter=max_iter,
-            )
-
-        # 3) clip & pack
-        np.clip(u, eps, 1.0 - eps, out=u)
-        np.clip(v, eps, 1.0 - eps, out=v)
-        return np.column_stack((u, v))
+        raise NotImplementedError("BB3 kendall_tau not implemented")
 
     def LTDC(self, param=None):
         """
@@ -368,3 +377,23 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         print(f"[INFO] AD is disabled for {self.name}.")
         return np.nan
+
+if __name__ == "__main__":
+    # Debug harness to identify parameter combos causing NaNs in brentq
+    def debug_sample(theta_list, delta_list, n=1000, seed=42):
+        cop = BB3Copula()
+        rng = default_rng(seed)
+        for theta in theta_list:
+            for delta in delta_list:
+                cop.set_parameters([theta, delta])
+                try:
+                    print(f"Testing theta={theta}, delta={delta}...")
+                    data = cop.sample(n, rng=rng)
+                    print(f"  -> OK for theta={theta}, delta={delta}")
+                except Exception as e:
+                    print(f"  -> Error for theta={theta}, delta={delta}: {e}")
+
+    # Example grid of parameters to test
+    thetas = [3.0]
+    deltas = [2.0]
+    debug_sample(thetas, deltas)

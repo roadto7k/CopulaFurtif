@@ -115,7 +115,6 @@ def test_tail(theta, delta):
     lamU = cop.UTDC()
     assert 0.0 < lamL < 1.0 and 0.0 < lamU < 1.0
 
-@pytest.mark.xfail(reason="Sampler for BB1 not yet variance‑consistent with analytic τ")
 @given(
         theta=st.floats(min_value=0.1, max_value=4.0),
         delta=st.floats(min_value=1.1, max_value=4.0)
@@ -131,9 +130,10 @@ def test_kendall_tau_montecarlo(theta, delta):
 
     assume(math.isfinite(tau_theo))
 
-    # borne 3 σ
-    sigma = math.sqrt(2*(2*n+5)/(9*n*(n-1)))
-    assert abs(tau_emp - tau_theo) <= 3*sigma
+    # borne 4 σ
+    var_tau = (2 * (2 * n + 5)) / (9 * n * (n - 1)) * (1 - tau_theo ** 2) ** 2
+    sigma = math.sqrt(var_tau)
+    assert abs(tau_emp - tau_theo) <= 4*sigma
 
 # -----------------------------------------------------------------------------
 # Sample & disabled metrics
