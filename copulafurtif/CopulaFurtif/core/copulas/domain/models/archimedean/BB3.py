@@ -320,36 +320,6 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def conditional_cdf_u_given_v(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(V ≤ v | U = u).
-
-        Args:
-            u (float or array-like): Conditioning value of U in (0,1).
-            v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.get_parameters().
-
-        Returns:
-            float or numpy.ndarray: Conditional CDF of V given U.
-        """
-
-        return self.partial_derivative_C_wrt_v(u, v, param) / self.partial_derivative_C_wrt_v(1.0, v, param)
-
-    def conditional_cdf_v_given_u(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(V ≤ v | U = u).
-
-        Args:
-            u (float or array-like): Conditioning value of U in (0,1).
-            v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (d, q). Defaults to self.get_parameters().
-
-        Returns:
-            float or numpy.ndarray: Conditional CDF of V given U.
-        """
-
-        return self.partial_derivative_C_wrt_u(u, v, param) / self.partial_derivative_C_wrt_u(u, 1.0, param)
-
     def IAD(self, data):
         """
         Return NaN for the IAD statistic, as it is disabled for this copula.
@@ -377,23 +347,3 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         print(f"[INFO] AD is disabled for {self.name}.")
         return np.nan
-
-if __name__ == "__main__":
-    # Debug harness to identify parameter combos causing NaNs in brentq
-    def debug_sample(theta_list, delta_list, n=1000, seed=42):
-        cop = BB3Copula()
-        rng = default_rng(seed)
-        for theta in theta_list:
-            for delta in delta_list:
-                cop.set_parameters([theta, delta])
-                try:
-                    print(f"Testing theta={theta}, delta={delta}...")
-                    data = cop.sample(n, rng=rng)
-                    print(f"  -> OK for theta={theta}, delta={delta}")
-                except Exception as e:
-                    print(f"  -> Error for theta={theta}, delta={delta}: {e}")
-
-    # Example grid of parameters to test
-    thetas = [3.0]
-    deltas = [2.0]
-    debug_sample(thetas, deltas)

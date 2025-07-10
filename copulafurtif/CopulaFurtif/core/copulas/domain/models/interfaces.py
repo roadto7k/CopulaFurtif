@@ -270,7 +270,7 @@ class CopulaModel(ABC):
         """
         pass
     
-    def partial_derivative_C_wrt_u(self, u, v):
+    def partial_derivative_C_wrt_u(self, u, v, param = None):
         """
         Compute the partial derivative ∂C(u,v)/∂u using numeric or symbolic implementation.
 
@@ -289,7 +289,7 @@ class CopulaModel(ABC):
             return self._parameters.partial_u_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("Partial derivative wrt u not defined symbolically.")
 
-    def partial_derivative_C_wrt_v(self, u, v):
+    def partial_derivative_C_wrt_v(self, u, v, param = None):
         """
         Compute the partial derivative ∂C(u,v)/∂v using numeric or symbolic implementation.
 
@@ -308,30 +308,50 @@ class CopulaModel(ABC):
             return self._parameters.partial_v_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("Partial derivative wrt v not defined symbolically.")
 
-    def conditional_cdf_u_given_v(self, u, v):
+    def conditional_cdf_u_given_v(self, u, v, param, normalize=True):
         """
-        Compute the conditional CDF P(U ≤ u | V = v) via ∂C/∂v.
+        Computes the conditional CDF P(U ≤ u | V = v).
 
         Args:
-            u (float or array-like): Value of U in (0,1).
-            v (float or array-like): Value of V in (0,1).
+            u: U value(s) in (0,1).
+            v: V value(s) in (0,1).
+            param: Copula parameters [theta, delta]. If None, uses self.get_parameters().
+            normalize: If True, divides by ∂C/∂v at u=1 to force CDF=1 at u=1.
 
         Returns:
-            float or numpy.ndarray: Conditional CDF of U given V.
+            The conditional CDF values P(U ≤ u | V = v).
         """
+        # Denominator for normalization (≈1 in theory)
+        duv = self.partial_derivative_C_wrt_v(u, v, param)
+        if normalize:
+            d1v = self.partial_derivative_C_wrt_v(1.0, v, param)
+            # Avoid division by zero
+            return duv / np.where(d1v != 0, d1v, 1.0)
+        return duv
 
-        return self.partial_derivative_C_wrt_v(u, v)
-
-    def conditional_cdf_v_given_u(self, u, v):
+    def conditional_cdf_v_given_u(self, u, v, param, normalize=True):
         """
-        Compute the conditional CDF P(V ≤ v | U = u) via ∂C/∂u.
+        Computes the conditional CDF P(V ≤ v | U = u).
 
         Args:
-            u (float or array-like): Value of U in (0,1).
-            v (float or array-like): Value of V in (0,1).
+            u: U value(s) in (0,1).
+            v: V value(s) in (0,1).
+            param: Copula parameters [theta, delta]. If None, uses self.get_parameters().
+            normalize: If True, divides by ∂C/∂u at v=1 to force CDF=1 at v=1.
 
         Returns:
-            float or numpy.ndarray: Conditional CDF of V given U.
+            The conditional CDF values P(V ≤ v | U = u).
         """
+        duv = self.partial_derivative_C_wrt_u(u, v, param)
+        if normalize:
+            du1 = self.partial_derivative_C_wrt_u(u, 1.0, param)
+            return duv / np.where(du1 != 0, du1, 1.0)
+        return duv
 
-        return self.partial_derivative_C_wrt_u(u, v)
+    def IAD(self, data):
+        print(f"[INFO] IAD is disabled for {self.name}.")
+        return np.nan
+
+    def AD(self, data):
+        print(f"[INFO] AD is disabled for {self.name}.")
+        return np.nan

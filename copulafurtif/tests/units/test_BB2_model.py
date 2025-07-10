@@ -32,6 +32,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB2 import BB2Copula
+import scipy.stats as stx  # optional dependency
 
 
 # -----------------------------------------------------------------------------
@@ -200,7 +201,7 @@ def test_tail_dependence(theta, delta):
 @given(theta=valid_theta(), delta=valid_delta())
 @settings(max_examples=20)
 def test_empirical_kendall_tau_close(theta, delta):
-    import scipy.stats as stx  # optional dependency
+
     c = BB2Copula()
     c.set_parameters([theta, delta])
 

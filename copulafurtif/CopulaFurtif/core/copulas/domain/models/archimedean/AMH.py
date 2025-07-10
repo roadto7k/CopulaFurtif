@@ -238,30 +238,3 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Conditional CDF value.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
-
-    def conditional_cdf_u_given_v(self, u, v, param=None):
-        """Compute the conditional CDF P(U ≤ u | V = v).
-
-        Args:
-            u (float or np.ndarray): U value(s).
-            v (float or np.ndarray): V value(s).
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float or np.ndarray: Conditional CDF value.
-        """
-        return self.partial_derivative_C_wrt_v(u, v, param)
-
-    def conditional_cdf_v_given_u(self, u, v, param=None):
-        """Compute the conditional CDF P(V ≤ v | U = u).
-
-        Args:
-            u (float or np.ndarray): U value(s).
-            v (float or np.ndarray): V value(s).
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float or np.ndarray: Conditional CDF value.
-        """
-        return self.partial_derivative_C_wrt_u(u, v, param)
-

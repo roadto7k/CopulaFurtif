@@ -349,34 +349,6 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def conditional_cdf_u_given_v(self, u, v, param=None):
-        """
-        Compute conditional CDF P(U ≤ u | V = v).
-
-        Args:
-            u (float or np.ndarray): U values.
-            v (float or np.ndarray): V values.
-            param (np.ndarray, optional): Parameters [theta, delta].
-
-        Returns:
-            float or np.ndarray: Conditional CDF values.
-        """
-        return self.partial_derivative_C_wrt_v(u, v, param)
-
-    def conditional_cdf_v_given_u(self, u, v, param=None):
-        """
-        Compute conditional CDF P(V ≤ v | U = u).
-
-        Args:
-            u (float or np.ndarray): U values.
-            v (float or np.ndarray): V values.
-            param (np.ndarray, optional): Parameters [theta, delta].
-
-        Returns:
-            float or np.ndarray: Conditional CDF values.
-        """
-        return self.partial_derivative_C_wrt_u(u, v, param)
-
     def IAD(self, data):
         print(f"[INFO] IAD is disabled for {self.name}.")
         return np.nan

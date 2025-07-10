@@ -231,29 +231,3 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
-
-    def conditional_cdf_u_given_v(self, u, v, param=None):
-        """Compute conditional CDF P(U ≤ u | V = v).
-
-        Args:
-            u (float or np.ndarray): U values.
-            v (float or np.ndarray): V values.
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float or np.ndarray: Conditional CDF values.
-        """
-        return self.partial_derivative_C_wrt_v(u, v, param)
-
-    def conditional_cdf_v_given_u(self, u, v, param=None):
-        """Compute conditional CDF P(V ≤ v | U = u).
-
-        Args:
-            u (float or np.ndarray): U values.
-            v (float or np.ndarray): V values.
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float or np.ndarray: Conditional CDF values.
-        """
-        return self.partial_derivative_C_wrt_u(u, v, param)

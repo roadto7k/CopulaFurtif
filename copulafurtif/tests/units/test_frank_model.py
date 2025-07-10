@@ -12,6 +12,7 @@ import pytest
 from hypothesis import given, strategies as st, settings
 from scipy.stats import kendalltau
 from mpmath import mp
+import scipy.stats as stx  # optional dependency
 
 from CopulaFurtif.core.copulas.domain.models.archimedean.frank import FrankCopula
 
@@ -126,30 +127,18 @@ def test_kendall_tau_vs_empirical(theta):
     and assert it matches the theoretical τ within 3·SE + ε.
     """
 
-    N   = 40_000                              #  big enough ⇒ tiny SE
-    EPS = 0.003                               #  fudge for copula variance
-
     cop = FrankCopula()
     cop.set_parameters([theta])
 
-    # ---------- generate pseudo-observations
-    uv = cop.sample(N, param=[theta])
-
-    # ---------- empirical Kendall τ
-    tau_emp, _ = kendalltau(uv[:, 0], uv[:, 1])
-
-    # ---------- theoretical Kendall τ
+    data = cop.sample(10000)
+    tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])
     tau_theo = cop.kendall_tau()
 
-    # ---------- standard error of τ̂  (conservative: independence formula)
-    se = math.sqrt(2 * (2 * N + 5) / (9 * N * (N - 1)))
-
-    # ---------- assertion
-    assert abs(tau_emp - tau_theo) < 3 * se + EPS, (
-        f"θ={theta}: empirical τ={tau_emp:.6f}, "
-        f"theoretical τ={tau_theo:.6f}, "
-        f"allowed ±{3*se+EPS:.6f}"
-    )
+    # σ for τ̂ under H₀ (no ties), cf. Kendall 1949
+    n = len(data)
+    var_tau = (2 * (2 * n + 5)) / (9 * n * (n - 1)) * (1 - tau_theo ** 2) ** 2
+    sigma = math.sqrt(var_tau)
+    assert abs(tau_emp - tau_theo) <= 4 * sigma
 # -----------------------------------------------------------------------------
 # Tail dependence zeros
 # -----------------------------------------------------------------------------

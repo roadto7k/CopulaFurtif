@@ -154,33 +154,3 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         return self.partial_derivative_C_wrt_u(v, u, param)
-
-    def conditional_cdf_u_given_v(self, u, v, param: np.ndarray = None):
-        """
-        Compute the conditional CDF P(U ≤ u | V = v) for the FGM copula.
-
-        Args:
-            u (float or np.ndarray): Value of U in (0,1).
-            v (float or np.ndarray): Conditioning value of V in (0,1).
-            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
-
-        Returns:
-            float or np.ndarray: Conditional CDF of U given V, equal to ∂C/∂v.
-        """
-
-        return self.partial_derivative_C_wrt_v(u, v, param)
-
-    def conditional_cdf_v_given_u(self, u, v, param: np.ndarray = None):
-        """
-        Compute the conditional CDF P(V ≤ v | U = u) for the FGM copula.
-
-        Args:
-            u (float or np.ndarray): Conditioning value of U in (0,1).
-            v (float or np.ndarray): Value of V in (0,1).
-            param (np.ndarray, optional): Copula parameters [theta]. Defaults to self.parameters.
-
-        Returns:
-            float or np.ndarray: Conditional CDF of V given U, equal to ∂C/∂u.
-        """
-
-        return self.partial_derivative_C_wrt_u(u, v, param)

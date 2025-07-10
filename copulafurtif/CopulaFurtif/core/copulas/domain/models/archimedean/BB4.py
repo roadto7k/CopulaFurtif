@@ -30,7 +30,7 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (mu, delta). Defaults to self.get_parameters().
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: CDF value C(u, v).
@@ -38,16 +38,16 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
-        mu, delta = param
+        theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-        x = u ** (-mu)
-        y = v ** (-mu)
+        x = u ** (-theta)
+        y = v ** (-theta)
         T = (x - 1) ** (-delta) + (y - 1) ** (-delta)
         A = T ** (-1.0 / delta)
         z = x + y - 1.0 - A
-        return z ** (-1.0 / mu)
+        return z ** (-1.0 / theta)
 
     def get_pdf(self, u, v, param=None):
         """
@@ -56,7 +56,7 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Args:
             u (float or array-like): First uniform margin in (0,1).
             v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (mu, delta). Defaults to self.get_parameters().
+            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
             float or np.ndarray: PDF value c(u, v).
@@ -64,20 +64,20 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
-        mu, delta = param
+        theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-        x = u ** (-mu)
-        y = v ** (-mu)
+        x = u ** (-theta)
+        y = v ** (-theta)
         T = (x - 1) ** (-delta) + (y - 1) ** (-delta)
         A = T ** (-1.0 / delta)
         z = x + y - 1.0 - A
-        dzdu = -mu * u ** (-mu - 1) * (1.0 - (x - 1) ** (-delta - 1) * T ** (-1.0 / delta - 1))
-        dzdv = -mu * v ** (-mu - 1) * (1.0 - (y - 1) ** (-delta - 1) * T ** (-1.0 / delta - 1))
-        d2zdudv = -mu**2 * (delta + 1) * u**(-mu - 1) * v**(-mu - 1) * (x - 1)**(-delta - 1) * (y - 1)**(-delta - 1) * T**(-1.0 / delta - 2)
-        dCdz = -1.0 / mu * z ** (-1.0 / mu - 1)
-        d2Cdz2 = (1.0 / mu) * (1.0 / mu + 1.0) * z ** (-1.0 / mu - 2)
+        dzdu = -theta * u ** (-theta - 1) * (1.0 - (x - 1) ** (-delta - 1) * T ** (-1.0 / delta - 1))
+        dzdv = -theta * v ** (-theta - 1) * (1.0 - (y - 1) ** (-delta - 1) * T ** (-1.0 / delta - 1))
+        d2zdudv = -theta**2 * (delta + 1) * u**(-theta - 1) * v**(-theta - 1) * (x - 1)**(-delta - 1) * (y - 1)**(-delta - 1) * T**(-1.0 / delta - 2)
+        dCdz = -1.0 / theta * z ** (-1.0 / theta - 1)
+        d2Cdz2 = (1.0 / theta) * (1.0 / theta + 1.0) * z ** (-1.0 / theta - 2)
         return d2Cdz2 * dzdu * dzdv + dCdz * d2zdudv
 
     def kendall_tau(self, param=None, n=201):
@@ -136,8 +136,8 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
-        mu, delta = param
-        return (2.0 - 2.0 ** (-1.0 / delta)) ** (-1.0 / mu)
+        theta, delta = param
+        return (2.0 - 2.0 ** (-1.0 / delta)) ** (-1.0 / theta)
 
     def UTDC(self, param=None):
         """
@@ -147,13 +147,13 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param (Sequence[float], optional): Copula parameters (mu, delta). Defaults to self.get_parameters().
 
         Returns:
-            float: UTDC value (2 − 2^(1/δ)).
+            float: UTDC value (2^(1/δ)).
         """
 
         if param is None:
             param = self.get_parameters()
         delta = param[1]
-        return 2.0 - 2.0 ** (-1.0 / delta)
+        return 2.0 ** (-1.0 / delta)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
@@ -195,36 +195,6 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         return self.partial_derivative_C_wrt_u(v, u, param)
-
-    def conditional_cdf_u_given_v(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(U ≤ u | V = v).
-
-        Args:
-            u (float or array-like): Value of U in (0,1).
-            v (float or array-like): Conditioning value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (mu, delta). Defaults to self.get_parameters().
-
-        Returns:
-            float or np.ndarray: Conditional CDF of U given V.
-        """
-
-        return self.partial_derivative_C_wrt_v(u, v, param) / self.partial_derivative_C_wrt_v(1.0, v, param)
-
-    def conditional_cdf_v_given_u(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(V ≤ v | U = u).
-
-        Args:
-            u (float or array-like): Conditioning value of U in (0,1).
-            v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (mu, delta). Defaults to self.get_parameters().
-
-        Returns:
-            float or np.ndarray: Conditional CDF of V given U.
-        """
-
-        return self.partial_derivative_C_wrt_u(u, v, param) / self.partial_derivative_C_wrt_u(u, 1.0, param)
 
     def IAD(self, data):
         """
