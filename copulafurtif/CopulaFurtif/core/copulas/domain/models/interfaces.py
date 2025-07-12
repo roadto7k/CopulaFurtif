@@ -24,6 +24,8 @@ from abc import ABC, abstractmethod
 import numpy as np
 from sympy import symbols, diff, pretty
 from sympy.utilities.lambdify import lambdify
+import autograd.numpy as anp
+from autograd import grad, hessian
 from scipy.stats import norm, multivariate_normal
 
 
@@ -227,7 +229,7 @@ class CopulaModel(ABC):
             return self._parameters.cdf_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("CDF not defined symbolically. Override get_cdf method.")
 
-    def get_pdf(self, u, v):
+    def get_pdf(self, u, v, param = None):
         """
         Compute the probability density function c(u, v).
 
@@ -239,9 +241,11 @@ class CopulaModel(ABC):
         Returns:
             float or np.ndarray: Value(s) of the PDF.
         """
-        if self._parameters.pdf_numeric:
-            return self._parameters.pdf_numeric(u, v, *self.get_parameters())
-        raise NotImplementedError("PDF not defined symbolically. Override get_pdf method.")
+        if param is None:
+            param = self.get_parameters()
+
+        H = hessian(lambda uu, vv: self.get_cdf(uu, vv, param))
+        return float(H(u, v)[0, 1])
 
     @abstractmethod
     def kendall_tau(self, param=None):
@@ -285,9 +289,9 @@ class CopulaModel(ABC):
             NotImplementedError: If no numeric implementation is provided.
         """
 
-        if self._parameters.partial_u_numeric:
-            return self._parameters.partial_u_numeric(u, v, *self.get_parameters())
-        raise NotImplementedError("Partial derivative wrt u not defined symbolically.")
+        if param is None:
+            param = self.get_parameters()
+        return float(grad(lambda uu: self.get_cdf(uu, v, param))(u))
 
     def partial_derivative_C_wrt_v(self, u, v, param = None):
         """
@@ -304,9 +308,7 @@ class CopulaModel(ABC):
             NotImplementedError: If no numeric implementation is provided.
         """
 
-        if self._parameters.partial_v_numeric:
-            return self._parameters.partial_v_numeric(u, v, *self.get_parameters())
-        raise NotImplementedError("Partial derivative wrt v not defined symbolically.")
+        return self.partial_derivative_C_wrt_u(v, u, param)
 
     def conditional_cdf_u_given_v(self, u, v, param, normalize=True):
         """
