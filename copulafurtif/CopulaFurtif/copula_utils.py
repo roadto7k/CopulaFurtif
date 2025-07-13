@@ -1,1 +1,2 @@
 from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
+from CopulaFurtif.core.copulas.domain.estimation.tail_dependance import compare_tail_dependence
