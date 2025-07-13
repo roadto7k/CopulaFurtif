@@ -1,9 +1,27 @@
 import numpy as np
-from scipy.optimize import brentq
-from scipy.integrate import quad
+from numpy import log as _np_log, exp as _np_exp
+
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
-from scipy.special import beta as beta_fn
+
+_FLOAT_MIN = 1e-308  # min positive normal float64
+_FLOAT_MAX_LOG = 709.0  # np.exp(709) ~ 8e307 < max float64
+_FLOAT_MIN_LOG = -745.0  # np.exp(-745) ~ 5e-324 > 0
+
+
+def _safe_log(x):
+    """Natural log, inputs clipped away from 0."""
+    return _np_log(np.clip(x, _FLOAT_MIN, None))
+
+
+def _safe_exp(log_x):
+    """Exp of log_x with clipping to keep inside float64 range."""
+    return _np_exp(np.clip(log_x, _FLOAT_MIN_LOG, _FLOAT_MAX_LOG))
+
+
+def _safe_pow(base, exponent):
+    """Stable power via exp(exponent * log(base)). base must be > 0."""
+    return _safe_exp(exponent * _safe_log(base))
 
 
 class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -24,9 +42,10 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB7 Copula"
         self.type = "bb7"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([1.0, 1.0], [(1e-6, None), (1e-6, None)], ["theta", "delta"]))
+        self.init_parameters(CopulaParameters([2.0, 2.0], [(1e-6, np.inf), (1e-6, np.inf)], ["theta", "delta"]))
 
-    def _phi(self, t, theta, delta):
+    @staticmethod
+    def _phi(t, theta, delta):
         """
         Compute the φ-transform for the BB7 copula.
 
@@ -40,10 +59,34 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         t = np.clip(t, 1e-12, 1 - 1e-12)
-        phiJ = 1.0 - (1.0 - t)**theta
-        return (phiJ**(-delta) - 1.0) / delta
+        log_one_minus_t = _safe_log(1.0 - t)  # ≤0
+        # log((1-t)^θ) = θ*log(1-t)
+        log_pow = theta * log_one_minus_t
+        pow_term = _safe_exp(log_pow)  # (1-t)^θ, in (0,1)
+        phiJ = 1.0 - pow_term  # ∈(0,1)
+        log_phiJ = _safe_log(phiJ)
+        phiJ_neg_delta = _safe_exp(-delta * log_phiJ)
+        return (phiJ_neg_delta - 1.0) / delta
 
-    def _phi_inv(self, s, theta, delta):
+    @staticmethod
+    def _phi_prime(t, theta, delta):
+        """First derivative φ'(t)."""
+        t = np.clip(t, 1e-12, 1 - 1e-12)
+        log_one_minus_t = _safe_log(1.0 - t)
+        log_pow = theta * log_one_minus_t  # log((1-t)^θ)
+        pow_term = _safe_exp(log_pow)  # (1-t)^θ
+        phiJ = 1.0 - pow_term
+        log_phiJ = _safe_log(phiJ)
+
+        # g'(t) for g(t)=phiJ
+        g_prime = theta * _safe_exp((theta - 1.0) * log_one_minus_t) * (-1.0)
+        # φ'(t) = -phiJ^{-δ-1} * g'(t)
+        phi_prime = -_safe_exp((-delta - 1.0) * log_phiJ) * g_prime
+        # ensure positivity (numerically phi_prime>0)
+        return np.abs(phi_prime)
+
+    @staticmethod
+    def _phi_inv(s, theta, delta):
         """
         Compute the inverse φ-transform for the BB7 copula.
 
@@ -57,8 +100,36 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         s = np.maximum(s, 0.0)
-        phiC_inv = (1.0 + delta * s)**(-1.0 / delta)
-        return 1.0 - (1.0 - phiC_inv)**(1.0 / theta)
+        temp = _safe_pow(1.0 + delta * s, -1.0 / delta)  # (1+δs)^{-1/δ}
+        one_minus_temp = 1.0 - temp
+        # Return 1 - (1 - temp)^{1/θ}
+        return 1.0 - _safe_pow(one_minus_temp, 1.0 / theta)
+
+    @staticmethod
+    def _psi(s, theta, delta):
+        return BB7Copula._phi_inv(s, theta, delta)
+
+    @staticmethod
+    def _psi_prime(s, theta, delta):
+        s = np.maximum(s, 0.0)
+        # reuse intermediate values for efficiency
+        temp = _safe_pow(1.0 + delta * s, -1.0 / delta)
+        one_minus_temp = 1.0 - temp
+        dtemp_ds = -(1.0 + delta * s) ** (-1.0 / delta - 1.0)
+        return (1.0 / theta) * _safe_pow(one_minus_temp, 1.0 / theta - 1.0) * (-dtemp_ds)
+
+    @staticmethod
+    def _psi_second(s, theta, delta):
+        """Second derivative ψ'' needed for joint density."""
+        s = np.maximum(s, 0.0)
+        temp = _safe_pow(1.0 + delta * s, -1.0 / delta)
+        one_minus_temp = 1.0 - temp
+        dtemp_ds = -(1.0 + delta * s) ** (-1.0 / delta - 1.0)
+        d2temp_ds2 = (1.0 / delta + 1.0) * delta * (1.0 + delta * s) ** (-1.0 / delta - 2.0)
+
+        term1 = (1.0 / theta) * (1.0 / theta - 1.0) * _safe_pow(one_minus_temp, 1.0 / theta - 2.0) * (dtemp_ds ** 2)
+        term2 = (1.0 / theta) * _safe_pow(one_minus_temp, 1.0 / theta - 1.0) * (-d2temp_ds2)
+        return term1 + term2
 
     def get_cdf(self, u, v, param=None):
         """
@@ -76,9 +147,8 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta, delta = param
-        phi_u = self._phi(u, theta, delta)
-        phi_v = self._phi(v, theta, delta)
-        return self._phi_inv(phi_u + phi_v, theta, delta)
+        s = self._phi(u, theta, delta) + self._phi(v, theta, delta)
+        return self._psi(s, theta, delta)
 
     def get_pdf(self, u, v, param=None):
         """
@@ -95,16 +165,37 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
-        eps = 1e-6
-        c = self.get_cdf
-        return (
-            c(u+eps, v+eps, param) - c(u+eps, v-eps, param)
-            - c(u-eps, v+eps, param) + c(u-eps, v-eps, param)
-        ) / (4.0 * eps**2)
+        theta, delta = param
+
+        # compute φ, φ', ψ''
+        phi_u = self._phi(u, theta, delta)
+        phi_v = self._phi(v, theta, delta)
+        s = phi_u + phi_v
+        log_phi_u_prime = _safe_log(self._phi_prime(u, theta, delta))
+        log_phi_v_prime = _safe_log(self._phi_prime(v, theta, delta))
+        log_psi_second = _safe_log(np.abs(self._psi_second(s, theta, delta)))
+
+        log_pdf = log_psi_second + log_phi_u_prime + log_phi_v_prime
+        pdf = _safe_exp(log_pdf)
+        return np.maximum(pdf, 0.0)
+
+    def kendall_tau(self, param=None):
+        """
+        Placeholder for Kendall's tau.
+        Currently unimplemented; returns NaN.
+        """
+        return np.nan
+
+    def sample(self, n, random_state=None):
+        """
+        Placeholder sampler.
+        Not implemented for BB7Copula.
+        """
+        raise NotImplementedError("Sampling not implemented for BB7Copula")
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
-        Approximate the partial derivative ∂C(u,v)/∂u for the BB7 copula via finite differences.
+        The partial derivative ∂C(u,v)/∂u for the BB7 copula.
 
         Args:
             u (float or array-like): First uniform margin in (0,1).
@@ -117,9 +208,17 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
-        eps = 1e-6
-        c = self.get_cdf
-        return (c(u+eps, v, param) - c(u-eps, v, param)) / (2.0 * eps)
+        theta, delta = param
+        # φ(u), φ(v)
+        phi_u = self._phi(u, theta, delta)
+        phi_v = self._phi(v, theta, delta)
+        s = phi_u + phi_v
+        # ψ(s)
+        psi_val = self._psi(s, theta, delta)
+        # φ'(u) and φ'(ψ(s))
+        phi_u_prime = self._phi_prime(u, theta, delta)
+        phi_psi_prime = self._phi_prime(psi_val, theta, delta)
+        return phi_u_prime / phi_psi_prime
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """
@@ -136,65 +235,6 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def conditional_cdf_u_given_v(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(U ≤ u | V = v) for the BB7 copula.
-
-        Args:
-            u (float or array-like): Value of U in (0,1).
-            v (float or array-like): Conditioning value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (θ, δ). Defaults to self.get_parameters().
-
-        Returns:
-            float or numpy.ndarray: Conditional CDF of U given V.
-        """
-
-        num = self.partial_derivative_C_wrt_v(u, v, param)
-        den = self.partial_derivative_C_wrt_v(1.0, v, param)
-        return num / den
-
-    def conditional_cdf_v_given_u(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(V ≤ v | U = u) for the BB7 copula.
-
-        Args:
-            u (float or array-like): Conditioning value of U in (0,1).
-            v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (θ, δ). Defaults to self.get_parameters().
-
-        Returns:
-            float or numpy.ndarray: Conditional CDF of V given U.
-        """
-
-        num = self.partial_derivative_C_wrt_u(u, v, param)
-        den = self.partial_derivative_C_wrt_u(u, 1.0, param)
-        return num / den
-
-    def sample(self, n, param=None):
-        """
-        Generate random samples from the BB7 copula using conditional inversion.
-
-        Args:
-            n (int): Number of samples to generate.
-            param (Sequence[float], optional): Copula parameters (θ, δ). Defaults to self.get_parameters().
-
-        Returns:
-            numpy.ndarray: Array of shape (n, 2) with uniform samples on [0,1]^2.
-        """
-
-        if param is None:
-            param = self.get_parameters()
-        samples = np.empty((n, 2))
-        eps = 1e-6
-        for i in range(n):
-            u = np.random.rand()
-            p = np.random.rand()
-            root = brentq(
-                lambda vv: self.conditional_cdf_v_given_u(u, vv, param) - p,
-                eps, 1.0 - eps
-            )
-            samples[i] = [u, root]
-        return samples
 
     def LTDC(self, param=None):
         """
@@ -204,13 +244,14 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param (Sequence[float], optional): Copula parameters (θ, δ). Defaults to self.get_parameters().
 
         Returns:
-            float: LTDC value = lim₍u→0₎ C(u,u)/u.
+            float: LTDC value.
         """
 
         if param is None:
             param = self.get_parameters()
-        eps = 1e-6
-        return self.get_cdf(eps, eps, param) / eps
+        delta = param[1]
+        # 2^(-1/δ) en safe
+        return _safe_pow(2.0, -1.0 / delta)
 
     def UTDC(self, param=None):
         """
@@ -225,48 +266,11 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
-        eps = 1e-6
-        u = 1.0 - eps
-        return 2.0 - (1.0 - 2*u + self.get_cdf(u, u, param)) / eps
+        theta = param[0]
+        # 2^(1/θ) en safe, puis 2 - …
+        two_pow = _safe_pow(2.0, 1.0 / theta)
+        return 2.0 - two_pow
 
-    def kendall_tau(self, param=None, analytic=True):
-        """
-        Compute Kendall's tau for the BB7 (Joe–Clayton) copula.
-
-        Args:
-            param (Sequence[float], optional): (theta, delta). Defaults to self.get_parameters().
-            analytic (bool): Use closed-form formula (default) or numeric quad fallback.
-
-        Returns:
-            float: Kendall's tau.
-        """
-        if param is None:
-            param = self.get_parameters()
-        theta, delta = map(float, param)
-
-        if analytic:
-            # Closed-form via Beta function
-            y = 2.0 / theta - 1.0  # second Beta parameter
-            tau = 1.0 - 4.0 / (delta * theta ** 2) * (
-                    beta_fn(2.0, y) - beta_fn(delta + 2.0, y)
-            )
-            return tau
-
-        # --- numeric fallback (robust near pathological values) ---
-        def phi(t):
-            t = np.clip(t, 1e-12, 1 - 1e-12)
-            phiJ = 1.0 - (1.0 - t) ** theta
-            return (phiJ ** (-delta) - 1.0) / delta
-
-        def phi_prime(t):
-            t = np.clip(t, 1e-12, 1 - 1e-12)
-            phiJ = 1.0 - (1.0 - t) ** theta
-            dphiJ_dt = theta * (1.0 - t) ** (theta - 1)
-            return -phiJ ** (-delta - 1) * dphiJ_dt
-
-        integrand = lambda t: phi(t) / phi_prime(t)
-        integral, _ = quad(integrand, 0.0, 1.0, epsabs=1e-10, epsrel=1e-10)
-        return 1.0 + 4.0 * integral
 
     def IAD(self, data):
         """

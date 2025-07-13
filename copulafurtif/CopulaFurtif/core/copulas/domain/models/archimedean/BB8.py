@@ -1,8 +1,27 @@
 import numpy as np
-from scipy.integrate import quad
-from scipy.optimize import root_scalar
+from numpy import log as _np_log, exp as _np_exp
+
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+
+_FLOAT_MIN = 1e-308
+_FLOAT_MAX_LOG = 709.0
+_FLOAT_MIN_LOG = -745.0
+
+
+def _safe_log(x):
+    """Natural log with floor to avoid -inf."""
+    return _np_log(np.clip(x, _FLOAT_MIN, None))
+
+
+def _safe_exp(log_x):
+    """Exp with clipping of exponent to float64 range."""
+    return _np_exp(np.clip(log_x, _FLOAT_MIN_LOG, _FLOAT_MAX_LOG))
+
+
+def _safe_pow(base, exponent):
+    """Stable positive power via exp(exponent * log(base))."""
+    return _safe_exp(exponent * _safe_log(base))
 
 
 class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -25,8 +44,16 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB8 Copula (Durante)"
         self.type = "bb8"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([2.0, 0.7], [(1.0, np.inf), (0.0, 1.0)], ["theta", "delta"]))
-        
+        self.init_parameters(CopulaParameters([2.0, 0.7], [(1.0, np.inf), (1e-6, 1.0)], ["theta", "delta"]))
+
+    @staticmethod
+    def _transform(u, theta):
+        """Return X = 1-(1-u)^θ and log(1-u) (for reuse)."""
+        log_one_minus_u = _safe_log(1.0 - u)
+        pow_term = _safe_exp(theta * log_one_minus_u)  # (1-u)^θ
+        X = 1.0 - pow_term
+        return X, pow_term, log_one_minus_u
+
     def get_cdf(self, u, v, param=None):
         """
         Evaluate the BB8 copula cumulative distribution function at (u, v).
@@ -43,17 +70,32 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta, delta = param
+
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-        A = (1.0 - (1.0 - u)**theta)**delta
-        B = (1.0 - (1.0 - v)**theta)**delta
-        inner = 1.0 - (1.0 - A)*(1.0 - B)
-        return inner**(1.0/theta)
+
+        # X = 1 - (1‑u)^θ   and   Y = 1 - (1‑v)^θ      (use log‑space for stability)
+        log_one_minus_u = _safe_log(1.0 - u)
+        log_one_minus_v = _safe_log(1.0 - v)
+        X = 1.0 - _safe_exp(theta * log_one_minus_u)
+        Y = 1.0 - _safe_exp(theta * log_one_minus_v)
+
+        # A, B
+        A = _safe_pow(X, delta)
+        B = _safe_pow(Y, delta)
+
+        # inner term ∈[0,1]
+        inner = 1.0 - (1.0 - A) * (1.0 - B)
+        inner = np.clip(inner, 0.0, 1.0)
+
+        # final CDF
+        return _safe_pow(inner, 1.0 / theta)
+
 
     def get_pdf(self, u, v, param=None):
         """
-        Approximate the BB8 copula probability density function at (u, v) via finite differences.
+        Approximate the BB8 copula probability density function at (u, v) .
 
         Args:
             u (float or array-like): First uniform margin in (0,1).
@@ -66,16 +108,45 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
-        eps = 1e-6
-        c = self.get_cdf
-        return (
-            c(u+eps, v+eps, param) - c(u+eps, v-eps, param)
-            - c(u-eps, v+eps, param) + c(u-eps, v-eps, param)
-        ) / (4.0 * eps**2)
+        theta, delta = param
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+
+        X, _, log_one_minus_u = self._transform(u, theta)
+        Y, _, log_one_minus_v = self._transform(v, theta)
+        eta = 1.0 - (1.0 - delta) ** theta
+        T = 1.0 - (X * Y) / eta
+        T = np.clip(T, _FLOAT_MIN, 1.0)
+
+        dX_du = theta * _safe_exp((theta - 1.0) * log_one_minus_u)
+        dY_dv = theta * _safe_exp((theta - 1.0) * log_one_minus_v)
+
+        # Components
+        pref = (1.0 / (delta * eta)) * _safe_pow(T, 1.0 / theta - 2.0)
+        first_term = dX_du * dY_dv * _safe_pow(T, 1.0)  # actually multiplier 1 but keep log‑safe
+        second_term = -(1.0 / eta) * X * dY_dv * dX_du * (1.0 / theta - 1.0)
+
+        pdf = pref * ((1.0 / theta) * first_term + second_term)
+        return np.maximum(pdf, 0.0)
+
+    def kendall_tau(self, param=None):
+        """
+        Placeholder for Kendall's tau.
+        Currently unimplemented; returns NaN.
+        """
+        return np.nan
+
+    def sample(self, n, random_state=None):
+        """
+        Placeholder sampler.
+        Not implemented for BB8Copula.
+        """
+        raise NotImplementedError("Sampling not implemented for BB8Copula")
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
-        Approximate the partial derivative ∂C(u,v)/∂u for the BB8 copula via finite differences.
+        Approximate the partial derivative ∂C(u,v)/∂u for the BB8 copula.
 
         Args:
             u (float or array-like): First margin in (0,1).
@@ -83,89 +154,40 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
 
         Returns:
-            float or np.ndarray: Approximate ∂C/∂u at (u, v).
+            float or np.ndarray.
         """
 
         if param is None:
             param = self.get_parameters()
-        eps = 1e-6
-        c = self.get_cdf
-        return (c(u+eps, v, param) - c(u, v, param)) / eps
+        theta, delta = param
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+
+        X, _, log_one_minus_u = self._transform(u, theta)
+        Y, _, _ = self._transform(v, theta)
+        eta = 1.0 - (1.0 - delta) ** theta
+        T = 1.0 - (X * Y) / eta
+        T = np.clip(T, _FLOAT_MIN, 1.0)
+
+        dX_du = theta * _safe_exp((theta - 1.0) * log_one_minus_u)  # θ(1-u)^{θ-1}
+        coef = (1.0 / (delta * eta))
+        return coef * Y * _safe_pow(T, 1.0 / theta - 1.0) * dX_du
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """
-        Approximate the partial derivative ∂C(u,v)/∂v for the BB8 copula via finite differences.
+        Approximate the partial derivative ∂C(u,v)/∂v for the BB8 copula.
 
         Args:
-            u (float or array-like): First margin in (0,1).
-            v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
+            u (float or array-like): First uniform margin in (0,1).
+            v (float or array-like): Second uniform margin in (0,1).
+            param (Sequence[float], optional): Copula parameters (θ, δ). Defaults to self.get_parameters().
 
         Returns:
-            float or np.ndarray: Approximate ∂C/∂v at (u, v).
+            float or numpy.ndarray: Approximate ∂C/∂v at (u, v).
         """
 
-        if param is None:
-            param = self.get_parameters()
-        eps = 1e-6
-        c = self.get_cdf
-        return (c(u, v+eps, param) - c(u, v, param)) / eps
-
-    def conditional_cdf_v_given_u(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(V ≤ v | U = u) for the BB8 copula.
-
-        Args:
-            u (float or array-like): Conditioning value of U in (0,1).
-            v (float or array-like): Value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
-
-        Returns:
-            float or np.ndarray: Conditional CDF of V given U.
-        """
-
-        return self.partial_derivative_C_wrt_u(u, v, param)
-
-    def conditional_cdf_u_given_v(self, u, v, param=None):
-        """
-        Compute the conditional CDF P(U ≤ u | V = v) for the BB8 copula.
-
-        Args:
-            u (float or array-like): Value of U in (0,1).
-            v (float or array-like): Conditioning value of V in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
-
-        Returns:
-            float or np.ndarray: Conditional CDF of U given V.
-        """
-
-        return self.partial_derivative_C_wrt_v(u, v, param)
-
-    def sample(self, n, param=None):
-        """
-        Generate random samples from the BB8 copula using conditional inversion.
-
-        Args:
-            n (int): Number of samples to generate.
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
-
-        Returns:
-            numpy.ndarray: Array of shape (n, 2) with uniform samples on [0,1]^2.
-        """
-
-        if param is None:
-            param = self.get_parameters()
-        samples = np.empty((n, 2))
-        eps = 1e-6
-        for i in range(n):
-            u = np.random.rand()
-            p = np.random.rand()
-            root = root_scalar(
-                lambda vv: self.partial_derivative_C_wrt_u(u, vv, param) - p,
-                bracket=[eps, 1 - eps], method='bisect', xtol=1e-6
-            )
-            samples[i] = [u, root.root]
-        return samples
+        return self.partial_derivative_C_wrt_u(v, u, param)
 
     def LTDC(self, param=None):
         """
@@ -178,10 +200,7 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: LTDC value = lim_{u→0} C(u,u)/u.
         """
 
-        if param is None:
-            param = self.get_parameters()
-        u = 1e-6
-        return self.get_cdf(u, u, param) / u
+        return 0.0
 
     def UTDC(self, param=None):
         """
@@ -193,58 +212,11 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             float: UTDC value = lim_{u→1} [1 − 2u + C(u,u)]/(1−u).
         """
-
-        if param is None:
-            param = self.get_parameters()
-        u = 1.0 - 1e-6
-        return (1 - 2*u + self.get_cdf(u, u, param)) / (1 - u)
-
-    def kendall_tau(self, param=None):
-        """
-        Compute Kendall's tau for the BB8 copula.
-
-        τ(θ,δ) = 1 + 4 ∫₀¹ g(t;θ,δ) dt
-        with
-            g(t) = -log( ((1 - δ t)**θ - 1) / ((1 - δ)**θ - 1) )
-                   * (1 - δ t - (1 - δ t)**(-θ) + (1 - δ t)**(-θ) δ t)
-                   / (θ δ)
-
-        Args
-        ----
-        param : sequence (theta, delta), optional
-            Defaults to the object’s current parameters.
-
-        Returns
-        -------
-        float
-            Theoretical Kendall’s τ.
-        """
-        # unpack parameters and basic validation
-        if param is None:
-            param = self.get_parameters()
-        theta, delta = param
-        if theta <= 1 or not (0 < delta < 1):
-            raise ValueError("BB8 requires θ>1 and 0<δ<1")
-
-        # pre-compute denominator once (never zero inside admissible set)
-        denom = (1.0 - delta) ** theta - 1.0
-
-        # integrand as a plain Python lambda (quad handles the loops)
-        def _g(t):
-            base = 1.0 - delta * t
-            num = base ** theta - 1.0
-            log_term = -np.log(num / denom)
-            aux = 1.0 - delta * t - base ** (-theta) + base ** (-theta) * delta * t
-            return log_term * aux / (theta * delta)
-
-        # high-accuracy adaptive integration on [0,1]
-        integral, _ = quad(_g, 0.0, 1.0, epsabs=1e-10, epsrel=1e-10, limit=200)
-
-        return 1.0 + 4.0 * integral
+        return 0.0
 
     def IAD(self, data):
         """
-        Return NaN for the Integrated Anderson-Darling (IAD) statistic for BB8.
+        Return NaN for the Integrated Anderson-Darling (IAD) statistic for BB7.
 
         Args:
             data (Sequence[array-like, array-like]): Ignored pseudo-observations.
@@ -258,7 +230,7 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def AD(self, data):
         """
-        Return NaN for the Anderson-Darling (AD) statistic for BB8.
+        Return NaN for the Anderson-Darling (AD) statistic for BB7.
 
         Args:
             data (Sequence[array-like, array-like]): Ignored pseudo-observations.
