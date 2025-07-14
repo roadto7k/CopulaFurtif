@@ -108,27 +108,37 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
+
         theta, delta = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        X, _, log_one_minus_u = self._transform(u, theta)
-        Y, _, log_one_minus_v = self._transform(v, theta)
-        eta = 1.0 - (1.0 - delta) ** theta
-        T = 1.0 - (X * Y) / eta
-        T = np.clip(T, _FLOAT_MIN, 1.0)
+        log1mu = _safe_log(1.0 - u)
+        log1mv = _safe_log(1.0 - v)
+        log_X = _safe_log(1.0 - _safe_exp(theta * log1mu))
+        log_Y = _safe_log(1.0 - _safe_exp(theta * log1mv))
+        X = _safe_exp(log_X)
+        Y = _safe_exp(log_Y)
+        A = _safe_pow(X, delta)
+        B = _safe_pow(Y, delta)
+        Z = np.clip(A + B - A * B, _FLOAT_MIN, 1.0)
 
-        dX_du = theta * _safe_exp((theta - 1.0) * log_one_minus_u)
-        dY_dv = theta * _safe_exp((theta - 1.0) * log_one_minus_v)
-
-        # Components
-        pref = (1.0 / (delta * eta)) * _safe_pow(T, 1.0 / theta - 2.0)
-        first_term = dX_du * dY_dv * _safe_pow(T, 1.0)  # actually multiplier 1 but keep log‑safe
-        second_term = -(1.0 / eta) * X * dY_dv * dX_du * (1.0 / theta - 1.0)
-
-        pdf = pref * ((1.0 / theta) * first_term + second_term)
-        return np.maximum(pdf, 0.0)
+        # d²C/(du dv)  = (1/θ)(1/θ-1) Z^{1/θ-2} (1-B)(1-A) δ² X^{δ-1}Y^{δ-1} θ² (1-u)^{θ-1}(1-v)^{θ-1}
+        log_pdf = (
+                _safe_log(delta) * 2
+                + 2.0 * _safe_log(theta)
+                + _safe_log(1.0 - A)
+                + _safe_log(1.0 - B)
+                + (1.0 / theta - 2.0) * _safe_log(Z)
+                + (delta - 1.0) * (log_X + log_Y)
+                + _safe_log(_safe_exp((theta - 1.0) * log1mu))
+                + _safe_log(_safe_exp((theta - 1.0) * log1mv))
+                + _safe_log(1.0 / theta)  # prefactor
+                + _safe_log(abs(1.0 / theta - 1.0))  # second derivative factor
+        )
+        pdf_val = _safe_exp(log_pdf)
+        return np.maximum(pdf_val, 0.0)
 
     def kendall_tau(self, param=None):
         """
@@ -164,15 +174,41 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        X, _, log_one_minus_u = self._transform(u, theta)
-        Y, _, _ = self._transform(v, theta)
-        eta = 1.0 - (1.0 - delta) ** theta
-        T = 1.0 - (X * Y) / eta
-        T = np.clip(T, _FLOAT_MIN, 1.0)
+        # log‑helpers
+        log1mu = _safe_log(1.0 - u)
+        log1mv = _safe_log(1.0 - v)
 
-        dX_du = theta * _safe_exp((theta - 1.0) * log_one_minus_u)  # θ(1-u)^{θ-1}
-        coef = (1.0 / (delta * eta))
-        return coef * Y * _safe_pow(T, 1.0 / theta - 1.0) * dX_du
+        # X, Y, A, B
+        log_X = _safe_log(1.0 - _safe_exp(theta * log1mu))  # log X
+        log_Y = _safe_log(1.0 - _safe_exp(theta * log1mv))
+        log_A = delta * log_X
+        log_B = delta * log_Y
+        A = _safe_exp(log_A)
+        B = _safe_exp(log_B)
+
+        # Z = 1-(1-A)(1-B) = A+B-AB
+        Z = A + B - A * B
+        Z = np.clip(Z, _FLOAT_MIN, 1.0)  # pour éviter 0
+        log_Z = _safe_log(Z)
+
+        # dX/du
+        dX_du = theta * _safe_exp((theta - 1.0) * log1mu)
+        # dA/du = δ X^{δ-1} dX/du  -> log(dA/du)
+        log_dA_du = _safe_log(delta) + (delta - 1.0) * log_X + _safe_log(dX_du)
+
+        # (1-B)
+        log_1mB = _safe_log(1.0 - B)
+
+        # log(C_u) = log(δ) - log(θ) + log(1-B) + (1/θ-1)log Z + (δ-1)log X + log dX/du - log X
+        log_Cu = (
+                _safe_log(delta)
+                - _safe_log(theta)
+                + log_1mB
+                + (1.0 / theta - 1.0) * log_Z
+                + (delta - 1.0) * log_X
+                + _safe_log(dX_du)
+        )
+        return _safe_exp(log_Cu)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """

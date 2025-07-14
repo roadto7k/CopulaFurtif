@@ -2,7 +2,7 @@
 Comprehensive unit-tests for the bivariate **BB3** Archimedean Copula
 (Joe–Hu 1996, positive-stable stopped-gamma).
 
-The structure mirrors the BB2 test-suite the user provided – same paranoia,
+The structure mirrors the BB3 test-suite the user provided – same paranoia,
 just with the BB3 formulas/constraints:
 
 • θ ≥ 1 (power) and δ > 0 (scale) parameter rectangle.

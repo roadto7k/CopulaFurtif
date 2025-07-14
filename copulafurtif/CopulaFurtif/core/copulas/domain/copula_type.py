@@ -23,3 +23,5 @@ class CopulaType(Enum):
     BB6 = "BB6"
     BB7 = "BB7"
     BB8 = "BB8"
+    BB9 = "BB9"
+    BB10 = "BB10"

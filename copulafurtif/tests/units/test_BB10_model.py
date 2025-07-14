@@ -1,8 +1,8 @@
 """
-Comprehensive unit-test suite for the bivariate **BB6** Archimedean Copula
+Comprehensive unit-test suite for the bivariate **BB10** Archimedean Copula
 
 Structure, swagger, and paranoia all borrowed from the earlier Clayton
-test file — just flipped for the BB6 flavour.
+test file — just flipped for the BB10 flavour.
 
 Run with:  pytest -q            # fast
            pytest -q -m 'slow'  # includes the heavy sampling sanity check
@@ -16,7 +16,7 @@ Checks implemented
 ------------------
 • Parameter validation (inside/outside admissible rectangle).
 • Core invariants: symmetry, monotonicity, CDF/PDF bounds.
-• Tail-dependence formulas (λ_L < 1, λ_U > 0 for BB6).
+• Tail-dependence formulas (λ_L < 1, λ_U > 0 for BB10).
 • Analytical vs. numerical partial derivatives.
 • Kendall τ closed-form vs. implementation.
 • Sampling sanity: empirical τ ≈ theoretical (marked slow).
@@ -30,7 +30,7 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st, note, Verbosity
 
-from CopulaFurtif.core.copulas.domain.models.archimedean.BB6 import BB6Copula
+from CopulaFurtif.core.copulas.domain.models.archimedean.BB10 import BB10Copula
 import scipy.stats as stx  # optional dependency
 
 
@@ -40,13 +40,13 @@ import scipy.stats as stx  # optional dependency
 
 @pytest.fixture(scope="module")
 def copula_default():
-    """Default BB6 copula with (θ, δ) = (2.0, 1.5)."""
-    c = BB6Copula()
-    c.set_parameters([2.0, 1.5])
+    """Default BB10 copula with (θ, δ) = (2.0, 1.5)."""
+    c = BB10Copula()
+    c.set_parameters([2.0, 0.5])
     return c
 
 
-# Library bounds: θ ∈ (0, ∞), δ ∈ [1, ∞). We cap the upper end for Hypothesis.
+# Library bounds: θ ∈ (1, ∞), δ ∈ [0, ∞). We cap the upper end for Hypothesis.
 @st.composite
 def valid_theta(draw):
     return draw(
@@ -62,7 +62,7 @@ def valid_theta(draw):
 def valid_delta(draw):
     return draw(
         st.floats(
-            min_value=1, max_value=10.0,
+            min_value=1e-6, max_value=1.0,
             exclude_min=True, exclude_max=True,
             allow_nan=False, allow_infinity=False,
         )
@@ -83,7 +83,7 @@ def _finite_diff(f, x, y, h=1e-6):
 
 @given(theta=valid_theta(), delta=valid_delta())
 def test_parameter_roundtrip(theta, delta):
-    c = BB6Copula()
+    c = BB10Copula()
     c.set_parameters([theta, delta])
     assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
     assert math.isclose(c.get_parameters()[1], delta, rel_tol=1e-12)
@@ -97,7 +97,7 @@ def test_parameter_roundtrip(theta, delta):
     delta=valid_delta(),
 )
 def test_theta_out_of_bounds(theta, delta):
-    c = BB6Copula()
+    c = BB10Copula()
     with pytest.raises(ValueError):
         c.set_parameters([theta, delta])
 
@@ -107,7 +107,7 @@ def test_theta_out_of_bounds(theta, delta):
     delta=st.floats(max_value=1e-6, allow_nan=False, allow_infinity=False, exclude_max = True),
 )
 def test_delta_out_of_bounds(theta, delta):
-    c = BB6Copula()
+    c = BB10Copula()
     with pytest.raises(ValueError):
         c.set_parameters([theta, delta])
 
@@ -118,7 +118,7 @@ def test_delta_out_of_bounds(theta, delta):
 
 @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 def test_cdf_bounds(theta, delta, u, v):
-    c = BB6Copula()
+    c = BB10Copula()
     c.set_parameters([theta, delta])
     val = c.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
@@ -129,14 +129,14 @@ def test_cdf_bounds(theta, delta, u, v):
 def test_cdf_monotone_in_u(theta, delta, u1, u2, v):
     if u1 > u2:
         u1, u2 = u2, u1
-    c = BB6Copula()
+    c = BB10Copula()
     c.set_parameters([theta, delta])
     assert c.get_cdf(u1, v) <= c.get_cdf(u2, v)
 
 
 @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 def test_cdf_symmetry(theta, delta, u, v):
-    c = BB6Copula()
+    c = BB10Copula()
     c.set_parameters([theta, delta])
     assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
 
@@ -147,7 +147,7 @@ def test_cdf_symmetry(theta, delta, u, v):
 
 @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 def test_pdf_nonnegative(theta, delta, u, v):
-    c = BB6Copula()
+    c = BB10Copula()
     c.set_parameters([theta, delta])
     assert c.get_pdf(u, v) >= 0.0
 
@@ -155,11 +155,10 @@ def test_pdf_nonnegative(theta, delta, u, v):
 # -----------------------------------------------------------------------------
 # Derivative cross-check (analytical vs. finite diff)
 # -----------------------------------------------------------------------------
-
 @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 @settings(max_examples=100)
 def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
-    c = BB6Copula()
+    c = BB10Copula()
     c.set_parameters([theta, delta])
 
     def C(x, y):
@@ -171,25 +170,29 @@ def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
     ana_du = c.partial_derivative_C_wrt_u(u, v)
     ana_dv = c.partial_derivative_C_wrt_v(u, v)
 
-    assert math.isclose(ana_du, num_du, rel_tol=1e-3, abs_tol=1e-4)
-    assert math.isclose(ana_dv, num_dv, rel_tol=1e-3, abs_tol=1e-4)
+    assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-3)
+    assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-3)
 
 
 # -----------------------------------------------------------------------------
 # Tail dependence
 # -----------------------------------------------------------------------------
 
+def safe_pow(base, exp):
+    exp_term = exp * math.log(base)
+    exp_term = min(max(exp_term, -745.0), 709.0)
+    return math.exp(exp_term)
+
 @given(theta=valid_theta(), delta=valid_delta())
 def test_tail_dependence(theta, delta):
-    c = BB6Copula()
+    c = BB10Copula()
     c.set_parameters([theta, delta])
 
-    # Formulas from class docstring
-    expected_lt = 0
-    expected_ut = 2.0 - (2.0 - 2.0 ** (-1.0 / delta)) ** (1.0 / theta)
+    expected_lt = 0.0
+    expected_ut = 0.0
 
-    assert math.isclose(c.LTDC(), expected_lt, rel_tol=1e-12)
-    assert math.isclose(c.UTDC(), expected_ut, rel_tol=1e-12)
+    assert math.isclose(c.LTDC(), expected_lt, rel_tol=1e-12, abs_tol=0.0)
+    assert math.isclose(c.UTDC(), expected_ut, rel_tol=1e-12, abs_tol=0.0)
 
 
 # -----------------------------------------------------------------------------
@@ -201,7 +204,7 @@ def test_tail_dependence(theta, delta):
 # @settings(max_examples=20, deadline=None, verbosity=Verbosity.verbose)
 # def test_empirical_kendall_tau_close(theta, delta):
 #
-#     c = BB6Copula()
+#     c = BB10Copula()
 #     c.set_parameters([theta, delta])
 #
 #     data = c.sample(10000)

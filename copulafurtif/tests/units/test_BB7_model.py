@@ -1,9 +1,8 @@
 """
-Comprehensive unit-test suite for the bivariate **BB2** Archimedean Copula
-(the 180-degree survival rotation of BB1).
+Comprehensive unit-test suite for the bivariate **BB7** Archimedean Copula
 
 Structure, swagger, and paranoia all borrowed from the earlier Clayton
-test file — just flipped for the BB2 flavour.
+test file — just flipped for the BB7 flavour.
 
 Run with:  pytest -q            # fast
            pytest -q -m 'slow'  # includes the heavy sampling sanity check
@@ -17,7 +16,7 @@ Checks implemented
 ------------------
 • Parameter validation (inside/outside admissible rectangle).
 • Core invariants: symmetry, monotonicity, CDF/PDF bounds.
-• Tail-dependence formulas (λ_L < 1, λ_U > 0 for BB2).
+• Tail-dependence formulas (λ_L < 1, λ_U > 0 for BB7).
 • Analytical vs. numerical partial derivatives.
 • Kendall τ closed-form vs. implementation.
 • Sampling sanity: empirical τ ≈ theoretical (marked slow).
@@ -41,7 +40,7 @@ import scipy.stats as stx  # optional dependency
 
 @pytest.fixture(scope="module")
 def copula_default():
-    """Default BB2 copula with (θ, δ) = (2.0, 1.5)."""
+    """Default BB7 copula with (θ, δ) = (2.0, 1.5)."""
     c = BB7Copula()
     c.set_parameters([2.0, 1.5])
     return c
