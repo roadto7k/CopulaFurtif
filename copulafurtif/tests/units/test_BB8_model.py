@@ -1,9 +1,8 @@
 """
-Comprehensive unit-test suite for the bivariate **BB2** Archimedean Copula
-(the 180-degree survival rotation of BB1).
+Comprehensive unit-test suite for the bivariate **BB8** Archimedean Copula
 
 Structure, swagger, and paranoia all borrowed from the earlier Clayton
-test file — just flipped for the BB2 flavour.
+test file — just flipped for the BB8 flavour.
 
 Run with:  pytest -q            # fast
            pytest -q -m 'slow'  # includes the heavy sampling sanity check
@@ -17,7 +16,7 @@ Checks implemented
 ------------------
 • Parameter validation (inside/outside admissible rectangle).
 • Core invariants: symmetry, monotonicity, CDF/PDF bounds.
-• Tail-dependence formulas (λ_L < 1, λ_U > 0 for BB2).
+• Tail-dependence formulas (λ_L < 1, λ_U > 0 for BB8).
 • Analytical vs. numerical partial derivatives.
 • Kendall τ closed-form vs. implementation.
 • Sampling sanity: empirical τ ≈ theoretical (marked slow).
@@ -41,7 +40,7 @@ import scipy.stats as stx  # optional dependency
 
 @pytest.fixture(scope="module")
 def copula_default():
-    """Default BB2 copula with (θ, δ) = (2.0, 1.5)."""
+    """Default BB8 copula with (θ, δ) = (2.0, 1.5)."""
     c = BB8Copula()
     c.set_parameters([2.0, 0.5])
     return c
@@ -156,24 +155,23 @@ def test_pdf_nonnegative(theta, delta, u, v):
 # -----------------------------------------------------------------------------
 # Derivative cross-check (analytical vs. finite diff)
 # -----------------------------------------------------------------------------
-#todo fix this one
-# @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
-# @settings(max_examples=100)
-# def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
-#     c = BB8Copula()
-#     c.set_parameters([theta, delta])
-#
-#     def C(x, y):
-#         return c.get_cdf(x, y)
-#
-#     num_du = _finite_diff(C, u, v)
-#     num_dv = _finite_diff(lambda x, y: C(y, x), v, u)
-#
-#     ana_du = c.partial_derivative_C_wrt_u(u, v)
-#     ana_dv = c.partial_derivative_C_wrt_v(u, v)
-#
-#     assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-3)
-#     assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-3)
+@given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
+@settings(max_examples=100)
+def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
+    c = BB8Copula()
+    c.set_parameters([theta, delta])
+
+    def C(x, y):
+        return c.get_cdf(x, y)
+
+    num_du = _finite_diff(C, u, v)
+    num_dv = _finite_diff(lambda x, y: C(y, x), v, u)
+
+    ana_du = c.partial_derivative_C_wrt_u(u, v)
+    ana_dv = c.partial_derivative_C_wrt_v(u, v)
+
+    assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-3)
+    assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-3)
 
 
 # -----------------------------------------------------------------------------
