@@ -310,7 +310,7 @@ class CopulaModel(ABC):
 
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def conditional_cdf_u_given_v(self, u, v, param, normalize=True):
+    def conditional_cdf_u_given_v(self, u, v, param = None, normalize=True):
         """
         Computes the conditional CDF P(U ≤ u | V = v).
 
@@ -323,6 +323,8 @@ class CopulaModel(ABC):
         Returns:
             The conditional CDF values P(U ≤ u | V = v).
         """
+        if param is None:
+            param = self.get_parameters()
         # Denominator for normalization (≈1 in theory)
         duv = self.partial_derivative_C_wrt_v(u, v, param)
         if normalize:
@@ -331,7 +333,7 @@ class CopulaModel(ABC):
             return duv / np.where(d1v != 0, d1v, 1.0)
         return duv
 
-    def conditional_cdf_v_given_u(self, u, v, param, normalize=True):
+    def conditional_cdf_v_given_u(self, u, v, param = None, normalize=True):
         """
         Computes the conditional CDF P(V ≤ v | U = u).
 
@@ -344,6 +346,8 @@ class CopulaModel(ABC):
         Returns:
             The conditional CDF values P(V ≤ v | U = u).
         """
+        if param is None:
+            param = self.get_parameters()
         duv = self.partial_derivative_C_wrt_u(u, v, param)
         if normalize:
             du1 = self.partial_derivative_C_wrt_u(u, 1.0, param)

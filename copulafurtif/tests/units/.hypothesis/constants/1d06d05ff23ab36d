@@ -1,0 +1,4 @@
+# file: C:\Program Files\JetBrains\PyCharm Community Edition 2024.3.2\plugins\python-ce\helpers\pydev\_pydevd_bundle\pydevd_pep_669_tracing.py
+# hypothesis_version: 6.131.9
+
+[108, 109, '.invalid.', '1', '<lambda>', '<module>', '?', 'ADD', 'ALL', 'None', 'REMOVE', '_bootstrap_inner', '_exec', '_not_processed', 'call', 'exception', 'f_back', 'f_code', 'line', 'pydevd', 'return', 'threading']

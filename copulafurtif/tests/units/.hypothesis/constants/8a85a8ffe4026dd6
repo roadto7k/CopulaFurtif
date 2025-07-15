@@ -1,0 +1,4 @@
+# file: C:\Users\Saucisson\PycharmProjects\Algo_Trade\copulafurtif\CopulaFurtif\core\copulas\domain\models\interfaces.py
+# hypothesis_version: 6.131.9
+
+['cdf', 'numpy', 'partial_u', 'partial_u_expr', 'partial_v', 'partial_v_expr', 'pdf', 'scipy']

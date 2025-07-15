@@ -1,0 +1,4 @@
+# file: C:\Users\Saucisson\PycharmProjects\Algo_Trade\copulafurtif\CopulaFurtif\core\copulas\domain\models\archimedean\clayton.py
+# hypothesis_version: 6.131.9
+
+[0.0, 1e-15, 1e-12, 0.01, 1.0, 2.0, 30.0, 'Clayton Copula', 'SLSQP', 'clayton', 'theta']

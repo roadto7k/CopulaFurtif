@@ -1,0 +1,4 @@
+# file: C:\Users\Saucisson\PycharmProjects\Algo_Trade\copulafurtif\CopulaFurtif\core\copulas\domain\models\archimedean\gumbel.py
+# hypothesis_version: 6.131.9
+
+[1.01, 2.0, 30.0, 'Gumbel Copula', 'SLSQP', 'gumbel', 'theta']

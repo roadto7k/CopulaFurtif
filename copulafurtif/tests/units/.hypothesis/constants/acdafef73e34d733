@@ -1,0 +1,4 @@
+# file: C:\Program Files\JetBrains\PyCharm Community Edition 2024.3.2\plugins\python-ce\helpers\pydev\_pydevd_frame_eval\pydevd_modify_bytecode.py
+# hypothesis_version: 6.131.9
+
+[254, 255, '<module>', 'InsertedCode', 'LOAD_CONST', 'POP_JUMP_IF_TRUE', 'co_consts', 'co_names', 'co_varnames', 'code_list', 'offset']

@@ -1,0 +1,4 @@
+# file: C:\Users\Saucisson\PycharmProjects\Algo_Trade\copulafurtif\CopulaFurtif\core\copulas\domain\models\archimedean\galambos.py
+# hypothesis_version: 6.131.9
+
+[0.01, 1.5, 9.99, 'Galambos Copula', 'SLSQP', 'galambos', 'theta']
