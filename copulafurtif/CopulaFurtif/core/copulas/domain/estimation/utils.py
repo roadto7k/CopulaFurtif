@@ -140,7 +140,10 @@ def log_likelihood_only_copula(theta_array, copula : CopulaModel, X, Y, marginal
 
     # 4) Copula pdf
     cop_pdf = copula.get_pdf(u, v, theta)
-
+    eps = 1e-8
+    cop_pdf = np.clip(cop_pdf, eps, None)
+    pdf1 = np.clip(pdf1, eps, None)
+    pdf2 = np.clip(pdf2, eps, None)
     # 5) Negative log-likelihood
     return -np.sum(np.log(cop_pdf) + np.log(pdf1) + np.log(pdf2))
 
@@ -206,6 +209,9 @@ def log_likelihood_joint(param_vec,
 
     # 5) Copula PDF
     cop_pdf = copula.get_pdf(u, v, theta)
-
+    eps = 1e-8
+    cop_pdf = np.clip(cop_pdf, eps, None)
+    pdf1 = np.clip(pdf1, eps, None)
+    pdf2 = np.clip(pdf2, eps, None)
     # 6) Negative log-likelihood
     return -np.sum(np.log(cop_pdf) + np.log(pdf1) + np.log(pdf2))
