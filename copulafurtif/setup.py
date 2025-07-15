@@ -20,7 +20,9 @@ setup(
         "numpy",
         "scipy",
         "yfinance",
-        "sympy"
+        "sympy",
+        "hypothesis",
+        "pytest",
     ],
     python_requires=">=3.9",
 

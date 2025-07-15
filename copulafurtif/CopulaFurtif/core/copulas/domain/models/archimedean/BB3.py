@@ -8,6 +8,27 @@ from scipy.stats import levy_stable
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
+_FLOAT_MIN = 1e-308  # min positive normal float64
+_FLOAT_MIN_LOG = -745.0   # ~ log(min float64)
+_FLOAT_MAX_LOG =  710.0   # ~ log(max float64)
+
+def _safe_log(x):
+    """Compute log(x) with clipping to avoid –inf when x → 0."""
+    return np.log(np.clip(x, 1e-308, None))
+
+def _safe_exp(x):
+    """Compute exp(x) with clipping to avoid overflow."""
+    x = np.clip(x, None, _FLOAT_MAX_LOG)
+    return np.exp(x)
+
+def _safe_pow(x, p):
+    """Compute x**p safely for x > 0."""
+    return np.exp(p * _safe_log(x))
+
+def _safe_log1p(x):
+    """Compute log(1 + x) in a numerically stable way (x may be small)."""
+    return np.log1p(x)
+
 
 class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
@@ -26,9 +47,6 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "BB3 Copula"
         self.type = "bb3"
-        # self.bounds_param = [(1e-6, 30), (1.0, 5.0)] # [d, q]
-        # self.param_names = ["d", "q"] # d = δ, q = θ
-        # self.get_parameters() = [2.0, 1.2] # safe
         self.default_optim_method = "Powell"
         self.init_parameters(CopulaParameters([2, 1.5], [(1.0, 10.0),(0.05, 10.0) ], ["theta", "delta"]))
 
@@ -46,7 +64,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         theta, delta = self.get_parameters() if param is None else param
-        return (np.log1p(s) / delta) ** (1.0 / theta)
+        return _safe_pow(_safe_log1p(s) / delta, 1.0 / theta)
 
     def _h_prime(self, s, param=None):
         """
@@ -61,8 +79,11 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         theta, delta = self.get_parameters() if param is None else param
-        g = np.log1p(s) / delta
-        return g ** (1.0 / theta - 1.0) / (theta * delta * (1.0 + s))
+        g = _safe_log1p(s) / delta  # g>0
+        log_hp = (1.0 / theta - 1.0) * _safe_log(g) \
+                 - _safe_log(theta) - _safe_log(delta) \
+                 - _safe_log1p(s)
+        return _safe_exp(log_hp)
 
     def _h_double(self, s, param=None):
         """
@@ -78,11 +99,11 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         theta, delta = self.get_parameters() if param is None else param
         inv_theta = 1.0 / theta
-        g = np.log1p(s) / delta
-
-        return (inv_theta * g ** (inv_theta - 2) /
-                (delta ** 2 * (1.0 + s) ** 2) *
-                ((inv_theta - 1.0) - delta * g))
+        g = _safe_log1p(s) / delta
+        # log(h'') = log(h') + log((inv_theta-1)-δg) - log(δ(1+s))
+        hp = self._h_prime(s, param)
+        tmp = (inv_theta - 1.0) - delta * g
+        return hp * tmp / (delta * (1.0 + s))
 
     def get_cdf(self, u, v, param=None):
         """
@@ -102,9 +123,12 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        s_u = np.expm1(delta * (-np.log(u)) ** theta)
-        s_v = np.expm1(delta * (-np.log(v)) ** theta)
-        return np.exp(-self._h(s_u + s_v, param))
+        # s_u = expm1( δ (‑log u)^θ )
+        log_su = _safe_log(_safe_exp(delta * _safe_pow(-_safe_log(u), theta)) - 1.0)
+        log_sv = _safe_log(_safe_exp(delta * _safe_pow(-_safe_log(v), theta)) - 1.0)
+
+        s = _safe_exp(log_su) + _safe_exp(log_sv)
+        return _safe_exp(-self._h(s, param))
 
     def get_pdf(self, u, v, param=None):
         """
@@ -119,118 +143,61 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF value c(u, v).
         """
 
-        theta, delta = self.get_parameters() if param is None else param
+        # ------------------------------------------------------------------ #
+        # 0 – parameters & sanitising                                        #
+        # ------------------------------------------------------------------ #
+        if param is None:
+            param = self.get_parameters()
+        theta, delta = map(float, param)
+        inv_theta = 1.0 / theta
+
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
 
-        s_u = np.expm1(delta * (-np.log(u)) ** theta)
-        s_v = np.expm1(delta * (-np.log(v)) ** theta)
-        s = s_u + s_v
+        # ------------------------------------------------------------------ #
+        # 1 – s,  h, h', h''                                                 #
+        # ------------------------------------------------------------------ #
+        su = _safe_exp(delta * _safe_pow(-_safe_log(u), theta)) - 1.0
+        sv = _safe_exp(delta * _safe_pow(-_safe_log(v), theta)) - 1.0
+        s = su + sv
 
-        h = self._h(s, param)
+        h = self._h(s, param)  # scalar / ndarray
         h1 = self._h_prime(s, param)
         h2 = self._h_double(s, param)
-        phi_dd = np.exp(-h) * (h1 ** 2 - h2)
 
-        inv_u_prime = -delta * theta * np.exp(delta * (-np.log(u)) ** theta) * \
-                      (-np.log(u)) ** (theta - 1) / u
-        inv_v_prime = -delta * theta * np.exp(delta * (-np.log(v)) ** theta) * \
-                      (-np.log(v)) ** (theta - 1) / v
+        # log φʺ(s)  (guard against inf / negative)
+        core = h1 * h1 - h2
+        core = np.where((core <= 0) | (~np.isfinite(core)), _FLOAT_MIN, core)
+        log_phi_dd = -h + _safe_log(core)
 
-        pdf = phi_dd * inv_u_prime * inv_v_prime
-        return np.nan_to_num(pdf, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
+        # ------------------------------------------------------------------ #
+        # 2 – log ∂s/∂u  and  log ∂s/∂v                                      #
+        # ------------------------------------------------------------------ #
+        log_du_s = (_safe_log(delta) + _safe_log(theta)
+                    + (theta - 1.0) * _safe_log(-_safe_log(u))
+                    + delta * _safe_pow(-_safe_log(u), theta)
+                    - _safe_log(u))
 
-    # def kendall_tau(self, param=None, m: int = 800) -> float:
-    #     """
-    #     Compute Kendall’s tau for the BB3 copula by numerical integration
-    #     over a uniform m×m grid on [0,1]^2:
-    #
-    #         τ = 4 * E[C(U,V)] − 1,   (U,V) ∼ Uniform[0,1]^2
-    #
-    #     Parameters
-    #     ----------
-    #     param : sequence of two floats, optional
-    #         Copula parameters [theta, delta]. If None, the model’s current
-    #         parameters are used.
-    #     m : int, default=800
-    #         Number of grid points per dimension. A larger m increases
-    #         accuracy at the cost of more computation.
-    #
-    #     Returns
-    #     -------
-    #     float
-    #         Theoretical Kendall’s tau in [−1, 1].
-    #     """
-    #     # 1) unpack parameters
-    #     theta, delta = (self.get_parameters() if param is None else param)
-    #
-    #     # 2) build a regular grid avoiding the exact boundaries 0 and 1
-    #     #    by centering points in each cell: (i − 0.5) / m
-    #     grid = (np.arange(1, m + 1, dtype=float) - 0.5) / m
-    #     U, V = np.meshgrid(grid, grid)
-    #
-    #     C = self.get_cdf(U, V, [theta, delta])
-    #     pdf = self.get_pdf(U, V, [theta, delta])
-    #
-    #     # 4) weight C by pdf, average and scale to get τ
-    #     return float(4.0 * (C * pdf).mean() - 1.0)
+        log_dv_s = (_safe_log(delta) + _safe_log(theta)
+                    + (theta - 1.0) * _safe_log(-_safe_log(v))
+                    + delta * _safe_pow(-_safe_log(v), theta)
+                    - _safe_log(v))
 
-    # def sample(
-    #         self,
-    #         n: int,
-    #         param=None,
-    #         rng=None,
-    #         eps: float = 1e-8,
-    #         max_iter: int = 30,
-    # ) -> np.ndarray:
-    #     """
-    #     Generate n i.i.d. samples from the BB3 copula via conditional inversion.
-    #
-    #     Parameters
-    #     ----------
-    #     n        : int
-    #         Number of sample pairs.
-    #     param    : sequence-like, optional
-    #         Copula parameters [theta, delta].  If None, uses current parameters.
-    #     rng      : numpy.random.Generator, optional
-    #         Random generator for reproducibility.
-    #     eps      : float
-    #         Clip guard to keep values in (0,1).
-    #     max_iter : int
-    #         Max Newton/bisection iterations inside the inverter.
-    #
-    #     Returns
-    #     -------
-    #     ndarray, shape (n, 2)
-    #         Columns are U and V.
-    #     """
-    #     if rng is None:
-    #         rng = default_rng()
-    #
-    #     theta, delta = self.get_parameters() if param is None else param
-    #
-    #     S = levy_stable.rvs(1 / theta, 1, size=n, random_state=rng)
-    #     # éviter S ≤ 0 (rare artefact num.)
-    #     S = np.where(S <= 0, np.nextafter(0, 1), S)
-    #
-    #     G = rng.gamma(delta, 1.0, size=(n, 2))
-    #     T = (G / S[:, None]) ** (1 / theta)
-    #
-    #     U = np.exp(-T)
-    #
-    #     # === anti-ties : étale en linéaire ===
-    #     mask_low = U < eps
-    #     mask_high = U > 1 - eps
-    #     k_low = mask_low.sum()
-    #     k_high = mask_high.sum()
-    #     # remplace pile par valeurs uniformes dans [0, eps] ou [1-eps, 1-eps/2]
-    #     if k_low:
-    #         U[mask_low] = rng.uniform(0.0, eps, size=k_low)
-    #     if k_high:
-    #         U[mask_high] = rng.uniform(1 - eps, 1 - eps / 2, size=k_high)
-    #
-    #     return U
+        # ------------------------------------------------------------------ #
+        # 3 – assemble log‑pdf and exp                                       #
+        # ------------------------------------------------------------------ #
+        log_pdf = log_phi_dd + log_du_s + log_dv_s
+
+        # under/overflow guards, then exp
+        log_pdf = np.where(log_pdf < _FLOAT_MIN_LOG, -np.inf, log_pdf)
+        log_pdf = np.where(log_pdf > _FLOAT_MAX_LOG, np.inf, log_pdf)
+        pdf = _safe_exp(log_pdf)
+
+        # make absolutely sure: replace NaN with 0, Inf with max‑float
+        pdf = np.nan_to_num(pdf,nan=0.0,posinf=np.finfo(float).max,neginf=0.0)
+
+        return pdf
 
     def sample(self, n, param=None, rng=None, eps=1e-12):
         raise NotImplementedError("BB3 sampling not implemented")
@@ -267,43 +234,85 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
-        Compute the partial derivative ∂C(u,v)/∂u of the copula CDF.
+        ∂C(u,v)/∂u for the BB3 (Joe–Hu) copula.
 
-        Args:
-            u (float or array-like): First margin in (0,1).
-            v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
+        Parameters
+        ----------
+        u, v : float or np.ndarray
+            Margins in (0, 1).
+        param : (theta, delta) tuple, optional
+            Copula parameters. If None -> self.get_parameters().
 
-        Returns:
-            float or numpy.ndarray: Value of ∂C/∂u at (u,v).
+        Returns
+        -------
+        float or np.ndarray
+            The partial derivative dC/du evaluated at (u, v).
         """
+        # ------------------------------------------------------------------ #
+        # Parameters & constants                                         #
+        # ------------------------------------------------------------------ #
+        if param is None:
+            param = self.get_parameters()
+        theta, delta = map(float, param)
+        inv_theta = 1.0 / theta
 
-        theta, delta = self.get_parameters() if param is None else param
+        # ------------------------------------------------------------------ #
+        # Sanitise inputs                                                #
+        # ------------------------------------------------------------------ #
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
 
-        s_u = np.expm1(delta * (-np.log(u)) ** theta)
-        s_v = np.expm1(delta * (-np.log(v)) ** theta)
-        s = s_u + s_v
+        # ------------------------------------------------------------------ #
+        # Pre‑compute logs & intermediates                               #
+        # ------------------------------------------------------------------ #
+        log_u_neg = -_safe_log(u)  # -log u  > 0
+        log_v_neg = -_safe_log(v)
 
-        # φ_p = -h'(s) · exp(-h(s))
-        h1 = self._h_prime(s, param)
-        phi_p = -h1 * np.exp(-self._h(s, param))
+        # δ(−log u)^θ and δ(−log v)^θ
+        exp_u = delta * _safe_pow(log_u_neg, theta)
+        exp_v = delta * _safe_pow(log_v_neg, theta)
 
-        # d/du [exp(δ·(-log u)^θ)] = exp(...) * δ·θ·(-log u)^(θ-1)·(1/u)
-        inv_u_prime = (
-                -delta * theta
-                * np.exp(delta * (-np.log(u)) ** theta)
-                * (-np.log(u)) ** (theta - 1)
-                / u
-        )
+        # gardés pour ds/du et ds/dv
+        log_su = exp_u  # = log(1+su)−log(1)
+        log_sv = exp_v  # (utilisé ailleurs)
 
-        deriv = phi_p * inv_u_prime
+        # su = e^{…}−1  (expm1‑like pour la précision)
+        su = _safe_exp(exp_u) - 1.0
+        sv = _safe_exp(exp_v) - 1.0
+        s = su + sv
 
-        deriv = np.nan_to_num(deriv, nan=0.0, neginf=0.0, posinf=np.finfo(float).max)
-        deriv = np.where(u <= 1e-9, 0.5 * deriv, deriv)
-        return deriv
+        log1p_s = _safe_log1p(s)  # log(1+s)
+        g = log1p_s / delta
+        log_g = _safe_log(g)
+
+        # ------------------------------------------------------------------ #
+        # h(g) et h′(g)                                                  #
+        # ------------------------------------------------------------------ #
+        h = _safe_pow(g, inv_theta)  # g^{1/θ}
+        log_hprime = ((inv_theta - 1.0) * log_g
+                      - _safe_log(theta)
+                      - _safe_log(delta)
+                      - log1p_s)
+
+        # ------------------------------------------------------------------ #
+        # log(ds/du)                                                     #
+        # ------------------------------------------------------------------ #
+        log_dsdu = (_safe_log(delta) + _safe_log(theta)
+                    + log_su
+                    + (theta - 1.0) * _safe_log(log_u_neg)
+                    - _safe_log(u))
+
+        # ------------------------------------------------------------------ #
+        # Assemble log‑derivative                                        #
+        # ------------------------------------------------------------------ #
+        log_deriv = -h + log_hprime + log_dsdu
+
+        #  underflow / overflow -> ±inf
+        log_deriv = np.where(log_deriv < _FLOAT_MIN_LOG, -np.inf, log_deriv)
+        log_deriv = np.where(log_deriv > _FLOAT_MAX_LOG, np.inf, log_deriv)
+
+        return _safe_exp(log_deriv)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """
