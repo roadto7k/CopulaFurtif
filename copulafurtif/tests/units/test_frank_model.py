@@ -78,15 +78,61 @@ def test_parameters_out_of_bounds(theta):
 
 @given(theta=safe_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_bounds(theta, u, v):
-    cop = FrankCopula(); cop.set_parameters([theta])
+    cop = FrankCopula()
+    cop.set_parameters([theta])
     val = cop.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
 
 @given(theta=safe_theta(), u=unit_interval(), v=unit_interval())
 def test_pdf_nonnegative(theta, u, v):
-    cop = FrankCopula(); cop.set_parameters([theta])
+    cop = FrankCopula()
+    cop.set_parameters([theta])
     assert cop.get_pdf(u, v) >= 0.0
+
+# def _mixed_finite_diff(C, u, v, h=1e-5):
+#     """
+#     Central 2‑D finite difference:
+#         ∂²C/∂u∂v  ≈  [ C(u+h, v+h) – C(u+h, v–h)
+#                       –C(u–h, v+h) + C(u–h, v–h) ] / (4 h²)
+#     """
+#     return (
+#         C(u + h, v + h)
+#         - C(u + h, v - h)
+#         - C(u - h, v + h)
+#         + C(u - h, v - h)
+#     ) / (4.0 * h * h)
+#
+#
+# @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
+# @settings(max_examples=100)
+# def test_pdf_matches_mixed_derivative(theta, delta, u, v):
+#     """
+#     Check that c(u,v) ≈ ∂²C/∂u∂v within loose FD tolerance.
+#     """
+#     c = FrankCopula()
+#     c.set_parameters([theta, delta])
+#
+#     C = c.get_cdf
+#     pdf_num = _mixed_finite_diff(C, u, v, h=1e-5)
+#     pdf_ana = c.get_pdf(u, v)
+#
+#     assert math.isclose(
+#         pdf_ana, pdf_num, rel_tol=5e-3, abs_tol=1e-5
+#     ), f"ana={pdf_ana}, num={pdf_num}"
+#
+#
+# def test_pdf_integrates_to_one(copula_default):
+#     """
+#     Quick Monte‑Carlo: ∫∫ c(u,v) du dv == 1.
+#     50 k samples is plenty for a ±1% check.
+#     """
+#     rng = np.random.default_rng(42)
+#     u, v = rng.random(50_000), rng.random(50_000)
+#     pdf_vals = copula_default.get_pdf(u, v)
+#     integral_mc = pdf_vals.mean()  # E[c(U,V)] with U,V~U(0,1)
+#
+#     assert math.isclose(integral_mc, 1.0, rel_tol=1e-2)
 
 # -----------------------------------------------------------------------------
 # Derivative cross‑check (moderate θ only for stability)
