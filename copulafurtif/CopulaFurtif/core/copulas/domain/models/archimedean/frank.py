@@ -67,12 +67,29 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
-        if np.isclose(theta, 0.0):
+
+        # independence case theta→0
+        if abs(theta) < 1e-12:
             return np.ones_like(u)
-        e_theta_u = np.exp(-theta * u)
-        e_theta_v = np.exp(-theta * v)
-        num = theta * e_theta_u * e_theta_v * (1 - np.exp(-theta))
-        denom = (1 - np.exp(-theta) + (e_theta_u - 1) * (e_theta_v - 1)) ** 2
+
+        # clip to avoid under/overflow
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        exp_m_theta = np.exp(-theta)
+        exp_m_theta_u = np.exp(-theta * u)
+        exp_m_theta_v = np.exp(-theta * v)
+        one_minus_exp = 1.0 - exp_m_theta
+
+        # numerator = theta * (1 - e^{-theta}) * e^{-theta*(u+v)}
+        num = theta * one_minus_exp * exp_m_theta_u * exp_m_theta_v
+
+        # A = (1 - e^{-theta*u}) * (1 - e^{-theta*v})
+        A = (1.0 - exp_m_theta_u) * (1.0 - exp_m_theta_v)
+        # denominator = [1 - e^{-theta} - A]^2
+        denom = (one_minus_exp - A) ** 2
+
         return num / denom
 
     def sample(self, n, param=None, rng=None):

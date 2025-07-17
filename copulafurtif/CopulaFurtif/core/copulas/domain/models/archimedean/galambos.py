@@ -55,26 +55,44 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return u * v * np.exp(S ** (-1.0 / d))
 
     def get_pdf(self, u, v, param=None):
-        """Compute the copula PDF c(u, v).
-
-        Args:
-            u (float or np.ndarray): First input in (0, 1).
-            v (float or np.ndarray): Second input in (0, 1).
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float or np.ndarray: Value(s) of the PDF.
         """
-        d = float(self.get_parameters()[0]) if param is None else float(param[0])
-        x = -np.log(u)
-        y = -np.log(v)
-        S = x ** (-d) + y ** (-d)
+        Compute the Galambos copula PDF c(u, v; δ).
 
-        C = u * v * np.exp(S ** (-1.0 / d))  # the copula itself
-        g = (x * y) ** (-d) * S ** (-2.0 - 1.0 / d) * (d + 1) \
-            - (x ** (-d - 1) + y ** (-d - 1)) * S ** (-1.0 - 1.0 / d) \
-            + 1.0
-        return C * g / (u * v)
+        Parameters
+        ----------
+        u : array_like
+            First marginal argument, must lie in (0,1).
+        v : array_like
+            Second marginal argument, must lie in (0,1).
+        param : sequence, optional
+            If provided, overrides self.get_parameters()[0] as δ.
+
+        Returns
+        -------
+        pdf : ndarray
+            The value(s) of the Galambos copula PDF at (u, v).
+        """
+        # dependence parameter δ
+        d = float(self.get_parameters()[0]) if param is None else float(param[0])
+
+        # guard against log(0) -- clip *very* lightly; RNG draws are in [0,1)
+        eps = 1e-15
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        x = -np.log(u)  # >0
+        y = -np.log(v)  # >0
+        S = x ** (-d) + y ** (-d)  # x^{-δ} + y^{-δ}
+        A = S ** (-1.0 / d)  # S^{-1/δ}
+
+        # pieces of the bracketed factor g(x,y)
+        term2 = S ** (-1.0 - 1.0 / d) * (x ** (-d - 1) + y ** (-d - 1))
+        term3 = S ** (-2.0 - 1.0 / d) * (x * y) ** (-d - 1) * (1.0 + d + A)
+
+        g = 1.0 - term2 + term3
+
+        # c(u,v) = exp(A) * g  because C(u,v)/(u v) = exp(A)
+        return np.exp(A) * g
 
     def sample(self,
                n: int,

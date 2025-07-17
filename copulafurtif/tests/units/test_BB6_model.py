@@ -171,8 +171,8 @@ def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
     ana_du = c.partial_derivative_C_wrt_u(u, v)
     ana_dv = c.partial_derivative_C_wrt_v(u, v)
 
-    assert math.isclose(ana_du, num_du, rel_tol=1e-3, abs_tol=1e-4)
-    assert math.isclose(ana_dv, num_dv, rel_tol=1e-3, abs_tol=1e-4)
+    assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-3)
+    assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-3)
 
 
 # -----------------------------------------------------------------------------

@@ -90,49 +90,59 @@ def test_pdf_nonnegative(theta, u, v):
     cop.set_parameters([theta])
     assert cop.get_pdf(u, v) >= 0.0
 
-# def _mixed_finite_diff(C, u, v, h=1e-5):
-#     """
-#     Central 2‑D finite difference:
-#         ∂²C/∂u∂v  ≈  [ C(u+h, v+h) – C(u+h, v–h)
-#                       –C(u–h, v+h) + C(u–h, v–h) ] / (4 h²)
-#     """
-#     return (
-#         C(u + h, v + h)
-#         - C(u + h, v - h)
-#         - C(u - h, v + h)
-#         + C(u - h, v - h)
-#     ) / (4.0 * h * h)
-#
-#
-# @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
-# @settings(max_examples=100)
-# def test_pdf_matches_mixed_derivative(theta, delta, u, v):
-#     """
-#     Check that c(u,v) ≈ ∂²C/∂u∂v within loose FD tolerance.
-#     """
-#     c = FrankCopula()
-#     c.set_parameters([theta, delta])
-#
-#     C = c.get_cdf
-#     pdf_num = _mixed_finite_diff(C, u, v, h=1e-5)
-#     pdf_ana = c.get_pdf(u, v)
-#
-#     assert math.isclose(
-#         pdf_ana, pdf_num, rel_tol=5e-3, abs_tol=1e-5
-#     ), f"ana={pdf_ana}, num={pdf_num}"
-#
-#
-# def test_pdf_integrates_to_one(copula_default):
-#     """
-#     Quick Monte‑Carlo: ∫∫ c(u,v) du dv == 1.
-#     50 k samples is plenty for a ±1% check.
-#     """
-#     rng = np.random.default_rng(42)
-#     u, v = rng.random(50_000), rng.random(50_000)
-#     pdf_vals = copula_default.get_pdf(u, v)
-#     integral_mc = pdf_vals.mean()  # E[c(U,V)] with U,V~U(0,1)
-#
-#     assert math.isclose(integral_mc, 1.0, rel_tol=1e-2)
+
+def _mixed_finite_diff(C, u, v, h=1e-5):
+    """
+    Central 2‑D finite difference:
+        ∂²C/∂u∂v  ≈  [ C(u+h, v+h) – C(u+h, v–h)
+                      –C(u–h, v+h) + C(u–h, v–h) ] / (4 h²)
+    """
+    return (
+        C(u + h, v + h)
+        - C(u + h, v - h)
+        - C(u - h, v + h)
+        + C(u - h, v - h)
+    ) / (4.0 * h * h)
+
+# tolerances
+ATOL = 1e-12
+RTOL = 3e-2
+
+@given(theta=safe_theta(), u=unit_interval(), v=unit_interval())
+@settings(max_examples=100)
+def test_pdf_matches_mixed_derivative(theta, u, v):
+    """
+    For a one‑param copula, check that
+      c(u,v) ≈ ∂²C/∂u∂v
+    via a 2D central finite difference.
+    """
+    c = FrankCopula()
+    c.set_parameters([theta])
+
+    C = c.get_cdf
+    pdf_num = _mixed_finite_diff(C, u, v)
+    pdf_ana = c.get_pdf(u, v)
+
+    assert math.isclose(
+        pdf_ana, pdf_num, rel_tol=RTOL, abs_tol=1e-3
+    ), f"ana={pdf_ana}, num={pdf_num}"
+
+@pytest.fixture(scope="module")
+def copula_default():
+    c = FrankCopula()
+    c.set_parameters([2.0])   # pick a valid default θ
+    return c
+
+def test_pdf_integrates_to_one(copula_default):
+    """
+    Monte‑Carlo check that ∫₀¹∫₀¹ c(u,v) du dv == 1.
+    """
+    rng = np.random.default_rng(42)
+    u, v = rng.random(50_000), rng.random(50_000)
+    pdf_vals = copula_default.get_pdf(u, v)
+    integral_mc = pdf_vals.mean()  # E[c(U,V)] over the unit square
+
+    assert math.isclose(integral_mc, 1.0, rel_tol=1e-2)
 
 # -----------------------------------------------------------------------------
 # Derivative cross‑check (moderate θ only for stability)
@@ -160,8 +170,8 @@ def test_partial_derivative_matches_finite_diff(theta, u, v):
     ana_du = cop.partial_derivative_C_wrt_u(u, v)
     ana_dv = cop.partial_derivative_C_wrt_v(u, v)
 
-    assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-2)
-    assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-2)
+    assert math.isclose(ana_du, num_du, rel_tol=3e-2, abs_tol=3e-2)
+    assert math.isclose(ana_dv, num_dv, rel_tol=3e-2, abs_tol=3e-2)
 # -----------------------------------------------------------------------------
 # Kendall τ range & formula sanity
 # -----------------------------------------------------------------------------

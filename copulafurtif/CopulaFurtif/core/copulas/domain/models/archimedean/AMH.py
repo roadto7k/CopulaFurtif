@@ -54,28 +54,44 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return num / denom
 
     def get_pdf(self, u, v, param=None):
-        """Compute the copula PDF c(u, v).
-
-        Args:
-            u (float or np.ndarray): First input in (0, 1).
-            v (float or np.ndarray): Second input in (0, 1).
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float or np.ndarray: PDF value(s).
         """
-        if param is None:
-            param = self.get_parameters()
-        theta = param[0]
-        numerator = 1 + theta * (1 - 2 * u) * (1 - 2 * v)
-        denominator = (1 - theta * (1 - u) * (1 - v)) ** 2
-        return numerator / denominator
+        Evaluate the Ali–Mikhail–Haq (AMH) copula density c(u, v; θ).
 
-    def _inv_phi(self, s, theta):
-        if abs(theta) < 1e-8:
-            return np.exp(-s)
-        exp_term = np.exp(-(1 - theta) * s)
-        return 1 - (1 - exp_term) / (theta + (1 - theta) * exp_term)
+        C(u, v) = u v / [1 - θ (1-u)(1-v)],   θ ∈ (-1, 1).
+
+        Parameters
+        ----------
+        u, v : array_like
+            Points in (0,1) where the density is evaluated (broadcastable).
+        param : sequence-like, optional
+            Copula parameter [θ]; if None, uses current instance parameter.
+
+        Returns
+        -------
+        pdf : ndarray
+            Density values c(u,v;θ) with NumPy broadcasting.
+        """
+        # parameter
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
+
+        # guard against endpoints (avoid division by zero when D→0 numerically)
+        eps = 1e-15
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        one_minus_u = 1.0 - u
+        one_minus_v = 1.0 - v
+
+        D = 1.0 - theta * one_minus_u * one_minus_v             # denom in C(u,v)
+
+        # Numerator N in stable (1-u),(1-v) form
+        N = (
+            1.0 + theta
+            + theta * (theta + 1.0) * one_minus_u * one_minus_v
+            - 2.0 * theta * (one_minus_u + one_minus_v)
+        )
+
+        return N / (D**3)
 
     def sample(self, n, param=None, rng=None):
         """
