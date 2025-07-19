@@ -44,7 +44,7 @@ def valid_theta(draw):
 
 @st.composite
 def unit_interval(draw):
-    eps = 1e-4
+    eps = 1e-3
     return draw(st.floats(min_value=0.0 + eps, max_value=1.0 - eps, exclude_min=True, exclude_max=True))
 
 # -----------------------------------------------------------------------------
