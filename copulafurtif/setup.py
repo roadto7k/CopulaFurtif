@@ -23,6 +23,8 @@ setup(
         "sympy",
         "hypothesis",
         "pytest",
+        "jax",
+        "jaxlib",
     ],
     python_requires=">=3.9",
 

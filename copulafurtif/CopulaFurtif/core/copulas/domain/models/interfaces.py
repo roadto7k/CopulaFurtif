@@ -25,8 +25,11 @@ import numpy as np
 from sympy import symbols, diff, pretty
 from sympy.utilities.lambdify import lambdify
 import autograd.numpy as anp
-from autograd import grad, hessian
+# from autograd import grad, hessian
 from scipy.stats import norm, multivariate_normal
+import jax
+import jax.numpy as jnp
+from jax import grad, hessian
 
 
 
@@ -143,31 +146,18 @@ class CopulaModel(ABC):
         n_obs (int): Number of observations in the dataset.
     """
 
-    def __init__(self):
+    def __init__(self, *, use_jax: bool = False):
         """
         Initialize the copula model with default attributes.
+        use_jax : bool
+            False  → backend NumPy (copule «light»)
+            True   → backend JAX  (copule high‑dimension, AD, JIT…)
         """
+        self._use_jax = bool(use_jax)
         self._parameters = None
         self.log_likelihood_ = None
         self.n_obs = None
         self.name = ""
-    # @property
-    # def parameters(self) -> np.ndarray:
-    #     """Return parameters as numpy array."""
-    #     return self._parameters
-    #     return self._parameters.as_array()
-
-    # @parameters.setter
-    # def parameters(self, params: CopulaParameters):
-    #     """Validate and set parameters. Uses bounds_param and expected size."""
-    #     if isinstance(params, CopulaParameters):
-    #         self._parameters = params
-    #     else:
-    #         self._parameters = CopulaParameters(
-    #             values=params,
-    #             bounds=self.get_bounds(),
-    #             names=getattr(self, "param_names", None)
-    #         )
 
     def pretty_print(self, equation='cdf'):
         if equation == 'cdf':
@@ -213,6 +203,14 @@ class CopulaModel(ABC):
     def set_n_obs(self, n):
         self.n_obs = n
 
+    def _xp(self):
+        """Returns the active array module (np or jnp)."""
+        return jnp if self._use_jax else np
+
+    def _to_backend(self, x):
+        """Cast user input to the current backend."""
+        return self._xp().asarray(x)
+
     def get_cdf(self, u, v):
         """
         Compute the cumulative distribution function C(u, v).
@@ -241,11 +239,7 @@ class CopulaModel(ABC):
         Returns:
             float or np.ndarray: Value(s) of the PDF.
         """
-        if param is None:
-            param = self.get_parameters()
-
-        H = hessian(lambda uu, vv: self.get_cdf(uu, vv, param))
-        return float(H(u, v)[0, 1])
+        pass
 
     @abstractmethod
     def kendall_tau(self, param=None):
@@ -289,9 +283,7 @@ class CopulaModel(ABC):
             NotImplementedError: If no numeric implementation is provided.
         """
 
-        if param is None:
-            param = self.get_parameters()
-        return float(grad(lambda uu: self.get_cdf(uu, v, param))(u))
+        pass
 
     def partial_derivative_C_wrt_v(self, u, v, param = None):
         """

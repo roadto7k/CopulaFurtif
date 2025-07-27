@@ -207,7 +207,9 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta, delta = param
-        T = (u ** (-theta) - 1) ** delta + (v ** (-theta) - 1) ** delta
+        u_pow = np.exp(np.minimum(-theta * np.log(u), 700.0))  # clip exp
+        v_pow = np.exp(np.minimum(-theta * np.log(v), 700.0))
+        T = (u_pow - 1.0) ** delta + (v_pow - 1.0) ** delta
         factor = (1 + T ** (1.0 / delta)) ** (-1.0 / theta - 1)
         return factor * T ** (1.0 / delta - 1) * (u ** (-theta) - 1) ** (delta - 1) * u ** (-theta - 1)
 
