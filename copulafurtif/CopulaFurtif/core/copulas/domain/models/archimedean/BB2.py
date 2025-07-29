@@ -4,6 +4,7 @@ from typing import Union
 import numpy as np
 from numpy.random import default_rng
 from scipy import integrate
+from numpy.polynomial.chebyshev import chebvander2d, chebval2d, chebder
 
 # ─────────── BB2 JAX implementation ─────────────────────
 import math
@@ -12,6 +13,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import jax.tree_util as jtu
 from functools import partial
+from jax.nn import softplus
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
@@ -202,93 +204,152 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         logL1 = logS - jnp.log(delta)
 
         # 6) log(1 + L1) stable
-        logA = jnp.log1p(jnp.exp(logL1))
+        logA = softplus(logL1)
 
         # 7) CDF
         return jnp.exp(-logA / theta)
 
-    @partial(jax.jit, static_argnums=0)
-    def get_pdf(self, u, v, param=None):
-        """
-        Compute the BB2 copula density c(u, v).
 
-        This method accepts scalars or arrays; if arrays are provided,
-        standard NumPy broadcasting rules apply and the result has
-        the broadcasted shape.
-
-        Args:
-            u (array_like): First margin values in (0, 1).
-            v (array_like): Second margin values in (0, 1).
-            param (Sequence[float] or None): Optional [theta, delta].
-                If None, uses this instance’s stored parameters.
-
-        Returns:
-            jnp.ndarray: Copula density values with the same
-                         broadcasted shape as u and v.
-        """
-        # 1. Extract parameters ------------------------------------------------
-        if param is None:
-            theta, delta = self.get_parameters()
-        else:
-            theta, delta = param
-
-        eps = 1e-15
-        u = jnp.clip(self._to_backend(u), eps, 1 - eps)
-        v = jnp.clip(self._to_backend(v), eps, 1 - eps)
-
-        A = delta * (u ** (-theta) - 1.0)
-        B = delta * (v ** (-theta) - 1.0)
-
-        logS = _logsumexp_minus1(A, B)  # log E
-        T = 1.0 + logS / delta  # >0
-
-        # softmax-like stable weights
-        p_u = jnp.exp(A - logS)
-        p_v = jnp.exp(B - logS)
-
-        # powers that appear repeatedly
-        u_pow = u ** (-theta - 1.0)
-        v_pow = v ** (-theta - 1.0)
-
-        # assemble the density
-        prefactor = jnp.exp(-(1.0 / theta + 2.0) * jnp.log(T))  # T^{-1/θ-2}
-        bracket = (1.0 + theta) + theta * delta * T  # [...]
-        pdf = prefactor * p_u * p_v * u_pow * v_pow * bracket
-
-        return pdf
 
     # @partial(jax.jit, static_argnums=0)
     # def get_pdf(self, u, v, param=None):
     #     """
-    #     Auto‑diff BB2 copula density c(u,v) via reverse‑over‑reverse.
+    #     Compute the BB2 copula density c(u, v).
     #
-    #     Returns a JAX array of the same broadcasted shape as u, v.
+    #     This method accepts scalars or arrays; if arrays are provided,
+    #     standard NumPy broadcasting rules apply and the result has
+    #     the broadcasted shape.
+    #
+    #     Args:
+    #         u (array_like): First margin values in (0, 1).
+    #         v (array_like): Second margin values in (0, 1).
+    #         param (Sequence[float] or None): Optional [theta, delta].
+    #             If None, uses this instance’s stored parameters.
+    #
+    #     Returns:
+    #         jnp.ndarray: Copula density values with the same
+    #                      broadcasted shape as u and v.
     #     """
-    #     # 1. parameters
+    #     # 1. Extract parameters ------------------------------------------------
     #     if param is None:
     #         theta, delta = self.get_parameters()
     #     else:
     #         theta, delta = param
     #
-    #     # 2. clip & broadcast
-    #     eps = 1e-6
-    #     u_b, v_b = jnp.broadcast_arrays(
-    #         jnp.clip(self._to_backend(u), eps, 1 - eps),
-    #         jnp.clip(self._to_backend(v), eps, 1 - eps),
-    #     )
-    #     u_flat = u_b.ravel()
-    #     v_flat = v_b.ravel()
+    #     eps = 1e-15
+    #     u = jnp.clip(self._to_backend(u), eps, 1 - eps)
+    #     v = jnp.clip(self._to_backend(v), eps, 1 - eps)
     #
-    #     # 3. scalar CDF wrapper
-    #     def _cdf_scalar(uu, vv):
-    #         return self.get_cdf(uu, vv, (theta, delta))
+    #     A = delta * (u ** (-theta) - 1.0)
+    #     B = delta * (v ** (-theta) - 1.0)
     #
-    #     # 4. mixed second derivative via reverse‑over‑reverse
-    #     scalar_pdf = jax.grad(jax.grad(_cdf_scalar, argnums=0), argnums=1)
+    #     logS = _logsumexp_minus1(A, B)  # log E
+    #     T = 1.0 + logS / delta  # >0
     #
-    #     # 5. vectorize & reshape
-    #     pdf_flat = jax.vmap(scalar_pdf)(u_flat, v_flat)
-    #     return pdf_flat.reshape(u_b.shape)
+    #     # softmax-like stable weights
+    #     p_u = jnp.exp(A - logS)
+    #     p_v = jnp.exp(B - logS)
+    #
+    #     # powers that appear repeatedly
+    #     u_pow = u ** (-theta - 1.0)
+    #     v_pow = v ** (-theta - 1.0)
+    #
+    #     # assemble the density
+    #     prefactor = jnp.exp(-(1.0 / theta + 2.0) * jnp.log(T))  # T^{-1/θ-2}
+    #     bracket = (1.0 + theta) + theta * delta * T  # [...]
+    #     pdf = prefactor * p_u * p_v * u_pow * v_pow * bracket
+    #
+    #     return pdf
+
+    @partial(jax.jit, static_argnums=0)
+    def _compute_logA(self, u, v, theta, delta):
+        """Stable helper returning logA = log(1 + δ⁻¹·log(e^{A}+e^{B}−1))."""
+        eps = 1e-15
+        u = jnp.clip(u, eps, 1 - eps)
+        v = jnp.clip(v, eps, 1 - eps)
+
+        # u^{-θ} − 1  and v^{-θ} − 1, computed with expm1 to avoid cancellation.
+        gu = jnp.expm1(-theta * jnp.log(u))
+        gv = jnp.expm1(-theta * jnp.log(v))
+
+        # A = δ·(u^{-θ} − 1),   B = δ·(v^{-θ} − 1)
+        A = delta * gu
+        B = delta * gv
+
+        # logS = log(e^{A}+e^{B}−1) in full log‑space
+        logS = _logsumexp_minus1(A, B)
+
+        # logL1 = logS − log δ   ⇒   L1 = δ⁻¹·(e^{A}+e^{B}−1)
+        logL1 = logS - jnp.log(delta)
+
+        # logA = log(1 + L1)  (stable via log1p)
+        return softplus(logL1)
+
+    #############################################
+    #   PUBLIC API: CDF / log‑CDF / PDF / log‑PDF
+    #############################################
+
+    @partial(jax.jit, static_argnums=0)
+    def get_log_cdf(self, u, v, param=None):
+        """Return ln C(u,v; θ,δ) in full log‑domain for numerical stability."""
+        theta, delta = param if param is not None else self.get_parameters()
+        logA = self._compute_logA(u, v, theta, delta)
+        return -logA / theta  # ln C = −logA/θ
+
+    @partial(jax.jit, static_argnums=0)
+    def get_cdf(self, u, v, param=None):
+        """Return C(u,v; θ,δ). Wrapper around get_log_cdf."""
+        return jnp.exp(self.get_log_cdf(u, v, param))
+
+    @partial(jax.jit, static_argnums=0)
+    def get_log_pdf(self, u, v, param=None):
+        """
+        Compute ln c(u,v) via autodiff on ln C(u,v):
+            c = C (∂_u ln C · ∂_v ln C + ∂²_{uv} ln C)
+            ln c = ln C + ln(  ∂_u ln C · ∂_v ln C + ∂²_{uv} ln C  ).
+        Works 100 % in log‑space ⇒ aucune perte de précision sur petits C.
+        """
+        theta, delta = param if param is not None else self.get_parameters()
+
+        # Scalar wrapper with parameters frozen (needed for grad)
+        def _log_cdf_scalar(uu, vv):
+            return self.get_log_cdf(uu, vv, (theta, delta))
+
+        # First‑order partials of ln C
+        dlog_du = jax.grad(_log_cdf_scalar, argnums=0)  # ∂ ln C / ∂u
+        dlog_dv = jax.grad(_log_cdf_scalar, argnums=1)  # ∂ ln C / ∂v
+
+        # Mixed second‑order partial ∂² ln C / ∂u ∂v
+        d2log_duv = jax.grad(dlog_du, argnums=1)
+
+        # Vectorise over arrays
+        pdf_term = jax.vmap(lambda uu, vv: dlog_du(uu, vv) * dlog_dv(uu, vv) + d2log_duv(uu, vv))
+        logcdf_vmap = jax.vmap(_log_cdf_scalar)
+
+        # Broadcast & flatten inputs
+        eps = 1e-15
+        u_b, v_b = jnp.broadcast_arrays(
+            jnp.clip(self._to_backend(u), eps, 1 - eps),
+            jnp.clip(self._to_backend(v), eps, 1 - eps),
+        )
+        u_flat, v_flat = u_b.ravel(), v_b.ravel()
+
+        # Evaluate
+        logC_flat = logcdf_vmap(u_flat, v_flat)
+        term_flat = pdf_term(u_flat, v_flat)
+        # Prevent underflow by clamping the PDF term
+        min_term = 1e-20
+        safe_term_flat = jnp.where(jnp.isfinite(term_flat) & (term_flat > 0),term_flat,min_term)
+        log_pdf_flat = logC_flat + jnp.log(safe_term_flat)
+        log_pdf_flat = jnp.nan_to_num(log_pdf_flat, nan=-1e35, posinf=1e35)
+
+        # Reshape back to original broadcasting shape
+        return log_pdf_flat.reshape(u_b.shape)
+
+    @partial(jax.jit, static_argnums=0)
+    def get_pdf(self, u, v, param=None):
+        """Return the copula density c(u,v) by exponentiating ln c."""
+        return jnp.exp(self.get_log_pdf(u, v, param))
 
     @partial(jax.jit, static_argnums=(0, 2))
     def kendall_tau(self, param=None, n_grid: int = 400):

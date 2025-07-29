@@ -36,17 +36,21 @@ def demo_bb2(theta=4.0, delta=8.0, n_grid=150, n_colors=100):
     U, V, C, P, Du, Dv = map(np.asarray, (U, V, C, P, Du, Dv))
 
     # ── 3 . Colour handling for the PDF (LogNorm) ───────────────────────
-    positive = P[P > 0]
+    mask = np.isfinite(P) & (P > 0)
+    positive = P[mask]
     if positive.size == 0:
-        raise ValueError("PDF is identically zero on this grid.")
+        raise ValueError("PDF is identically zero or non‐finite on this grid.")
     vmin, vmax = positive.min(), positive.max()
 
-    P_plot = P.copy()
-    P_plot[P_plot <= 0] = vmin          # zeros → lowest colour
+    # 2) créer un masked array pour laisser NaN/inf « vides », et masquer aussi <= 0
+    P_plot = np.ma.masked_invalid(P)  # masque NaN et ±inf
+    P_plot = np.ma.masked_where(P_plot <= 0, P_plot)
 
+    # 3) configurer les niveaux et la normalisation log
     levels_pdf = np.logspace(np.log10(vmin), np.log10(vmax), n_colors + 1)
-    cmap_pdf   = plt.get_cmap("plasma", n_colors).copy()
-    norm_pdf   = colors.LogNorm(vmin=vmin, vmax=vmax)
+    cmap_pdf = plt.get_cmap("plasma", n_colors).copy()
+    cmap_pdf.set_bad(color="lightgray", alpha=0.6)  # couleur pour les zones masquées
+    norm_pdf = colors.LogNorm(vmin=vmin, vmax=vmax)
 
     # Derivatives live in (0,1); linear scale is enough
     levels_du = np.linspace(0, 1, 101)
