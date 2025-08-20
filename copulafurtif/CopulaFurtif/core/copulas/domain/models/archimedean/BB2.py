@@ -14,6 +14,8 @@ import jax.scipy as jsp
 import jax.tree_util as jtu
 from functools import partial
 from jax.nn import softplus
+from jax import lax
+from jax.numpy import logaddexp
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
@@ -22,6 +24,24 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.BB1 import BB1Copula
 # --- helpers ------------------------------------------------------------
 MAX_EXP = 700.0                       # e^700 ≈ 1e304, still finite
 _LOG_MAX = 700.0          # safe upper bound for exp() on 64-bit floats
+_LOG_SAFE = 30.0  # switch where "-1" is negligible
+
+def _logsumexp_minus1_safe(a, b):
+    # We assume a,b >= 0 for BB2
+    M = jnp.maximum(a, b)
+    m = jnp.minimum(a, b)
+
+    # true branch when M is large: log(e^A + e^B - 1) ≈ M + log1p(exp(m-M))
+    def big(_):
+        return M + jnp.log1p(jnp.exp(m - M))
+
+    # false branch when M is moderate: evaluate exact expression safely
+    def small(_):
+        # both a,b <= _LOG_SAFE here → expm1 won’t overflow
+        return jnp.log1p(jnp.expm1(a) + jnp.expm1(b))
+
+    # IMPORTANT: pass a dummy operand; capture a,b,M,m in closures
+    return lax.cond(M > _LOG_SAFE, big, small, operand=None)
 
 def _safe_exp(x):
     """exp(x) but hard‑clipped to avoid overflow"""
@@ -30,6 +50,9 @@ def _safe_exp(x):
 def _safe_expm1(x):
     """expm1(x) sans overflow pour x très grand."""
     return jnp.where(x < _LOG_MAX, jnp.expm1(x), jnp.exp(jnp.clip(x, None, _LOG_MAX)))
+
+def log1p_pos(a):
+    return jnp.log1p(a)
 
 def _logsumexp_minus1(a, b):
     """
@@ -160,54 +183,54 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return delta * expm1_s
 
-    @partial(jax.jit, static_argnums=0)
-    def get_cdf(self, u, v, param=None):
-        """
-        Evaluate the BB2 copula cumulative distribution function C(u, v).
-
-        Computes
-
-            C(u,v;θ,δ) = [1 + δ⁻¹ · log(e^{w_u} + e^{w_v} − 1)]^{−1/θ}
-
-        where w_u = δ(u^{−θ}−1), w_v = δ(v^{−θ}−1), implemented fully in log‐space
-        for numerical stability.
-
-        Args:
-            u (array_like): First marginal values in (0, 1).
-            v (array_like): Second marginal values in (0, 1).
-            param (Optional[Sequence[float]]): Sequence [θ, δ] of copula parameters;
-                if None, uses this instance’s stored parameters.
-
-        Returns:
-            jnp.ndarray: The CDF values C(u, v), same shape as inputs.
-        """
-
-        if param is None:
-            theta, delta = self.get_parameters()
-        else:
-            theta, delta = param
-
-        eps = 1e-15
-        u = jnp.clip(self._to_backend(u), eps, 1 - eps)
-        v = jnp.clip(self._to_backend(v), eps, 1 - eps)
-
-        # 3) A = δ (u^{-θ} - 1), B = δ (v^{-θ} - 1)
-        gu = jnp.expm1(-theta * jnp.log(u))  # = u^{-θ} - 1
-        gv = jnp.expm1(-theta * jnp.log(v))  # = v^{-θ} - 1
-        A = delta * gu
-        B = delta * gv
-
-        # 4) logS = log( e^A + e^B - 1 )
-        logS = _logsumexp_minus1(A, B)
-
-        # 5) L1 = δ⁻¹·logS  →  logL1 = logS - log(delta)
-        logL1 = logS - jnp.log(delta)
-
-        # 6) log(1 + L1) stable
-        logA = softplus(logL1)
-
-        # 7) CDF
-        return jnp.exp(-logA / theta)
+    # @partial(jax.jit, static_argnums=0)
+    # def get_cdf(self, u, v, param=None):
+    #     """
+    #     Evaluate the BB2 copula cumulative distribution function C(u, v).
+    #
+    #     Computes
+    #
+    #         C(u,v;θ,δ) = [1 + δ⁻¹ · log(e^{w_u} + e^{w_v} − 1)]^{−1/θ}
+    #
+    #     where w_u = δ(u^{−θ}−1), w_v = δ(v^{−θ}−1), implemented fully in log‐space
+    #     for numerical stability.
+    #
+    #     Args:
+    #         u (array_like): First marginal values in (0, 1).
+    #         v (array_like): Second marginal values in (0, 1).
+    #         param (Optional[Sequence[float]]): Sequence [θ, δ] of copula parameters;
+    #             if None, uses this instance’s stored parameters.
+    #
+    #     Returns:
+    #         jnp.ndarray: The CDF values C(u, v), same shape as inputs.
+    #     """
+    #
+    #     if param is None:
+    #         theta, delta = self.get_parameters()
+    #     else:
+    #         theta, delta = param
+    #
+    #     eps = 1e-15
+    #     u = jnp.clip(self._to_backend(u), eps, 1 - eps)
+    #     v = jnp.clip(self._to_backend(v), eps, 1 - eps)
+    #
+    #     # 3) A = δ (u^{-θ} - 1), B = δ (v^{-θ} - 1)
+    #     gu = jnp.expm1(-theta * jnp.log(u))  # = u^{-θ} - 1
+    #     gv = jnp.expm1(-theta * jnp.log(v))  # = v^{-θ} - 1
+    #     A = delta * gu
+    #     B = delta * gv
+    #
+    #     # 4) logS = log( e^A + e^B - 1 )
+    #     logS = _logsumexp_minus1(A, B)
+    #
+    #     # 5) L1 = δ⁻¹·logS  →  logL1 = logS - log(delta)
+    #     logL1 = logS - jnp.log(delta)
+    #
+    #     # 6) log(1 + L1) stable
+    #     logA = softplus(logL1)
+    #
+    #     # 7) CDF
+    #     return jnp.exp(-logA / theta)
 
 
 
@@ -263,27 +286,22 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     @partial(jax.jit, static_argnums=0)
     def _compute_logA(self, u, v, theta, delta):
-        """Stable helper returning logA = log(1 + δ⁻¹·log(e^{A}+e^{B}−1))."""
         eps = 1e-15
         u = jnp.clip(u, eps, 1 - eps)
         v = jnp.clip(v, eps, 1 - eps)
 
-        # u^{-θ} − 1  and v^{-θ} − 1, computed with expm1 to avoid cancellation.
-        gu = jnp.expm1(-theta * jnp.log(u))
-        gv = jnp.expm1(-theta * jnp.log(v))
+        su = -theta * jnp.log(u)
+        sv = -theta * jnp.log(v)
+        gu = _safe_expm1(su)
+        gv = _safe_expm1(sv)
 
-        # A = δ·(u^{-θ} − 1),   B = δ·(v^{-θ} − 1)
         A = delta * gu
         B = delta * gv
 
-        # logS = log(e^{A}+e^{B}−1) in full log‑space
-        logS = _logsumexp_minus1(A, B)
-
-        # logL1 = logS − log δ   ⇒   L1 = δ⁻¹·(e^{A}+e^{B}−1)
+        logS = _logsumexp_minus1_safe(A, B)
         logL1 = logS - jnp.log(delta)
 
-        # logA = log(1 + L1)  (stable via log1p)
-        return softplus(logL1)
+        return jax.nn.softplus(logL1)
 
     #############################################
     #   PUBLIC API: CDF / log‑CDF / PDF / log‑PDF
@@ -298,53 +316,62 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     @partial(jax.jit, static_argnums=0)
     def get_cdf(self, u, v, param=None):
-        """Return C(u,v; θ,δ). Wrapper around get_log_cdf."""
+        """Return C(u,v; θ,δ) via the stable log-CDF path."""
         return jnp.exp(self.get_log_cdf(u, v, param))
 
     @partial(jax.jit, static_argnums=0)
     def get_log_pdf(self, u, v, param=None):
-        """
-        Compute ln c(u,v) via autodiff on ln C(u,v):
-            c = C (∂_u ln C · ∂_v ln C + ∂²_{uv} ln C)
-            ln c = ln C + ln(  ∂_u ln C · ∂_v ln C + ∂²_{uv} ln C  ).
-        Works 100 % in log‑space ⇒ aucune perte de précision sur petits C.
-        """
         theta, delta = param if param is not None else self.get_parameters()
 
-        # Scalar wrapper with parameters frozen (needed for grad)
-        def _log_cdf_scalar(uu, vv):
-            return self.get_log_cdf(uu, vv, (theta, delta))
-
-        # First‑order partials of ln C
-        dlog_du = jax.grad(_log_cdf_scalar, argnums=0)  # ∂ ln C / ∂u
-        dlog_dv = jax.grad(_log_cdf_scalar, argnums=1)  # ∂ ln C / ∂v
-
-        # Mixed second‑order partial ∂² ln C / ∂u ∂v
-        d2log_duv = jax.grad(dlog_du, argnums=1)
-
-        # Vectorise over arrays
-        pdf_term = jax.vmap(lambda uu, vv: dlog_du(uu, vv) * dlog_dv(uu, vv) + d2log_duv(uu, vv))
-        logcdf_vmap = jax.vmap(_log_cdf_scalar)
-
-        # Broadcast & flatten inputs
+        # 1) clip inputs
         eps = 1e-15
-        u_b, v_b = jnp.broadcast_arrays(
-            jnp.clip(self._to_backend(u), eps, 1 - eps),
-            jnp.clip(self._to_backend(v), eps, 1 - eps),
+        u = jnp.clip(self._to_backend(u), eps, 1 - eps)
+        v = jnp.clip(self._to_backend(v), eps, 1 - eps)
+
+        # 2) core "s" (never explodes)
+        su = -theta * jnp.log(u)
+        sv = -theta * jnp.log(v)
+
+        # 3) capped expm1 → u^{-θ}-1
+        gu = _safe_expm1(su)  # <= ~1e304
+        gv = _safe_expm1(sv)
+
+        # 4) A,B finite by construction
+        A = delta * gu
+        B = delta * gv
+
+        # 5) logE = log(e^A + e^B - 1) with short-circuit
+        logE = _logsumexp_minus1_safe(A, B)
+
+        # 6) logT = log(1 + (1/δ)·logE)
+        logT = jax.nn.softplus(logE - jnp.log(delta))  # stable log1p(exp(.))
+
+        # 7) log(1+θ+θδT), branch to avoid inf - inf
+        base = jnp.log(theta) + jnp.log(delta) + logT
+        log_bracket = lax.cond(
+            base > 40.0,
+            lambda b: b + jnp.log1p((1.0 + theta) * jnp.exp(-b)),
+            lambda b: jnp.log1p(1.0 + theta + jnp.exp(b)),
+            base,
         )
-        u_flat, v_flat = u_b.ravel(), v_b.ravel()
 
-        # Evaluate
-        logC_flat = logcdf_vmap(u_flat, v_flat)
-        term_flat = pdf_term(u_flat, v_flat)
-        # Prevent underflow by clamping the PDF term
-        min_term = 1e-20
-        safe_term_flat = jnp.where(jnp.isfinite(term_flat) & (term_flat > 0),term_flat,min_term)
-        log_pdf_flat = logC_flat + jnp.log(safe_term_flat)
-        log_pdf_flat = jnp.nan_to_num(log_pdf_flat, nan=-1e35, posinf=1e35)
+        # 8) (A+B) - 2logE    (finite because A,B and logE are finite)
+        log_q = (A + B) - 2.0 * logE
 
-        # Reshape back to original broadcasting shape
-        return log_pdf_flat.reshape(u_b.shape)
+        # 9) remaining power terms in log
+        log_pow = (-theta - 1.0) * (jnp.log(u) + jnp.log(v))
+
+        # 10) combine
+        logpdf = -(1.0 / theta + 2.0) * logT + log_pow + log_bracket + log_q
+
+        # 11) asymptotic guard in the far corner (optional but bombproof)
+        s_max = jnp.maximum(su, sv)
+        logpdf = jnp.where(s_max > 680.0,  # "one margin ~ 0"
+                           -(1.0 / theta + 1.0) * s_max + log_pow + jnp.log(theta) + jnp.log(delta),
+                           logpdf)
+
+        # 12) sanitize
+        return jnp.nan_to_num(logpdf, neginf=-1e300, posinf=1e300)
 
     @partial(jax.jit, static_argnums=0)
     def get_pdf(self, u, v, param=None):
@@ -485,30 +512,28 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         -------
         jnp.ndarray with the broadcasted shape of (u, v)
         """
-        # 1) parameters -------------------------------------------------------
         theta, delta = param if param is not None else self.get_parameters()
-
-        # 2) clip & broadcast -------------------------------------------------
         eps = 1e-15
-        u_b, v_b = jnp.broadcast_arrays(
-            jnp.clip(self._to_backend(u), eps, 1.0 - eps),
-            jnp.clip(self._to_backend(v), eps, 1.0 - eps),
-        )
+        u_b = jnp.clip(self._to_backend(u), eps, 1.0 - eps)
+        v_b = jnp.clip(self._to_backend(v), eps, 1.0 - eps)
 
-        # 3) core quantities --------------------------------------------------
-        A = delta * (u_b ** (-theta) - 1.0)
-        B = delta * (v_b ** (-theta) - 1.0)
+        su = -theta * jnp.log(u_b)
+        sv = -theta * jnp.log(v_b)
+        gu = _safe_expm1(su)  # u^{-θ} - 1  (capped)
+        gv = _safe_expm1(sv)
 
-        logS = _logsumexp_minus1(A, B)  # log(e^A + e^B − 1)
-        T = 1.0 + logS / delta  # > 0
-        Cuv = jnp.exp(-jnp.log(T) / theta)  # C(u,v)
+        A = delta * gu
+        B = delta * gv
 
-        p_u = jnp.exp(A - logS)  # weight e^A / (e^A+e^B−1)
+        logS = _logsumexp_minus1_safe(A, B)  # log(e^A + e^B − 1)
+        T = 1.0 + jnp.exp(logS - jnp.log(delta))  # = 1 + (1/δ)·logE
+        Cuv = jnp.exp(-jnp.log(T) / theta)
+
+        p_u = jnp.exp(A - logS)  # e^A / (e^A + e^B − 1)
         u_pow = u_b ** (-theta - 1.0)
 
-        # 4) derivative -------------------------------------------------------
         dC_du = Cuv * p_u * u_pow / T
-        return dC_du
+        return jnp.nan_to_num(dC_du, neginf=0.0, posinf=0.0)
 
 
 
