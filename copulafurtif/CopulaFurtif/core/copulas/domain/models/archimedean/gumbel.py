@@ -14,6 +14,8 @@ Attributes:
 """
 
 import numpy as np
+from scipy.stats import kendalltau
+from scipy.optimize import root_scalar
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from numpy.random import default_rng
@@ -114,55 +116,41 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def sample(self, n, param=None, rng=None):
         """
-        Generate `n` samples from a 2-D Gumbel copula.
-
-        Parameters
-        ----------
-        n : int
-            Sample size.
-        param : array-like ([theta]), optional
-        rng : numpy.random.Generator, optional
-
-        Returns
-        -------
-        ndarray, shape (n, 2)
-            (U, V) in (0, 1)² following Gumbel(θ).
+        Generate n samples from a 2-D Gumbel copula via positive-stable frailty.
+        Correct Marshall–Olkin construction:
+            U = exp(-(E1 / S)**(1/theta)),  V = exp(-(E2 / S)**(1/theta)),
+        with S ~ positive-stable(alpha), alpha = 1/theta.
         """
         if rng is None:
             rng = default_rng()
 
-        # -------- parameter handling ----------------------------------
-        if param is None:
-            theta = float(self.get_parameters()[0])
-        else:
-            theta = float(param[0])
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
 
-        # independence (θ≈1)
+        # independence shortcut
         if abs(theta - 1.0) < 1e-8:
             return rng.random((n, 2))
-
         if theta < 1.0:
-            raise ValueError("Gumbel copula requires θ ≥ 1.")
+            raise ValueError("Gumbel copula requires theta >= 1.")
 
-        alpha = 1.0 / theta                     # stable index ∈ (0,1]
+        alpha = 1.0 / theta
 
-        # -------- 1) mixing variable S ~ positive stable (α)
+        # 1) shared frailty S ~ positive-stable(alpha)
         S = self._rpositive_stable(alpha, n, rng)
 
-        # -------- 2) independent exponentials
+        # 2) i.i.d. exponentials
         E1 = rng.exponential(scale=1.0, size=n)
         E2 = rng.exponential(scale=1.0, size=n)
 
-        # -------- 3) transform via generator inverse
-        U = np.exp(-E1 / S)
-        V = np.exp(-E2 / S)
+        # 3) correct transform (POWER alpha!)
+        U = np.exp(- (E1 / S) ** alpha)
+        V = np.exp(- (E2 / S) ** alpha)
 
-        # tiny clip for numerical safety
         eps = 1e-15
         np.clip(U, eps, 1.0 - eps, out=U)
         np.clip(V, eps, 1.0 - eps, out=V)
-
         return np.column_stack((U, V))
+
+
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the Gumbel copula.
 
@@ -258,3 +246,91 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param=None):
+        """
+        Compute Blomqvist's beta (theoretical) for the Gumbel copula.
+
+        Formula
+        -------
+        β(theta) = 2^(2 - 2^(1/theta)) - 1
+
+        Reference
+        ---------
+        Nelsen (2006), "An Introduction to Copulas", Springer.
+
+        Parameters
+        ----------
+        param : np.ndarray, optional
+            Copula parameter [theta]. If None, uses current parameters.
+
+        Returns
+        -------
+        float
+            Theoretical Blomqvist's beta.
+        """
+        if param is None:
+            param = self.get_parameters()
+        theta = float(param[0])
+
+        if theta <= 1.0:
+            return 0.0  # independence limit
+        return 2.0 ** (2.0 - 2.0 ** (1.0 / theta)) - 1.0
+
+    def init_from_data(self, u, v):
+        """
+        Robust initialization of Gumbel copula parameter θ from data.
+
+        Strategy
+        --------
+        - Compute empirical Kendall's tau (τ̂).
+        - Compute empirical Blomqvist's beta (β̂).
+        - If τ̂ is reliable (>0.05), use closed-form inversion of τ(θ).
+        - Else, invert β numerically.
+        - Clip θ to parameter bounds.
+
+        Parameters
+        ----------
+        u, v : array-like
+            Pseudo-observations in (0,1).
+
+        Returns
+        -------
+        float
+            Initial guess θ₀ for MLE fitting.
+        """
+
+
+        u, v = np.asarray(u), np.asarray(v)
+
+        # --- 1) empirical Kendall tau
+        tau_emp, _ = kendalltau(u, v)
+        tau_emp = np.clip(tau_emp, 0.0, 0.99)  # Gumbel only models positive dep.
+
+        # --- 2) empirical Blomqvist beta
+        concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
+        beta_emp = 4.0 * concord - 1.0
+        beta_emp = np.clip(beta_emp, -0.99, 0.99)
+
+        # --- 3) init strategy
+        if tau_emp > 0.05:
+            theta0 = 1.0 / max(1e-6, (1.0 - tau_emp))
+        else:
+            # invert beta numerically
+            def beta_theta(th):
+                if th <= 1.0:
+                    return -beta_emp  # invalid
+                return self.blomqvist_beta([th])
+
+            try:
+                sol = root_scalar(lambda th: beta_theta(th) - beta_emp,
+                                  bracket=(1.01, 30.0), method="brentq")
+                theta0 = sol.root if sol.converged else 2.0
+            except Exception:
+                theta0 = 2.0
+
+        # --- 4) clip to bounds
+        low, high = self.get_bounds()[0]
+        theta0 = float(np.clip(theta0, low, high))
+        return np.array([theta0])
+

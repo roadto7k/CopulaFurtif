@@ -26,30 +26,35 @@ MAX_EXP = 700.0                       # e^700 ≈ 1e304, still finite
 _LOG_MAX = 700.0          # safe upper bound for exp() on 64-bit floats
 _LOG_SAFE = 30.0  # switch where "-1" is negligible
 
+def _safe_expm1(x):
+    # expm1(x) but capped so it never overflows
+    return jnp.where(x < _LOG_MAX, jnp.expm1(x), jnp.exp(_LOG_MAX))
+
 def _logsumexp_minus1_safe(a, b):
-    # We assume a,b >= 0 for BB2
+    """
+    Return log(e^a + e^b - 1) without ever evaluating a bad branch.
+    Assumes a,b >= 0 (true for BB2).
+    """
     M = jnp.maximum(a, b)
     m = jnp.minimum(a, b)
 
-    # true branch when M is large: log(e^A + e^B - 1) ≈ M + log1p(exp(m-M))
-    def big(_):
-        return M + jnp.log1p(jnp.exp(m - M))
+    def big_branch(args):
+        M, m, a, b = args
+        # If M is finite: M + log1p(exp(m - M)); if M is inf → result is M
+        return jnp.where(jnp.isfinite(M),
+                         M + jnp.log1p(jnp.exp(m - M)),
+                         M)
 
-    # false branch when M is moderate: evaluate exact expression safely
-    def small(_):
-        # both a,b <= _LOG_SAFE here → expm1 won’t overflow
+    def small_branch(args):
+        M, m, a, b = args
+        # Exact eval, safe when M is moderate
         return jnp.log1p(jnp.expm1(a) + jnp.expm1(b))
 
-    # IMPORTANT: pass a dummy operand; capture a,b,M,m in closures
-    return lax.cond(M > _LOG_SAFE, big, small, operand=None)
+    return lax.cond(M > _LOG_SAFE, big_branch, small_branch, (M, m, a, b))
 
 def _safe_exp(x):
     """exp(x) but hard‑clipped to avoid overflow"""
     return np.exp(np.minimum(x, MAX_EXP))
-
-def _safe_expm1(x):
-    """expm1(x) sans overflow pour x très grand."""
-    return jnp.where(x < _LOG_MAX, jnp.expm1(x), jnp.exp(jnp.clip(x, None, _LOG_MAX)))
 
 def log1p_pos(a):
     return jnp.log1p(a)
@@ -286,21 +291,21 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     @partial(jax.jit, static_argnums=0)
     def _compute_logA(self, u, v, theta, delta):
+        """Return logA = log(1 + δ^{-1}·(e^A + e^B − 1))."""
         eps = 1e-15
         u = jnp.clip(u, eps, 1 - eps)
         v = jnp.clip(v, eps, 1 - eps)
 
         su = -theta * jnp.log(u)
         sv = -theta * jnp.log(v)
-        gu = _safe_expm1(su)
+        gu = _safe_expm1(su)  # u^{-θ} - 1
         gv = _safe_expm1(sv)
 
         A = delta * gu
         B = delta * gv
 
-        logS = _logsumexp_minus1_safe(A, B)
-        logL1 = logS - jnp.log(delta)
-
+        logS = _logsumexp_minus1_safe(A, B)  # log(e^A + e^B - 1)
+        logL1 = logS - jnp.log(delta)  # log(δ^{-1} * S)
         return jax.nn.softplus(logL1)
 
     #############################################
@@ -309,44 +314,37 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     @partial(jax.jit, static_argnums=0)
     def get_log_cdf(self, u, v, param=None):
-        """Return ln C(u,v; θ,δ) in full log‑domain for numerical stability."""
         theta, delta = param if param is not None else self.get_parameters()
         logA = self._compute_logA(u, v, theta, delta)
-        return -logA / theta  # ln C = −logA/θ
+        return -logA / theta
 
     @partial(jax.jit, static_argnums=0)
     def get_cdf(self, u, v, param=None):
-        """Return C(u,v; θ,δ) via the stable log-CDF path."""
         return jnp.exp(self.get_log_cdf(u, v, param))
 
     @partial(jax.jit, static_argnums=0)
     def get_log_pdf(self, u, v, param=None):
         theta, delta = param if param is not None else self.get_parameters()
 
-        # 1) clip inputs
         eps = 1e-15
-        u = jnp.clip(self._to_backend(u), eps, 1 - eps)
-        v = jnp.clip(self._to_backend(v), eps, 1 - eps)
+        u = jnp.clip(u, eps, 1 - eps)
+        v = jnp.clip(v, eps, 1 - eps)
 
-        # 2) core "s" (never explodes)
         su = -theta * jnp.log(u)
         sv = -theta * jnp.log(v)
-
-        # 3) capped expm1 → u^{-θ}-1
-        gu = _safe_expm1(su)  # <= ~1e304
+        gu = _safe_expm1(su)  # u^{-θ} - 1
         gv = _safe_expm1(sv)
 
-        # 4) A,B finite by construction
         A = delta * gu
         B = delta * gv
 
-        # 5) logE = log(e^A + e^B - 1) with short-circuit
+        # logE = log(e^A + e^B - 1)
         logE = _logsumexp_minus1_safe(A, B)
 
-        # 6) logT = log(1 + (1/δ)·logE)
-        logT = jax.nn.softplus(logE - jnp.log(delta))  # stable log1p(exp(.))
+        # logT = log(1 + δ^{-1}·logE)
+        logT = jax.nn.softplus(logE - jnp.log(delta))
 
-        # 7) log(1+θ+θδT), branch to avoid inf - inf
+        # log(1 + θ + θδT) computed without inf-inf
         base = jnp.log(theta) + jnp.log(delta) + logT
         log_bracket = lax.cond(
             base > 40.0,
@@ -355,27 +353,24 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             base,
         )
 
-        # 8) (A+B) - 2logE    (finite because A,B and logE are finite)
+        log_pow = (-theta - 1.0) * (jnp.log(u) + jnp.log(v))
         log_q = (A + B) - 2.0 * logE
 
-        # 9) remaining power terms in log
-        log_pow = (-theta - 1.0) * (jnp.log(u) + jnp.log(v))
-
-        # 10) combine
         logpdf = -(1.0 / theta + 2.0) * logT + log_pow + log_bracket + log_q
 
-        # 11) asymptotic guard in the far corner (optional but bombproof)
+        # optional asymptotic guard for the extreme corner (u or v ~ 0)
         s_max = jnp.maximum(su, sv)
-        logpdf = jnp.where(s_max > 680.0,  # "one margin ~ 0"
-                           -(1.0 / theta + 1.0) * s_max + log_pow + jnp.log(theta) + jnp.log(delta),
-                           logpdf)
+        logpdf = jnp.where(
+            s_max > 680.0,
+            # asymptotics: product weight vanishes, bracket ~ θδT, T ~ exp(s_max)/δ
+            -(1.0 / theta + 1.0) * s_max + log_pow + jnp.log(theta) + jnp.log(delta),
+            logpdf,
+        )
 
-        # 12) sanitize
         return jnp.nan_to_num(logpdf, neginf=-1e300, posinf=1e300)
 
     @partial(jax.jit, static_argnums=0)
     def get_pdf(self, u, v, param=None):
-        """Return the copula density c(u,v) by exponentiating ln c."""
         return jnp.exp(self.get_log_pdf(u, v, param))
 
     @partial(jax.jit, static_argnums=(0, 2))
@@ -514,27 +509,27 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         theta, delta = param if param is not None else self.get_parameters()
         eps = 1e-15
-        u_b = jnp.clip(self._to_backend(u), eps, 1.0 - eps)
-        v_b = jnp.clip(self._to_backend(v), eps, 1.0 - eps)
+        u = jnp.clip(u, eps, 1 - eps)
+        v = jnp.clip(v, eps, 1 - eps)
 
-        su = -theta * jnp.log(u_b)
-        sv = -theta * jnp.log(v_b)
-        gu = _safe_expm1(su)  # u^{-θ} - 1  (capped)
+        su = -theta * jnp.log(u)
+        sv = -theta * jnp.log(v)
+        gu = _safe_expm1(su)
         gv = _safe_expm1(sv)
 
         A = delta * gu
         B = delta * gv
 
-        logS = _logsumexp_minus1_safe(A, B)  # log(e^A + e^B − 1)
-        T = 1.0 + jnp.exp(logS - jnp.log(delta))  # = 1 + (1/δ)·logE
-        Cuv = jnp.exp(-jnp.log(T) / theta)
+        logE = _logsumexp_minus1_safe(A, B)
+        T = 1.0 + jnp.exp(logE - jnp.log(delta))
+        C = jnp.exp(-jnp.log(T) / theta)
 
-        p_u = jnp.exp(A - logS)  # e^A / (e^A + e^B − 1)
-        u_pow = u_b ** (-theta - 1.0)
+        log_pu = A - logE  # log( e^A / (e^A + e^B - 1) )
+        p_u = jnp.exp(log_pu)
 
-        dC_du = Cuv * p_u * u_pow / T
+        u_pow = u ** (-theta - 1.0)
+        dC_du = C * p_u * u_pow / T
         return jnp.nan_to_num(dC_du, neginf=0.0, posinf=0.0)
-
 
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):

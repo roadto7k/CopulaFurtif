@@ -14,6 +14,8 @@ Attributes:
 """
 
 import numpy as np
+from scipy.stats import kendalltau
+from scipy.optimize import root_scalar
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
@@ -169,17 +171,23 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return np.column_stack((u, v))
 
-    def kendall_tau(self, param=None):
-        """Compute Kendall's tau for the Galambos copula.
-
-        Args:
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float: Kendall's tau.
+    def kendall_tau(self, param=None, method="mc", n=200000, rng=None):
         """
-        d = float(self.get_parameters()[0]) if param is None else float(param[0])
-        return d / (d + 2.0)
+        Monte Carlo Kendall's tau for Galambos (no simple closed form).
+        """
+        from scipy.stats import kendalltau
+        if param is None:
+            d = float(self.get_parameters()[0])
+        else:
+            d = float(param[0])
+
+        if rng is None:
+            rng = default_rng()
+
+        uv = self.sample(n, param=[d], rng=rng)
+        tau, _ = kendalltau(uv[:, 0], uv[:, 1])
+        return float(tau)
+
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (always 0 for Galambos copula).
@@ -258,3 +266,84 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param=None):
+        """
+        Compute Blomqvist's beta (theoretical) for the Galambos copula.
+
+        Formula
+        -------
+        β(delta) = (4/delta) * log( (2*exp(-delta/2) - 2*exp(-delta)) / (1 - exp(-delta)) ) - 1
+
+        Reference
+        ---------
+        Nelsen (2006), "An Introduction to Copulas", Springer.
+
+        Parameters
+        ----------
+        param : np.ndarray, optional
+            Copula parameter [delta]. If None, uses the current parameters.
+
+        Returns
+        -------
+        float
+            Theoretical Blomqvist's beta.
+        """
+        if param is None:
+            param = self.get_parameters()
+        delta = float(param[0])
+
+        if abs(delta) < 1e-8:
+            return 0.0  # independence
+
+        num = 2.0 * np.exp(-delta / 2.0) - 2.0 * np.exp(-delta)
+        den = 1.0 - np.exp(-delta)
+        return (4.0 / delta) * np.log(num / den) - 1.0
+
+    def init_from_data(self, u, v):
+        """
+        Robust initialization of Galambos copula parameter δ from data.
+
+        Strategy
+        --------
+        - Compute empirical Kendall's tau (τ̂).
+        - Compute empirical Blomqvist's beta (β̂).
+        - If τ̂ is strong enough (>0.05) → use closed-form inversion of τ(δ).
+        - Otherwise → invert β numerically via root-finding.
+        - Clip δ into model bounds.
+
+        Parameters
+        ----------
+        u : array-like
+            Pseudo-observations in (0,1).
+        v : array-like
+            Pseudo-observations in (0,1).
+
+        Returns
+        -------
+        float
+            Initial guess δ₀ for MLE fitting.
+        """
+
+        u = np.asarray(u);
+        v = np.asarray(v)
+
+        # Empirical upper-tail lambda: median over several high quantiles
+        qs = (0.90, 0.92, 0.94, 0.96, 0.98)
+        vals = []
+        for q in qs:
+            uq, vq = np.quantile(u, q), np.quantile(v, q)
+            joint = np.mean((u > uq) & (v > vq))
+            denom = max(1e-9, 1.0 - q)
+            vals.append(joint / denom)
+        lamU_emp = float(np.median(vals))
+        lamU_emp = float(np.clip(lamU_emp, 1e-9, 0.999))  # guards
+
+        # Invert lambda_U -> delta
+        # lambda_U = 2^(-1/delta)  =>  delta = -1 / log2(lambda_U)
+        delta0 = -1.0 / (np.log(lamU_emp) / np.log(0.5))
+
+        # Bounds clip
+        low, high = self.get_bounds()[0]
+        delta0 = float(np.clip(delta0, low, high))
+        return np.array([delta0], dtype=float)

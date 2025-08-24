@@ -353,3 +353,19 @@ class CopulaModel(ABC):
     def AD(self, data):
         print(f"[INFO] AD is disabled for {self.name}.")
         return np.nan
+
+    def LTDC(self, param: np.ndarray = None):
+
+        return np.nan
+
+    def UTDC(self, param: np.ndarray = None):
+
+        return np.nan
+
+    def blomqvist_beta(self, param=None):
+
+        return np.nan
+
+    def init_from_data(self, u, v):
+
+        return np.nan

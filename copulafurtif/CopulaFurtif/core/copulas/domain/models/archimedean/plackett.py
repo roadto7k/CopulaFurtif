@@ -18,7 +18,7 @@ import numpy as np
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from numpy.random import default_rng
-from scipy.stats import norm
+from scipy.stats import norm, kendalltau
 
 
 class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -194,3 +194,78 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param=None):
+        """
+        Compute Blomqvist's beta (theoretical) for the Plackett copula.
+
+        Formula
+        -------
+        beta(theta) = (sqrt(theta) - 1) / (sqrt(theta) + 1)
+
+        Inverse
+        -------
+        theta = ((1 + beta) / (1 - beta))**2
+
+        Parameters
+        ----------
+        param : np.ndarray, optional
+            Copula parameter [theta]. If None, uses current parameters.
+
+        Returns
+        -------
+        float
+            Theoretical Blomqvist's beta.
+        """
+        if param is None:
+            param = self.get_parameters()
+        theta = float(param[0])
+        if theta <= 0:
+            return 0.0
+        return (np.sqrt(theta) - 1.0) / (np.sqrt(theta) + 1.0)
+
+    def init_from_data(self, u, v):
+        """
+        Robust initialization of Plackett copula parameter theta from data.
+
+        Strategy
+        --------
+        - Compute empirical Kendall's tau (tau_emp).
+        - Compute empirical Blomqvist's beta (beta_emp).
+        - If |tau_emp| > 0.05, invert tau -> theta = (1+tau)/(1-tau).
+        - Else, invert beta -> theta = ((1+beta)/(1-beta))**2.
+        - Clip theta to parameter bounds.
+
+        Parameters
+        ----------
+        u, v : array-like
+            Pseudo-observations in (0,1).
+
+        Returns
+        -------
+        float
+            Initial guess theta0 for MLE fitting.
+        """
+
+        u, v = np.asarray(u), np.asarray(v)
+
+        # --- empirical Kendall tau
+        tau_emp, _ = kendalltau(u, v)
+        tau_emp = np.clip(tau_emp, -0.99, 0.99)
+
+        # --- empirical Blomqvist beta
+        concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
+        beta_emp = 4.0 * concord - 1.0
+        beta_emp = np.clip(beta_emp, -0.99, 0.99)
+
+        # --- choose init
+        if abs(tau_emp) > 0.05:
+            theta0 = (1.0 + tau_emp) / max(1e-6, (1.0 - tau_emp))
+        else:
+            theta0 = ((1.0 + beta_emp) / max(1e-6, (1.0 - beta_emp))) ** 2
+
+        # --- clip to bounds
+        low, high = self.get_bounds()[0]
+        theta0 = float(np.clip(theta0, low, high))
+        return np.array([theta0])
+

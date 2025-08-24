@@ -158,7 +158,7 @@ def cmle(copula, data, opti_method='SLSQP', options=None, verbose=True):
 
         except Exception as e:
             if verbose:
-                print("[CMLE LOG_LIKELIHOOD ERROR]", e)
+                print(" [CMLE LOG_LIKELIHOOD ERROR]", e)
                 print("→ Params received:", params_raw)
             return np.inf
 

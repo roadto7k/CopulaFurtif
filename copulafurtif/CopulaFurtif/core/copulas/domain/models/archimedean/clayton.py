@@ -14,6 +14,8 @@ Attributes:
 """
 
 import numpy as np
+from scipy.stats import kendalltau
+
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from numpy.random import default_rng
@@ -277,3 +279,94 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param=None):
+        """
+        Compute Blomqvist's beta (theoretical) for the Clayton copula.
+
+        Notes
+        -----
+        Blomqvist's beta is a robust measure of concordance, defined as:
+
+            β(θ) = 4 C(0.5, 0.5; θ) - 1
+
+        where C is the copula CDF. For the Clayton copula, this coincides
+        with Kendall's tau:
+
+            β(θ) = θ / (θ + 2)
+
+        Parameters
+        ----------
+        param : np.ndarray, optional
+            Copula parameter [theta]. If None, uses the current parameters.
+
+        Returns
+        -------
+        float
+            Theoretical value of Blomqvist's beta.
+        """
+        if param is None:
+            param = self.get_parameters()
+        theta = param[0]
+        return theta / (theta + 2)
+
+    def init_from_data(self, u, v):
+        """
+        Robust initialization of the Clayton copula parameter θ from data.
+
+        Strategy
+        --------
+        - Compute empirical Kendall's tau (τ̂).
+        - Compute empirical Blomqvist's beta (β̂).
+        - Compute empirical lower-tail dependence λ̂_L as a diagnostic.
+        - Select the most robust initializer automatically:
+            * If sample size n < 200 or |τ̂| is very small → use β̂ (more robust).
+            * Otherwise → use τ̂ (more efficient).
+        - Invert the theoretical relation to get θ₀:
+            τ(θ) = β(θ) = θ / (θ + 2)  ⇒  θ = 2τ / (1 - τ).
+        - Clip θ₀ within the valid parameter bounds [0.01, 30].
+
+        Parameters
+        ----------
+        u : array-like
+            Pseudo-observations in (0,1), first margin.
+        v : array-like
+            Pseudo-observations in (0,1), second margin.
+
+        Returns
+        -------
+        float
+            Initial guess for θ suitable as a starting point for maximum
+            likelihood estimation.
+        """
+
+        u, v = np.asarray(u), np.asarray(v)
+        n = len(u)
+
+        # --- 1) Kendall tau empirical ---
+        tau_emp, _ = kendalltau(u, v)
+        tau_emp = np.clip(tau_emp, -0.99, 0.99)
+
+        # --- 2) Blomqvist beta empirical ---
+        concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
+        beta_emp = 4.0 * concord - 1.0
+        beta_emp = np.clip(beta_emp, -0.99, 0.99)
+
+        # --- 3) Lower-tail dependence empirical ---
+        q = 0.05  # 5% quantile threshold
+        threshold_u, threshold_v = np.quantile(u, q), np.quantile(v, q)
+        lambda_L_emp = np.mean((u < threshold_u) & (v < threshold_v)) / q
+
+        # --- 4) Choose best method ---
+        if n < 200 or abs(tau_emp) < 0.05 or lambda_L_emp < 1e-3:
+            # Small sample or weak dependence → prefer beta
+            theta0 = 2.0 * beta_emp / max(1e-6, (1.0 - beta_emp))
+        else:
+            # Normal case → use tau (same here)
+            theta0 = 2.0 * tau_emp / max(1e-6, (1.0 - tau_emp))
+
+        # --- 5) Clip to parameter bounds ---
+        low, high = self.get_bounds()[0]
+        theta0 = float(np.clip(theta0, low, high))
+
+        return np.array([theta0])

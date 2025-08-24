@@ -14,8 +14,9 @@ Attributes:
 """
 
 import numpy as np
+from scipy.optimize import root_scalar
 from scipy.special import spence
-from scipy.stats import uniform
+from scipy.stats import uniform, kendalltau
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from scipy.integrate import quad
@@ -248,3 +249,112 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param=None):
+        """
+        Compute Blomqvist's beta (theoretical) for the Frank copula.
+
+        Notes
+        -----
+        Defined as:
+            β(θ) = (4/θ) * log( (2*exp(-θ/2) - 2*exp(-θ)) / (1 - exp(-θ)) ) - 1
+
+        Reference
+        ---------
+        - Nelsen (2006), "An Introduction to Copulas", Springer.
+        - Genest (1987).
+
+        Parameters
+        ----------
+        param : np.ndarray, optional
+            Copula parameter [theta]. If None, uses the current parameters.
+
+        Returns
+        -------
+        float
+            Theoretical Blomqvist's beta.
+        """
+        if param is None:
+            param = self.get_parameters()
+        theta = float(param[0])
+
+        if abs(theta) < 1e-8:
+            return 0.0  # independence limit
+
+        num = 2.0 * np.exp(-theta / 2.0) - 2.0 * np.exp(-theta)
+        den = 1.0 - np.exp(-theta)
+        return (4.0 / theta) * np.log(num / den) - 1.0
+
+    def init_from_data(self, u, v):
+        """
+        Robust initialization of Frank copula parameter θ from data.
+
+        Strategy
+        --------
+        - Compute empirical Kendall's tau (τ̂).
+        - Compute empirical Blomqvist's beta (β̂).
+        - If |τ̂| < 0.05 (weak dependence, small sample) → use β̂.
+        - Otherwise → use τ̂.
+        - Invert the theoretical relation (τ(θ) or β(θ)) numerically
+          using a root-finder (Brentq).
+        - Clip θ within parameter bounds [−35, 35].
+
+        Parameters
+        ----------
+        u : array-like
+            Pseudo-observations in (0,1), first margin.
+        v : array-like
+            Pseudo-observations in (0,1), second margin.
+
+        Returns
+        -------
+        float
+            Initial guess for θ suitable as a starting point for MLE.
+        """
+
+        u, v = np.asarray(u), np.asarray(v)
+
+        # --- 1) empirical Kendall tau ---
+        tau_emp, _ = kendalltau(u, v)
+        tau_emp = np.clip(tau_emp, -0.99, 0.99)
+
+        # --- 2) empirical Blomqvist beta ---
+        concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
+        beta_emp = 4.0 * concord - 1.0
+        beta_emp = np.clip(beta_emp, -0.99, 0.99)
+
+        # --- 3) choose moment ---
+        use_beta = abs(tau_emp) < 0.05
+        target = beta_emp if use_beta else tau_emp
+
+        # --- 4) equations for τ(θ) and β(θ) ---
+        def tau_theta(theta):
+            if abs(theta) < 1e-8:
+                return 0.0
+            D1 = self.debye1(theta)
+            return 1.0 + 4.0 * (D1 - 1.0) / theta
+
+        def beta_theta(theta):
+            if abs(theta) < 1e-8:
+                return 0.0
+            num = 2.0 * np.exp(-theta / 2.0) - 2.0 * np.exp(-theta)
+            den = 1.0 - np.exp(-theta)
+            return (4.0 / theta) * np.log(num / den) - 1.0
+
+        func = beta_theta if use_beta else tau_theta
+
+        # --- 5) root-finding to invert moment ---
+        theta0 = 0.0
+        try:
+            sol = root_scalar(lambda th: func(th) - target,
+                              bracket=(-35.0, 35.0), method="brentq")
+            if sol.converged:
+                theta0 = sol.root
+        except Exception:
+            theta0 = 0.0  # fallback → independence
+
+        # --- 6) clip to bounds ---
+        low, high = self.get_bounds()[0]
+        theta0 = float(np.clip(theta0, low, high))
+
+        return np.array([theta0])

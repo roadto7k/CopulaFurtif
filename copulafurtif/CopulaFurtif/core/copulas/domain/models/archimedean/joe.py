@@ -14,6 +14,9 @@ Attributes:
 """
 
 import numpy as np
+from scipy.optimize import brentq
+from scipy.stats import kendalltau
+
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from numpy.random import default_rng
@@ -263,3 +266,81 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param=None):
+        """
+        Compute Blomqvist's beta for the Joe copula.
+
+        Formula:
+            beta(theta) = 3 - 4 * ( 2^(1/theta) - (1/4)^(1/theta) )
+
+        Parameters
+        ----------
+        param : np.ndarray, optional
+            Copula parameter [theta]. If None, uses current parameters.
+
+        Returns
+        -------
+        float
+            Blomqvist's beta.
+        """
+        if param is None:
+            param = self.get_parameters()
+        theta = float(param[0])
+        return 3.0 - 4.0 * (2.0 ** (1.0 / theta) - (0.25) ** (1.0 / theta))
+
+    def init_from_data(self, u, v):
+        """
+        Robust initialization of Joe copula parameter from pseudo-observations.
+
+        Strategy
+        --------
+        - Compute empirical Kendall's tau and empirical Blomqvist's beta.
+        - If |tau_emp| > 0.05, estimate theta via root solving tau(theta)=tau_emp.
+        - Otherwise, estimate theta from Blomqvist's beta inversion.
+        - Fall back to mid-bound if solver fails.
+
+        Parameters
+        ----------
+        u, v : array-like in (0,1)
+
+        Returns
+        -------
+        float
+            Initial guess for theta.
+        """
+
+        u, v = np.asarray(u), np.asarray(v)
+
+        # empirical Kendall's tau
+        tau_emp, _ = kendalltau(u, v)
+        tau_emp = np.clip(tau_emp, -0.99, 0.99)
+
+        # empirical Blomqvist's beta
+        concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
+        beta_emp = 4.0 * concord - 1.0
+        beta_emp = np.clip(beta_emp, -0.99, 0.99)
+
+        # root solvers
+        def tau_diff(th):
+            return self.kendall_tau([th]) - tau_emp
+
+        def beta_diff(th):
+            return self.blomqvist_beta([th]) - beta_emp
+
+        low, high = self.get_bounds()[0]
+
+        theta0 = None
+        if abs(tau_emp) > 0.05:
+            try:
+                theta0 = brentq(tau_diff, low, high, maxiter=200)
+            except ValueError:
+                pass
+        if theta0 is None:
+            try:
+                theta0 = brentq(beta_diff, low, high, maxiter=200)
+            except ValueError:
+                theta0 = 2.0  # fallback
+
+        return np.array([theta0])
+

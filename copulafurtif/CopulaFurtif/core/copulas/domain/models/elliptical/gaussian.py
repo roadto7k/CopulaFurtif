@@ -16,7 +16,7 @@ with the CopulaFurtif model selection and evaluation pipeline.
 
 import numpy as np
 from scipy.special import erfinv
-from scipy.stats import norm, multivariate_normal
+from scipy.stats import norm, multivariate_normal, kendalltau
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import SupportsTailDependence, ModelSelectionMixin
@@ -218,3 +218,34 @@ class GaussianCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Conditional CDF values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def init_from_data(self, u, v):
+        """
+        Initialize Gaussian copula parameter (rho) from pseudo-observations.
+
+        Strategy
+        --------
+        - Compute empirical Kendall's tau.
+        - Convert tau -> rho via closed-form inversion:
+              rho = sin(pi/2 * tau_emp)
+
+        Args:
+            u (array-like): First margin pseudo-observations in (0,1).
+            v (array-like): Second margin pseudo-observations in (0,1).
+
+        Returns:
+            float: Initial guess for rho.
+        """
+
+        u, v = np.asarray(u), np.asarray(v)
+
+        tau_emp, _ = kendalltau(u, v)
+        tau_emp = np.clip(tau_emp, -0.999, 0.999)
+
+        rho0 = np.sin(0.5 * np.pi * tau_emp)
+
+        # clip to parameter bounds
+        low, high = self.get_bounds()[0]
+        rho0 = np.clip(rho0, low + 1e-6, high - 1e-6)
+
+        return np.array([rho0])
