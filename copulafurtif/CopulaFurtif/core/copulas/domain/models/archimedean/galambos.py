@@ -292,13 +292,10 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         delta = float(param[0])
-
-        if abs(delta) < 1e-8:
-            return 0.0  # independence
-
-        num = 2.0 * np.exp(-delta / 2.0) - 2.0 * np.exp(-delta)
-        den = 1.0 - np.exp(-delta)
-        return (4.0 / delta) * np.log(num / den) - 1.0
+        if delta < 1e-8:
+            return 0.0
+        # β = 2^{ 1 / 2^{1/δ} } - 1  == exp( ln 2 / 2^{1/δ} ) - 1
+        return float(np.exp(np.log(2.0) / (2.0 ** (1.0 / delta))) - 1.0)
 
     def init_from_data(self, u, v):
         """
@@ -325,10 +322,10 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             Initial guess δ₀ for MLE fitting.
         """
 
-        u = np.asarray(u);
+        u = np.asarray(u)
         v = np.asarray(v)
 
-        # Empirical upper-tail lambda: median over several high quantiles
+        # 1) empirical λ_U
         qs = (0.90, 0.92, 0.94, 0.96, 0.98)
         vals = []
         for q in qs:
@@ -339,11 +336,26 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         lamU_emp = float(np.median(vals))
         lamU_emp = float(np.clip(lamU_emp, 1e-9, 0.999))  # guards
 
-        # Invert lambda_U -> delta
-        # lambda_U = 2^(-1/delta)  =>  delta = -1 / log2(lambda_U)
-        delta0 = -1.0 / (np.log(lamU_emp) / np.log(0.5))
+        # 2) try inversion from λ_U
+        delta0 = None
+        if 0 < lamU_emp < 1:
+            delta0 = -1.0 / (np.log(lamU_emp) / np.log(2.0))
 
-        # Bounds clip
+        # 3) fallback via β if δ0 not valid
+        if delta0 is None or not np.isfinite(delta0) or delta0 <= 0:
+            same_half = np.mean(((u > 0.5) & (v > 0.5)) |
+                                ((u <= 0.5) & (v <= 0.5)))
+            beta_emp = 2.0 * same_half - 1.0
+            if beta_emp > -0.99:  # safe guard
+                s = np.log2(max(1.0 + beta_emp, 1e-9))
+                if s > 0:
+                    delta0 = 1.0 / np.log2(1.0 / s)
+                else:
+                    delta0 = 1e-3
+            else:
+                delta0 = 1e-3
+
+        # 4) clip to bounds
         low, high = self.get_bounds()[0]
         delta0 = float(np.clip(delta0, low, high))
         return np.array([delta0], dtype=float)

@@ -109,7 +109,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         sinU = np.sin(U)
         cosU = np.cos(U)
 
-        factor1 = (sinαU / sinU) ** (1.0 / alpha)
+        factor1 = sinαU / (sinU ** (1.0 / alpha))
         factor2 = (np.sin((1.0 - alpha) * U) / E) ** ((1.0 - alpha) / alpha)
 
         return factor1 * factor2
@@ -309,7 +309,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # --- 2) empirical Blomqvist beta
         concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-        beta_emp = 4.0 * concord - 1.0
+        beta_emp = 2.0 * concord - 1.0
         beta_emp = np.clip(beta_emp, -0.99, 0.99)
 
         # --- 3) init strategy

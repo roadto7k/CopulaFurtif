@@ -11,7 +11,7 @@ from CopulaFurtif.core.copulas.domain.factories.copula_factory import CopulaFact
 def empirical_beta(u, v):
     u = np.asarray(u); v = np.asarray(v)
     concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-    return 4.0 * concord - 1.0
+    return 2.0 * concord - 1.0
 
 def empirical_lambda(u, v, side="upper", qs=(0.90, 0.92, 0.94, 0.96, 0.98)):
     u = np.asarray(u); v = np.asarray(v)

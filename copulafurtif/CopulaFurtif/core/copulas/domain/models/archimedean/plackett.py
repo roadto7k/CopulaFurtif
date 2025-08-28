@@ -65,42 +65,35 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         denom = ((1 + (theta - 1) * (u + v)) ** 2 - 4 * theta * (theta - 1) * u * v) ** 1.5
         return num / denom
 
-    def sample(self, n: int, param=None, rng=None, eps: float = 1e-15) -> np.ndarray:
-        """
-        Draw *n* i.i.d. pairs (U, V) whose Kendall's τ matches the
-        Plackett copula's theoretical value  τ = (θ-1)/(θ+1).
-
-        The trick: map that τ to the correlation ρ of a Gaussian copula
-        via  τ = (2/π)·arcsin(ρ).  A single Gaussian draw + Φ() gives the
-        desired uniforms with virtually the same τ.
-        """
+    def sample(self, n: int, param=None, rng=None, eps: float = 1e-12) -> np.ndarray:
         if rng is None:
             rng = default_rng()
-
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
 
-        # Near-independence → vanilla uniforms ----------------------------------
-        if abs(theta - 1.0) < 1e-8:
+        # Indépendance
+        if abs(theta - 1.0) < 1e-12:
             uv = rng.random((n, 2))
             np.clip(uv, eps, 1.0 - eps, out=uv)
             return uv
 
-        # -----------------------------------------------------------------------
-        # 1.  target Kendall τ  & corresponding Gaussian ρ
-        # -----------------------------------------------------------------------
-        tau = (theta - 1.0) / (theta + 1.0)  # Plackett formula
-        rho = math.sin(0.5 * math.pi * tau)  # inverse of  τ = 2/π·arcsin ρ
+        u = rng.random(n)
+        w = rng.random(n)  # target CDF values for V|U=u
+        # Bisection on v in (0,1)
+        v_lo = np.full(n, eps)
+        v_hi = np.full(n, 1.0 - eps)
 
-        # guard against tiny numerical spill-over
-        rho = max(-1.0, min(1.0, rho))
+        for _ in range(40):  # ~1e-12 accuracy
+            v_mid = 0.5 * (v_lo + v_hi)
+            delta = theta - 1.0
+            A = 1.0 + delta * (u + v_mid)
+            sqrtD = np.sqrt(A * A - 4.0 * theta * delta * u * v_mid)
+            F = 0.5 * (1.0 - (A - 2.0 * theta * v_mid) / sqrtD)  # ∂C/∂u(u,v)
+            mask = F < w
+            v_lo[mask] = v_mid[mask]
+            v_hi[~mask] = v_mid[~mask]
 
-        # -----------------------------------------------------------------------
-        # 2.  Gaussian copula draw
-        # -----------------------------------------------------------------------
-        z = rng.standard_normal((n, 2))
-        z[:, 1] = rho * z[:, 0] + math.sqrt(1.0 - rho * rho) * z[:, 1]
-
-        uv = norm.cdf(z)  # Φ() → uniforms
+        v = 0.5 * (v_lo + v_hi)
+        uv = np.column_stack([u, v])
         np.clip(uv, eps, 1.0 - eps, out=uv)
         return uv
 
@@ -255,7 +248,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # --- empirical Blomqvist beta
         concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-        beta_emp = 4.0 * concord - 1.0
+        beta_emp = 2.0 * concord - 1.0
         beta_emp = np.clip(beta_emp, -0.99, 0.99)
 
         # --- choose init

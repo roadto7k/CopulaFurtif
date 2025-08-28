@@ -277,13 +277,11 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = float(param[0])
-
         if abs(theta) < 1e-8:
-            return 0.0  # independence limit
-
-        num = 2.0 * np.exp(-theta / 2.0) - 2.0 * np.exp(-theta)
-        den = 1.0 - np.exp(-theta)
-        return (4.0 / theta) * np.log(num / den) - 1.0
+            return 0.0
+        a = np.exp(-theta / 2.0)
+        C = -(1.0 / theta) * np.log(2.0 * a / (1.0 + a))
+        return 4.0 * C - 1.0
 
     def init_from_data(self, u, v):
         """
@@ -320,7 +318,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # --- 2) empirical Blomqvist beta ---
         concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-        beta_emp = 4.0 * concord - 1.0
+        beta_emp = 2.0 * concord - 1.0
         beta_emp = np.clip(beta_emp, -0.99, 0.99)
 
         # --- 3) choose moment ---

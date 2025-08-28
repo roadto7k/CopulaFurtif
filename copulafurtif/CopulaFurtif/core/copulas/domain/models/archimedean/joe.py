@@ -287,7 +287,10 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = float(param[0])
-        return 3.0 - 4.0 * (2.0 ** (1.0 / theta) - (0.25) ** (1.0 / theta))
+        if theta <= 1.0:
+            # à θ→1, β→0, numerical protection
+            return 0.0 if abs(theta - 1.0) < 1e-8 else 3.0 - 2.0 * (2.0 - 2.0 ** (-theta)) ** (1.0 / theta)
+        return 3.0 - 2.0 * (2.0 - 2.0 ** (-theta)) ** (1.0 / theta)
 
     def init_from_data(self, u, v):
         """
@@ -318,7 +321,7 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # empirical Blomqvist's beta
         concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-        beta_emp = 4.0 * concord - 1.0
+        beta_emp = 2.0 * concord - 1.0
         beta_emp = np.clip(beta_emp, -0.99, 0.99)
 
         # root solvers
