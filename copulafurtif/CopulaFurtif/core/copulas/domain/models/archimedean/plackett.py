@@ -15,6 +15,8 @@ Attributes:
 import math
 
 import numpy as np
+from scipy.optimize import brentq
+
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 from numpy.random import default_rng
@@ -97,17 +99,28 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         np.clip(uv, eps, 1.0 - eps, out=uv)
         return uv
 
-    def kendall_tau(self, param=None):
-        """Compute Kendall's tau for the Plackett copula.
-
-        Args:
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float: Kendall's tau.
+    def kendall_tau(self, param=None, m: int = 300):
+        """
+        Kendall's tau by numerical integration:
+          tau = 4 * ∬ C(u,v) c(u,v) du dv - 1
+        Deterministic grid (m x m), assez rapide & stable pour l'init/logging.
         """
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
-        return (theta - 1) / (theta + 1)
+        if abs(theta - 1.0) < 1e-12:
+            return 0.0
+
+        # grid in (0,1)^2
+        u = (np.arange(m) + 0.5) / m
+        U, V = np.meshgrid(u, u, indexing="ij")
+
+        # CDF and PDF at [theta]
+        C = self.get_cdf(U, V, [theta])
+        num = theta * (1 + (theta - 1) * (U + V - 2 * U * V))
+        denom = ((1 + (theta - 1) * (U + V)) ** 2 - 4 * theta * (theta - 1) * U * V) ** 1.5
+        c = num / denom
+
+        I = np.mean(C * c)
+        return float(4.0 * I - 1.0)
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (0 for Plackett copula).
@@ -241,24 +254,40 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         u, v = np.asarray(u), np.asarray(v)
-
-        # --- empirical Kendall tau
-        tau_emp, _ = kendalltau(u, v)
-        tau_emp = np.clip(tau_emp, -0.99, 0.99)
-
-        # --- empirical Blomqvist beta
+        # Empirical beta
         concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-        beta_emp = 2.0 * concord - 1.0
-        beta_emp = np.clip(beta_emp, -0.99, 0.99)
+        beta_emp = float(np.clip(2.0 * concord - 1.0, -0.99, 0.99))
 
-        # --- choose init
-        if abs(tau_emp) > 0.05:
-            theta0 = (1.0 + tau_emp) / max(1e-6, (1.0 - tau_emp))
-        else:
-            theta0 = ((1.0 + beta_emp) / max(1e-6, (1.0 - beta_emp))) ** 2
+        # beta -> theta (fermé)
+        theta0 = ((1.0 + beta_emp) / max(1e-6, (1.0 - beta_emp))) ** 2
 
-        # --- clip to bounds
+        # Optional refine with τ numeric (safe bracketing)
+        tau_emp = float(np.clip(kendalltau(u, v)[0], -0.999, 0.999))
         low, high = self.get_bounds()[0]
+
+        def tau_of(theta):
+            return self.kendall_tau([theta], m=200)
+
+        try:
+            if tau_emp > 1e-6:
+                a = max(1.0 + 1e-6, low)
+                b = high
+                fa = tau_of(a) - tau_emp
+                fb = tau_of(b) - tau_emp
+                if fa * fb < 0:
+                    theta0 = brentq(lambda t: tau_of(t) - tau_emp, a, b, maxiter=60)
+            elif tau_emp < -1e-6:
+                a = low
+                b = min(1.0 - 1e-6, high)
+                fa = tau_of(a) - tau_emp
+                fb = tau_of(b) - tau_emp
+                if fa * fb < 0:
+                    theta0 = brentq(lambda t: tau_of(t) - tau_emp, a, b, maxiter=60)
+            # sinon tau ~ 0 : on garde l'init via beta (propre près de l'indépendance)
+        except Exception:
+            # si la bracketing rate (dataset atypique), garder l'init beta
+            pass
+
         theta0 = float(np.clip(theta0, low, high))
         return np.array([theta0])
 

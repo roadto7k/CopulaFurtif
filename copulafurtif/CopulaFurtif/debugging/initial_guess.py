@@ -37,6 +37,25 @@ def empirical_lambda(u, v, side="upper", qs=(0.90, 0.92, 0.94, 0.96, 0.98)):
         vals = vals[k:-k] if vals.size - 2 * k >= 1 else vals
     return float(np.median(vals))
 
+
+def huang_lambda(u, v, side="upper", k=None):
+    u, v = np.asarray(u), np.asarray(v)
+    n = len(u)
+    if k is None:
+        k = int(np.sqrt(n))  # règle courante pour k
+
+    if side == "upper":
+        u_thresh = np.partition(u, n - k)[-k]
+        v_thresh = np.partition(v, n - k)[-k]
+        count = np.sum((u > u_thresh) & (v > v_thresh))
+    else:
+        u_thresh = np.partition(u, k)[k]
+        v_thresh = np.partition(v, k)[k]
+        count = np.sum((u < u_thresh) & (v < v_thresh))
+
+    return count / max(1, k)
+
+
 # ---------- theoretical helpers per family (only where trivial/closed) ----------
 
 def tau_gaussian_or_student(rho):
@@ -121,8 +140,8 @@ def test_init_guesses(n=10000, seed=12345):
         # empirical metrics
         tau_emp, _ = kendalltau(u, v)
         beta_emp = empirical_beta(u, v)
-        lamU_emp = empirical_lambda(u, v, side="upper")
-        lamL_emp = empirical_lambda(u, v, side="lower")
+        lamU_emp = huang_lambda(u, v, side="upper")
+        lamL_emp = huang_lambda(u, v, side="lower")
 
         # theoretical metrics for the true params
         th = metrics_theoretical(name, true_params, cop)

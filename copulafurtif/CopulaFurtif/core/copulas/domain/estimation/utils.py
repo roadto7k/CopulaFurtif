@@ -215,3 +215,5 @@ def log_likelihood_joint(param_vec,
     pdf2 = np.clip(pdf2, eps, None)
     # 6) Negative log-likelihood
     return -np.sum(np.log(cop_pdf) + np.log(pdf1) + np.log(pdf2))
+
+

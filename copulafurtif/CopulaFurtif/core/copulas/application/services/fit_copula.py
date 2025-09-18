@@ -1,58 +1,118 @@
-from CopulaFurtif.core.copulas.domain.estimation.estimation import cmle, fit_mle, fit_ifm
+import numpy as np
+
+from CopulaFurtif.core.copulas.domain.estimation.estimation import _cmle, _fit_mle, _fit_ifm, quick_fit
+
 
 class CopulaFitter:
-    def fit_cmle(self, data, copula):
+    def fit_cmle(self, data, copula,
+                 opti_method='SLSQP', options=None,
+                 use_init=True, quick=False, return_metrics=False, verbose=True):
         """
-        Fit copula parameters via canonical maximum likelihood estimation.
-
-        Args:
-            data (array-like): Observed data for fitting.
-            copula (CopulaModel): Copula instance to fit. Must allow assignment to `parameters` and `log_likelihood_`.
-
-        Returns:
-            tuple[list, float] or None: Fitted parameters and log-likelihood, or None if estimation failed.
+        CMLE wrapper with robust init/quick mode passthrough and safe result handling.
         """
+        try:
+            res = _cmle(copula=copula, data=data,
+                        opti_method=opti_method, options=options,
+                        verbose=verbose, use_init=use_init,
+                        quick=quick, return_metrics=return_metrics)
+        except TypeError:
+            # fallback old signature
+            res = _cmle(copula, data)
 
-        res = cmle(copula, data)
-        if res:
-            copula.set_parameters(res[0][:len(copula.get_parameters())]) 
-            copula.log_likelihood_ = res[1]
-        return res
+        if not res:
+            return None
 
-    def fit_mle(self, data, copula, marginals, known_parameters=True):
+        # unpack (params, ll[, extras])
+        if isinstance(res, (list, tuple)) and len(res) == 3:
+            params, ll, extras = res
+        else:
+            params, ll = res
+            extras = None
+
+        # write back to model (crop to expected length)
+        cur_len = len(copula.get_parameters())
+        copula.set_parameters(np.asarray(params, dtype=float)[:cur_len])
+        if hasattr(copula, "set_log_likelihood"):
+            copula.set_log_likelihood(float(ll))
+        else:
+            copula.log_likelihood_ = float(ll)
+
+        return (params, ll, extras) if return_metrics else (params, ll)
+
+    def fit_mle(self, data, copula, marginals,
+                opti_method='SLSQP', known_parameters=True,
+                options=None, use_init=True, quick=False,
+                return_metrics=False, verbose=True):
         """
-        Fit copula parameters via full maximum likelihood estimation.
-
-        Args:
-            data (array-like): Observed data for fitting.
-            copula (CopulaModel): Copula instance to fit.
-            marginals (Sequence): Marginal models corresponding to the data.
-            known_parameters (bool, optional): Whether some parameters are known. Defaults to True.
-
-        Returns:
-            tuple[list, float] or None: Fitted parameters and log-likelihood, or None if estimation failed.
+        Full MLE wrapper (copula + optionally marginals).
+        Passes robust init/quick flags and handles 2- or 3-tuples.
         """
+        try:
+            res = _fit_mle(data=data, copula=copula, marginals=marginals,
+                           opti_method=opti_method, known_parameters=known_parameters,
+                           options=options, verbose=verbose,
+                           use_init=use_init, quick=quick, return_metrics=return_metrics)
+        except TypeError:
+            # fallback old signature
+            res = _fit_mle(data, copula, marginals, known_parameters=known_parameters)
 
-        res = fit_mle(data, copula, marginals, known_parameters=known_parameters)
-        if res:
-            copula.set_parameters(res[0][:len(copula.get_parameters())]) 
-            copula.log_likelihood_ = res[1]
-        return res
+        if not res:
+            return None
 
-    def fit_ifm(self, data, copula, marginals):
-        """Fit copula parameters via inference functions for margins (IFM) method.
+        if isinstance(res, (list, tuple)) and len(res) == 3:
+            params, ll, extras = res
+        else:
+            params, ll = res
+            extras = None
 
-        Args:
-            data (array-like): Observed data for fitting.
-            copula (CopulaModel): Copula instance to fit. Must allow assignment to `parameters` and `log_likelihood_`.
-            marginals (Sequence): Marginal models corresponding to the data.
+        cur_len = len(copula.get_parameters())
+        copula.set_parameters(np.asarray(params, dtype=float)[:cur_len])
+        if hasattr(copula, "set_log_likelihood"):
+            copula.set_log_likelihood(float(ll))
+        else:
+            copula.log_likelihood_ = float(ll)
 
-        Returns:
-            tuple[list, float] or None: Fitted parameters and log-likelihood, or None if estimation failed.
+        return (params, ll, extras) if return_metrics else (params, ll)
+
+    def fit_ifm(self, data, copula, marginals,
+                opti_method='SLSQP', options=None,
+                use_init=True, quick=False, return_metrics=False, verbose=True):
         """
+        IFM wrapper: fit marginals, transform to (U,V), then MLE for copula.
+        """
+        try:
+            res = _fit_ifm(data=data, copula=copula, marginals=marginals,
+                           opti_method=opti_method, options=options,
+                           verbose=verbose, use_init=use_init,
+                           quick=quick, return_metrics=return_metrics)
+        except TypeError:
+            # fallback old signature
+            res = _fit_ifm(data, copula, marginals)
 
-        res = fit_ifm(data, copula, marginals)
-        if res:
-            copula.set_parameters(res[0][:len(copula.get_parameters())])
-            copula.log_likelihood_ = res[1]
+        if not res:
+            return None
+
+        if isinstance(res, (list, tuple)) and len(res) == 3:
+            params, ll, extras = res
+        else:
+            params, ll = res
+            extras = None
+
+        cur_len = len(copula.get_parameters())
+        copula.set_parameters(np.asarray(params, dtype=float)[:cur_len])
+        if hasattr(copula, "set_log_likelihood"):
+            copula.set_log_likelihood(float(ll))
+        else:
+            copula.log_likelihood_ = float(ll)
+
+        return (params, ll, extras) if return_metrics else (params, ll)
+
+    def fit_quick(self, data, copula, mode="cmle", marginals=None, maxiter=60,
+                  optimizer="L-BFGS-B", return_metrics=True):
+        """
+        Wrapper mince autour de estimation.quick_fit pour éviter les imports croisés.
+        """
+        res = quick_fit(data=data, copula=copula, mode=mode, marginals=marginals,
+                        maxiter=maxiter, optimizer=optimizer, return_metrics=return_metrics)
+
         return res

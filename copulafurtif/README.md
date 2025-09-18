@@ -75,7 +75,7 @@ marginals = [
     {"distribution": beta, "a": 2, "b": 5, "loc": 0, "scale": 1},
     {"distribution": lognorm, "s": 0.5, "loc": 0, "scale": np.exp(1)},
 ]
-params_mle, ll = fitter.fit_mle(data, copula, marginals, known_parameters=True)
+params_mle, ll = fitter._fit_mle(data, copula, marginals, known_parameters=True)
 
 # Diagnostics
 diagnostics = CopulaDiagnostics()

@@ -191,3 +191,20 @@ def kendall_tau_distance(copula, data):
         return np.nan
 
     return abs(tau_empirical - tau_theoretical)
+
+def tail_metrics_huang(copula, data):
+    """
+    Returns empirical Huang tails (L,U) and model TD (LTDC, UTDC).
+    """
+    from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
+    from CopulaFurtif.core.copulas.domain.estimation.tail_dependance import huang_lambda
+    u, v = pseudo_obs(data)
+    lamL_emp = huang_lambda(u, v, side="lower")
+    lamU_emp = huang_lambda(u, v, side="upper")
+    params = copula.get_parameters()
+    return {
+        "lambdaL_emp_huang": float(lamL_emp),
+        "lambdaU_emp_huang": float(lamU_emp),
+        "lambdaL_model": float(copula.LTDC(params)),
+        "lambdaU_model": float(copula.UTDC(params)),
+    }
