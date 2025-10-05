@@ -1,6 +1,8 @@
 import numpy as np
 
 from CopulaFurtif.core.copulas.domain.estimation.estimation import _cmle, _fit_mle, _fit_ifm, quick_fit
+from CopulaFurtif.core.copulas.domain.estimation.estimation import _fit_tau_core
+
 
 
 class CopulaFitter:
@@ -116,3 +118,10 @@ class CopulaFitter:
                         maxiter=maxiter, optimizer=optimizer, return_metrics=return_metrics)
 
         return res
+
+    def fit_tau(self, data, copula):
+        """
+        Init-only fit that calls copula.init_from_data(u, v).
+        No optimization. No CMLE/MLE/IFM.
+        """
+        return _fit_tau_core(data=data, copula=copula)
