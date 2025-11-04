@@ -649,3 +649,42 @@ def quick_fit(
 
     return {"theta": theta, "loglik": ll, "lambdaU_huang": lamU, "lambdaL_huang": lamL}
 
+
+def _fit_tau_core(data, copula):
+    """
+    Minimal 'init-only' fit:
+      - build pseudo-observations (u, v) from raw (X, Y) via ranks,
+      - delegate to copula.init_from_data(u, v),
+      - set copula parameters,
+      - return the initial theta.
+    No CMLE/MLE/IFM. No optimizer. Just your init_from_data.
+    """
+    if not isinstance(data, (list, tuple)) or len(data) != 2:
+        raise ValueError("fit_tau: 'data' must be a (X, Y) tuple/list.")
+
+    X, Y = data
+    X = np.asarray(X)
+    Y = np.asarray(Y)
+
+    if X.shape[0] != Y.shape[0]:
+        raise ValueError("fit_tau: X and Y must have the same length.")
+
+    # 1) pseudo-observations (rank transform) -> (u, v)
+    u, v = pseudo_obs([X, Y])  # this helper already exists in this module
+
+    # 2) mandatory: the copula must expose init_from_data(u, v)
+    if not hasattr(copula, "init_from_data"):
+        raise AttributeError("fit_tau requires copula.init_from_data(u, v). Please implement it on the copula class.")
+
+    # 3) delegate to the copula's moments-based initializer
+    theta = copula.init_from_data(u, v)
+    theta = np.atleast_1d(np.array(theta, dtype=float))
+
+    # 4) update the copula instance
+    if hasattr(copula, "set_parameters"):
+        copula.set_parameters(theta)
+    else:
+        copula.parameters = theta
+
+    return theta
+
