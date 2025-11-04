@@ -44,72 +44,18 @@ MAX_HEATMAP_COINS = 20
 ROLLING_WIN = 200
 UIREVISION_LOCK = "freeze"  # pb remise à 0 de y
 
-def load_all_prices():
-    data = {}
-    for file in os.listdir(DATA_PATH):
-        if file.endswith('.csv'):
-            df = pd.read_csv(os.path.join(DATA_PATH, file), index_col=0, parse_dates=True)
-            if 'close' in df.columns:
-                data[file[:-4]] = df['close']
-            else:
-                lower = {c.lower(): c for c in df.columns}
-                if 'close' in lower:
-                    data[file[:-4]] = df[lower['close']]
-    return pd.DataFrame(data).sort_index()
+from DataAnalysis.Utils.load_prices import load_all_prices
 
-prices = load_all_prices()
+prices = load_all_prices(DATA_PATH)
+
 if REFERENCE_ASSET not in prices.columns:
     raise ValueError(f"{REFERENCE_ASSET} absent des données chargées.")
 PAIRS = [(REFERENCE_ASSET, coin) for coin in prices.columns if coin != REFERENCE_ASSET]
 coins_list = [c for c in prices.columns if c != REFERENCE_ASSET]
 
-def compute_beta(x, y):
-    x, y = x.align(y, join='inner')
-    mask = (~x.isna()) & (~y.isna()) & np.isfinite(x) & np.isfinite(y)
-    if mask.sum() < 30 or np.std(y[mask]) < 1e-12:
-        return np.nan
-    return np.polyfit(y[mask], x[mask], 1)[0]
+from DataAnalysis.Utils.spread import compute_beta, compute_spread
 
-def compute_spread(reference, coin):
-    beta = compute_beta(reference, coin)
-    spread = reference - beta * coin if np.isfinite(beta) else pd.Series(index=reference.index, dtype=float)
-    return spread.dropna(), beta
-
-def run_adf_test(series):
-    x = series.dropna().values
-    if len(x) < 30 or np.std(x) < 1e-12:
-        return np.nan, 1.0, {}
-    result = adfuller(x, autolag='AIC')
-    stat, pvalue, _, _, crit, _ = result
-    return stat, pvalue, crit
-
-#TT ca important aussi HERE
-def kss_test(series):
-    x = np.array(series.dropna(), dtype=float)
-    if len(x) < 40:
-        return np.nan, -1.92
-    dx = np.diff(x)
-    x_lag = x[:-1]
-    y = dx
-    z = x_lag**3
-    try:
-        beta = np.linalg.lstsq(z[:, None], y, rcond=None)[0][0]
-        res = y - z * beta
-        s2 = np.sum(res**2) / max(len(y) - 1, 1)
-        se = np.sqrt(s2 / np.sum(z**2))
-        t_stat = beta / (se if se > 0 else np.nan)
-    except Exception:
-        t_stat = np.nan
-    return t_stat, -1.92  # environ 10%
-
-def johansen_stat(x, y):
-    arr = pd.concat([x, y], axis=1).dropna().values
-    if arr.shape[0] < 40:
-        return np.nan, np.nan
-    result = coint_johansen(arr, det_order=0, k_ar_diff=1)
-    trace_stat = float(result.lr1[0])
-    crit_val = float(result.cvt[0,1])  # 5%
-    return trace_stat, crit_val
+from DataAnalysis.Utils.tests import johansen_stat, kss_test, run_adf_test
 
 def fit_distributions(series):
     s = series.dropna().values
