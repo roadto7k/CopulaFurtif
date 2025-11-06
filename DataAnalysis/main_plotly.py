@@ -1,7 +1,8 @@
 import matplotlib
 matplotlib.use('Agg')
 
-import os, io, base64
+import os, io, base64, json
+from pathlib import Path
 
 import dash
 import dash_bootstrap_components as dbc
@@ -11,7 +12,6 @@ import plotly.express as px
 
 import numpy as np
 import pandas as pd
-from scipy.stats import t as student_t
 
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
@@ -20,7 +20,7 @@ from scipy import stats
 from scipy.stats import norm, t, cauchy, kendalltau
 import matplotlib.pyplot as plt
 
-from DataAnalysis.config import DATA_PATH
+from config import SYMBOLS, DATA_PATH
 
 HAS_COPULAFURTIF = False
 HAS_SM_COPULA = False
@@ -44,18 +44,72 @@ MAX_HEATMAP_COINS = 20
 ROLLING_WIN = 200
 UIREVISION_LOCK = "freeze"  # pb remise à 0 de y
 
-from DataAnalysis.Utils.load_prices import load_all_prices
+def load_all_prices():
+    data = {}
+    for file in os.listdir(DATA_PATH):
+        if file.endswith('.csv'):
+            df = pd.read_csv(os.path.join(DATA_PATH, file), index_col=0, parse_dates=True)
+            if 'close' in df.columns:
+                data[file[:-4]] = df['close']
+            else:
+                lower = {c.lower(): c for c in df.columns}
+                if 'close' in lower:
+                    data[file[:-4]] = df[lower['close']]
+    return pd.DataFrame(data).sort_index()
 
-prices = load_all_prices(DATA_PATH)
-
+prices = load_all_prices()
 if REFERENCE_ASSET not in prices.columns:
     raise ValueError(f"{REFERENCE_ASSET} absent des données chargées.")
 PAIRS = [(REFERENCE_ASSET, coin) for coin in prices.columns if coin != REFERENCE_ASSET]
 coins_list = [c for c in prices.columns if c != REFERENCE_ASSET]
 
-from DataAnalysis.Utils.spread import compute_beta, compute_spread
+def compute_beta(x, y):
+    x, y = x.align(y, join='inner')
+    mask = (~x.isna()) & (~y.isna()) & np.isfinite(x) & np.isfinite(y)
+    if mask.sum() < 30 or np.std(y[mask]) < 1e-12:
+        return np.nan
+    return np.polyfit(y[mask], x[mask], 1)[0]
 
-from DataAnalysis.Utils.tests import johansen_stat, kss_test, run_adf_test
+def compute_spread(reference, coin):
+    beta = compute_beta(reference, coin)
+    spread = reference - beta * coin if np.isfinite(beta) else pd.Series(index=reference.index, dtype=float)
+    return spread.dropna(), beta
+
+def run_adf_test(series):
+    x = series.dropna().values
+    if len(x) < 30 or np.std(x) < 1e-12:
+        return np.nan, 1.0, {}
+    result = adfuller(x, autolag='AIC')
+    stat, pvalue, _, _, crit, _ = result
+    return stat, pvalue, crit
+
+#TT ca important aussi HERE
+def kss_test(series):
+    x = np.array(series.dropna(), dtype=float)
+    if len(x) < 40:
+        return np.nan, -1.92
+    dx = np.diff(x)
+    x_lag = x[:-1]
+    y = dx
+    z = x_lag**3
+    try:
+        beta = np.linalg.lstsq(z[:, None], y, rcond=None)[0][0]
+        res = y - z * beta
+        s2 = np.sum(res**2) / max(len(y) - 1, 1)
+        se = np.sqrt(s2 / np.sum(z**2))
+        t_stat = beta / (se if se > 0 else np.nan)
+    except Exception:
+        t_stat = np.nan
+    return t_stat, -1.92  # environ 10%
+
+def johansen_stat(x, y):
+    arr = pd.concat([x, y], axis=1).dropna().values
+    if arr.shape[0] < 40:
+        return np.nan, np.nan
+    result = coint_johansen(arr, det_order=0, k_ar_diff=1)
+    trace_stat = float(result.lr1[0])
+    crit_val = float(result.cvt[0,1])  # 5%
+    return trace_stat, crit_val
 
 def fit_distributions(series):
     s = series.dropna().values
@@ -114,24 +168,13 @@ def plot_acf_pacf(series, nlags=40):
 
 def plot_qq(series, dist, params):
     fig, ax = plt.subplots(facecolor='#181818')
-    s = series.dropna().values.astype(float)
-
+    s = series.dropna().values
     if dist == 'normal':
-        mu, sigma = params
-        z = (s - mu) / (sigma if sigma > 0 else 1.0)
-        stats.probplot(z, dist="norm", plot=ax)
-
+        stats.probplot(s, dist="norm", sparams=(params[0], params[1]), plot=ax)
     elif dist == 'student':
-        df, loc, scale = params
-        z = (s - loc) / (scale if scale > 0 else 1.0)
-        stats.probplot(z, dist="t", sparams=(df,), plot=ax)
-
+        stats.probplot(s, dist="t", sparams=(params[0], params[1], params[2]), plot=ax)
     elif dist == 'cauchy':
-        loc, scale = params
-        z = (s - loc) / (scale if scale > 0 else 1.0)
-        stats.probplot(z, dist="cauchy", plot=ax)
-
-    # --- mise en forme dark theme ---
+        stats.probplot(s, dist="cauchy", sparams=(params[0], params[1]), plot=ax)
     ax.set_facecolor('#181818')
     fig.patch.set_facecolor('#181818')
     ax.tick_params(colors='white', which='both')
@@ -140,27 +183,21 @@ def plot_qq(series, dist, params):
     ax.title.set_color('white')
     for spine in ax.spines.values():
         spine.set_color('white')
-
-    # recolor lines + légende
     lines = ax.get_lines()
     if len(lines) >= 2:
-        lines[0].set_color('cyan')   # points
-        lines[1].set_color('white')  # droite de référence
+        lines[0].set_color('cyan')
+        lines[1].set_color('white')
         leg = ax.legend(loc='best')
-        for text in leg.get_texts():
-            text.set_color('white')
+        for text in leg.get_texts(): text.set_color('white')
         leg.get_frame().set_facecolor('#181818')
         leg.get_frame().set_edgecolor('white')
-
     fig.tight_layout()
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", facecolor='#181818',
-                bbox_inches='tight', dpi=150)
+    fig.savefig(buf, format="png", facecolor='#181818', bbox_inches='tight', dpi=150)
     buf.seek(0)
     qq_img = base64.b64encode(buf.read()).decode()
     plt.close(fig)
     return qq_img
-
 
 def compute_kendall_all(prices, ref=REFERENCE_ASSET):
     tau_list = []
@@ -176,16 +213,117 @@ def compute_kendall_all(prices, ref=REFERENCE_ASSET):
     tau_list = sorted(tau_list, key=lambda x: -abs(x[2]))
     return tau_list
 
-# def pseudo_obs(x: pd.Series):
-#     x = pd.Series(x).dropna().values
-#     n = len(x)
-#     if n == 0: return np.array([])
-#     ranks = pd.Series(x).rank(method='average').values
-#     return ranks / (n + 1.0)
+def pseudo_obs(x: pd.Series):
+    x = pd.Series(x).dropna().values
+    n = len(x)
+    if n == 0: return np.array([])
+    ranks = pd.Series(x).rank(method='average').values
+    return ranks / (n + 1.0)
 
+def aic_val(loglik, k): return 2*k - 2*loglik
 
+#HERE : important ->
+def fit_copulas(u, v):
+    from scipy.optimize import minimize
+    msgs, results = [], []
+    u = np.asarray(u).reshape(-1, 1)
+    v = np.asarray(v).reshape(-1, 1)
+    if u.size == 0 or v.size == 0:
+        return pd.DataFrame(columns=['name','params','loglik','aic','tail_dep_L','tail_dep_U']), ["Pas de données copule."]
+    data = np.hstack([u, v])
 
-from DataAnalysis.Utils.copulas import pseudo_obs, fit_copulas, aic_val
+    if HAS_COPULAFURTIF:
+        candidates = [
+            ('Gaussian', CopulaType.GAUSSIAN),
+            ('Student-t', CopulaType.STUDENT),
+            ('Clayton', CopulaType.CLAYTON),
+            ('Gumbel', CopulaType.GUMBEL),
+            ('Frank', CopulaType.FRANK),
+        ]
+        for name, ctype in candidates:
+            try:
+                cop = CopulaFactory.create(ctype)
+                fitted_params, loglik = CopulaFitter().fit_mle([u.ravel(), v.ravel()], copula=cop, known_parameters=False)
+                cop.set_parameters(np.array(fitted_params))
+                try:
+                    tdL, tdU = CopulaDiagnostics.tail_dependence(cop)
+                except Exception:
+                    tdL = tdU = np.nan
+                results.append({
+                    'name': name,
+                    'params': np.array(fitted_params, dtype=float),
+                    'loglik': float(loglik),
+                    'aic': float(aic_val(loglik, len(np.atleast_1d(fitted_params)))),
+                    'tail_dep_L': tdL, 'tail_dep_U': tdU
+                })
+            except Exception as e:
+                msgs.append(f"{name} (CopulaFurtif) fit failed: {e}")
+
+    elif HAS_SM_COPULA:
+        def fit_sm(name, cls):
+            try:
+                lname = name.lower()
+                if lname.startswith('gaussian') or lname.startswith('student'):
+                    rho0 = 0.0
+                    if 'student' in lname:
+                        df0 = 5.0
+                        def nll(x):
+                            rho, df = np.tanh(x[0]), 2.1 + np.exp(x[1])
+                            c = cls(rho, df=df)
+                            return -np.sum(c.logpdf(data))
+                        res = minimize(nll, x0=np.array([np.arctanh(rho0+1e-6), np.log(df0-2.1+1e-6)]), method='Nelder-Mead')
+                        rho_hat, df_hat = np.tanh(res.x[0]), 2.1 + np.exp(res.x[1])
+                        cop_hat = cls(rho_hat, df=df_hat)
+                        ll = np.sum(cop_hat.logpdf(data))
+                        return dict(name=name, params=np.array([rho_hat, df_hat]), loglik=float(ll), aic=float(aic_val(ll, 2)),
+                                    tail_dep_L=np.nan, tail_dep_U=np.nan)
+                    else:
+                        def nll(x):
+                            rho = np.tanh(x[0])
+                            c = cls(rho)
+                            return -np.sum(c.logpdf(data))
+                        res = minimize(nll, x0=np.array([np.arctanh(rho0+1e-6)]), method='Nelder-Mead')
+                        rho_hat = np.tanh(res.x[0])
+                        cop_hat = cls(rho_hat)
+                        ll = np.sum(cop_hat.logpdf(data))
+                        return dict(name=name, params=np.array([rho_hat]), loglik=float(ll), aic=float(aic_val(ll, 1)),
+                                    tail_dep_L=0.0, tail_dep_U=0.0)
+                else:
+                    th0 = 1.0
+                    def nll(x):
+                        theta = 1e-6 + np.exp(x[0])
+                        c = cls(theta)
+                        return -np.sum(c.logpdf(data))
+                    res = minimize(nll, x0=np.array([np.log(th0)]), method='Nelder-Mead')
+                    th_hat = 1e-6 + np.exp(res.x[0])
+                    cop_hat = cls(th_hat)
+                    ll = np.sum(cop_hat.logpdf(data))
+                    tdL = tdU = 0.0
+                    if lname.startswith('clayton'):
+                        tdL, tdU = 2**(-1/th_hat), 0.0
+                    elif lname.startswith('gumbel'):
+                        tdL, tdU = 0.0, 2 - 2**(1/th_hat)
+                    return dict(name=name, params=np.array([th_hat]), loglik=float(ll), aic=float(aic_val(ll, 1)),
+                                tail_dep_L=float(tdL), tail_dep_U=float(tdU))
+            except Exception as e:
+                return None
+        fams = [
+            ('Gaussian', GaussianCopula),
+            ('Student-t', StudentTCopula),
+            ('Clayton', ClaytonCopula),
+            ('Gumbel', GumbelCopula),
+            ('Frank', FrankCopula),
+        ]
+        for name, cls in fams:
+            out = fit_sm(name, cls)
+            if out is not None:
+                results.append(out)
+    else:
+        msgs.append("Aucun backend copule disponible (installez CopulaFurtif ou statsmodels>=0.13).")
+
+    df = pd.DataFrame(results).sort_values('aic', ascending=True).reset_index(drop=True) if results else \
+         pd.DataFrame(columns=['name','params','loglik','aic','tail_dep_L','tail_dep_U'])
+    return df, msgs
 
 def fig_uv_scatter(u, v, nmax=5000):
     if len(u) > nmax:
