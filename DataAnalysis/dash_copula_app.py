@@ -90,14 +90,7 @@ def load_artifacts(artifacts_dir: str):
 
 
 # -------------- Transform helpers --------------
-def pseudo_obs(x: pd.Series) -> np.ndarray:
-    """Ranks/(n+1) -> U(0,1) pseudo-observations."""
-    vals = pd.Series(x).dropna().values
-    n = len(vals)
-    if n == 0:
-        return np.array([])
-    ranks = pd.Series(vals).rank(method="average").to_numpy()
-    return ranks / (n + 1.0)
+
 
 
 def fig_empirical_copula(u: np.ndarray, v: np.ndarray, nbins: int = 30) -> go.Figure:
