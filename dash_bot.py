@@ -70,6 +70,35 @@ try:
 except Exception:
     HAS_CCXT = False
 
+DROPDOWN_DARK_CSS = """
+/* Fix dcc.Dropdown (react-select) en thème sombre */
+.Select-control {
+  background-color: #222 !important;
+  color: #fff !important;
+  border-color: #444 !important;
+}
+
+.Select-menu-outer {
+  background-color: #222 !important;
+  color: #fff !important;
+  border-color: #444 !important;
+}
+
+.Select-option {
+  background-color: #222 !important;
+  color: #fff !important;
+}
+
+.Select-option.is-focused {
+  background-color: #333 !important;
+  color: #fff !important;
+}
+
+.Select-value-label, .Select-placeholder {
+  color: #fff !important;
+}
+"""
+
 
 DEFAULT_USDT_SYMBOLS = [
     'BTCUSDT', 'ETHUSDT', 'BCHUSDT', 'XRPUSDT', 'EOSUSDT',
@@ -314,6 +343,22 @@ def clean_prices(
 
     return prices, reasons
 
+def clean_prices_basic(prices: pd.DataFrame) -> pd.DataFrame:
+    """Nettoyage sans filtre look-ahead sur l'univers (walk-forward friendly).
+    - index datetime trié / unique
+    - conversion numérique
+    - supprime les lignes entièrement NaN
+    Important: pas de ffill ici (évite de créer des prix fictifs pour l'exécution).
+    """
+    prices = prices.copy()
+    prices.index = pd.to_datetime(prices.index)
+    prices = prices[~prices.index.duplicated(keep="last")]
+    prices = prices.sort_index()
+    for c in prices.columns:
+        prices[c] = pd.to_numeric(prices[c], errors="coerce")
+    prices = prices.dropna(how="all")
+    return prices
+
 
 
 def _nudge_params(p: np.ndarray) -> np.ndarray:
@@ -478,29 +523,38 @@ def _call_cdf(cop, u: float, v: float) -> float:
 
 def copula_h_funcs(cop, u: float, v: float, eps: float = 1e-4) -> Tuple[float, float]:
     """
-    h1|2 = ∂C(u,v)/∂v ; h2|1 = ∂C(u,v)/∂u, via dérivées numériques.
-
-    Retourne (h1|2, h2|1) bornées dans [0,1].
+    h1|2 = P(U<=u | V=v), h2|1 = P(V<=v | U=u)
+    - Si la copule fournit des conditionnelles built-in -> on les utilise
+    - Sinon -> fallback dérivées numériques via CDF
     """
     u = float(np.clip(u, eps, 1 - eps))
     v = float(np.clip(v, eps, 1 - eps))
 
+    # 1) Built-in conditionnelles (ton StudentCopula CopulaFurtif les a)
+    if hasattr(cop, "conditional_cdf_u_given_v") and hasattr(cop, "conditional_cdf_v_given_u"):
+        try:
+            h12 = float(cop.conditional_cdf_u_given_v(u, v))
+            h21 = float(cop.conditional_cdf_v_given_u(u, v))
+            return float(np.clip(h12, 0.0, 1.0)), float(np.clip(h21, 0.0, 1.0))
+        except Exception:
+            # si une copule expose la méthode mais plante, on retombe sur le fallback
+            pass
+
+    # 2) Fallback: dérivées numériques via la CDF
     dv = min(eps, v - 1e-8, 1 - 1e-8 - v)
     du = min(eps, u - 1e-8, 1 - 1e-8 - u)
     dv = max(dv, 1e-6)
     du = max(du, 1e-6)
 
-    c_up = _call_cdf(cop, u, min(v + dv, 1-1e-8))
+    c_up = _call_cdf(cop, u, min(v + dv, 1 - 1e-8))
     c_dn = _call_cdf(cop, u, max(v - dv, 1e-8))
     h12 = (c_up - c_dn) / (2.0 * dv)
 
-    c_up2 = _call_cdf(cop, min(u + du, 1-1e-8), v)
+    c_up2 = _call_cdf(cop, min(u + du, 1 - 1e-8), v)
     c_dn2 = _call_cdf(cop, max(u - du, 1e-8), v)
     h21 = (c_up2 - c_dn2) / (2.0 * du)
 
-    h12 = float(np.clip(h12, 0.0, 1.0))
-    h21 = float(np.clip(h21, 0.0, 1.0))
-    return h12, h21
+    return float(np.clip(h12, 0.0, 1.0)), float(np.clip(h21, 0.0, 1.0))
 
 def ecdf_value(sorted_x: np.ndarray, x: float) -> float:
     """
@@ -824,9 +878,28 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         df_trade = prices.loc[(prices.index >= t_form_end) & (prices.index < t_trade_end)]
 
         # stationarity filter on formation
-        candidates = [s for s in p.symbols if s != p.ref]
+        # 1) candidates: coins dispo dans ce df_form
+        candidates = [s for s in p.symbols if (s != p.ref and s in df_form.columns)]
+
+        # 2) calcule coverage / points SUR LA FORMATION WINDOW uniquement
+        ref_ok = df_form[p.ref].notna()
+        form_slice = df_form.loc[ref_ok, candidates]
+
+        coverage = form_slice.notna().mean()  # % de points non-NaN
+        points = form_slice.notna().sum()  # nb de points non-NaN
+
+        # 3) garde seulement ceux qui passent les seuils
+        eligible = [
+            s for s in candidates
+            if float(coverage.get(s, 0.0)) >= float(p.min_coverage)
+               and int(points.get(s, 0)) >= int(p.min_obs)
+        ]
+
+        # 4) stationarity test uniquement sur eligible
         summary, spreads, betas = select_stationary_spreads(
-            df_form, p.ref, candidates,
+            prices=df_form,
+            ref=p.ref,
+            candidates=eligible,
             adf_alpha=p.adf_alpha,
             use_kss=p.use_kss,
             kss_crit=p.kss_crit,
@@ -930,13 +1003,21 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         prev_ts = None
         prev_p1 = prev_p2 = None
 
-        # run through trading window bars
-        for ts, row in df_trade[[p.ref, coin1, coin2]].dropna().iterrows():
+        # run through trading window bars (signals at t, execution at t+1 -> apply pending orders)
+        pending_sig: int = 0
+        pending_close: bool = False
+
+        def _fee(notional: float) -> float:
+            return float(p.fee_rate) * float(abs(notional))
+
+        # run through trading window bars (only where ref/coin1/coin2 prices exist)
+        trade_bars = df_trade[[p.ref, coin1, coin2]].dropna()
+        for ts, row in trade_bars.iterrows():
             pref = float(row[p.ref])
             p1 = float(row[coin1])
             p2 = float(row[coin2])
 
-            # mark-to-market PnL since prev bar
+            # 1) mark-to-market PnL since prev bar (position held during prev->ts)
             if prev_ts is not None and pos != 0:
                 dp1 = p1 - float(prev_p1)  # type: ignore
                 dp2 = p2 - float(prev_p2)  # type: ignore
@@ -947,29 +1028,13 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                 gross_pnl += step_pnl
                 net_pnl += step_pnl
 
-            # compute current spreads (using betas from formation)
-            s1_val = pref - float(beta1) * p1 if np.isfinite(beta1) else np.nan
-            s2_val = pref - float(beta2) * p2 if np.isfinite(beta2) else np.nan
-
-            sig, det = generate_signals_reference_copula(
-                cop=cop, sorted_s1=s1_sorted, sorted_s2=s2_sorted,
-                s1_val=s1_val, s2_val=s2_val,
-                entry=p.entry, exit=p.exit
-            )
-
-            # close condition (sig==0 + close flag) OR end-of-week will handle later
-            close_now = bool(det.get("close", 0.0) > 0.5)
-
-            # manage positions
-            def _fee(notional: float) -> float:
-                return float(p.fee_rate) * float(abs(notional))
-
+            # 2) execute pending orders from previous bar at *current* prices
             notional1 = q1 * p1
             notional2 = q2 * p2
             trade_notional = abs(notional1) + abs(notional2)
 
-            # close if requested
-            if pos != 0 and close_now:
+            # pending close first
+            if pos != 0 and pending_close:
                 fee = _fee(trade_notional)
                 fees_paid += fee
                 net_pnl -= fee
@@ -986,34 +1051,35 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                     gross_pnl=gross_pnl,
                     net_pnl=net_pnl,
                     fees=fees_paid,
-                    bars=int((pd.to_datetime(ts) - pd.to_datetime(entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
+                    bars=int(
+                        (pd.to_datetime(ts) - pd.to_datetime(entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
+                    forced_week_end=False,
                 ))
-                # realize PnL immediately at close
+                # realize PnL at execution time
                 current_equity = float(current_equity + net_pnl)
                 current_equity_gross = float(current_equity_gross + gross_pnl)
                 pos = 0
                 entry_ts = None
                 entry_p1 = entry_p2 = None
-                # reset per-trade counters
                 gross_pnl = 0.0
                 net_pnl = 0.0
                 fees_paid = 0.0
 
-            # open or flip
-            if sig != 0:
+            pending_close = False  # consumed
+
+            # pending open/flip
+            if pending_sig != 0:
                 if pos == 0:
-                    # open
+                    # open at current prices
                     fee = _fee(trade_notional)
                     fees_paid += fee
                     net_pnl -= fee
-                    pos = int(sig)
+                    pos = int(pending_sig)
                     entry_ts = ts
                     entry_p1, entry_p2 = p1, p2
-                    entry_fee = fee
                 else:
-                    # already in a position
-                    if p.flip_on_opposite and int(sig) != int(pos):
-                        # close old then open new
+                    # flip at current prices (close then open) if allowed
+                    if p.flip_on_opposite and int(pending_sig) != int(pos):
                         fee_close = _fee(trade_notional)
                         fees_paid += fee_close
                         net_pnl -= fee_close
@@ -1030,11 +1096,14 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                             gross_pnl=gross_pnl,
                             net_pnl=net_pnl,
                             fees=fees_paid,
-                            bars=int((pd.to_datetime(ts) - pd.to_datetime(entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
+                            bars=int((pd.to_datetime(ts) - pd.to_datetime(
+                                entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
+                            forced_week_end=False,
                         ))
-                        # realize PnL immediately at flip-close
+                        # realize PnL at flip-close
                         current_equity = float(current_equity + net_pnl)
                         current_equity_gross = float(current_equity_gross + gross_pnl)
+
                         # reset and open new
                         pos = 0
                         entry_ts = None
@@ -1046,19 +1115,39 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                         fee_open = _fee(trade_notional)
                         fees_paid += fee_open
                         net_pnl -= fee_open
-                        pos = int(sig)
+                        pos = int(pending_sig)
                         entry_ts = ts
                         entry_p1, entry_p2 = p1, p2
-                        entry_fee = fee_open
 
-            # update equity marks (equity series is global portfolio)
+            pending_sig = 0  # consumed
+
+            # 3) compute current spreads (using betas from formation) + signal for next bar
+            s1_val = float(pref - beta1 * p1) if np.isfinite(beta1) else np.nan
+            s2_val = float(pref - beta2 * p2) if np.isfinite(beta2) else np.nan
+            if not np.isfinite(s1_val) or not np.isfinite(s2_val):
+                sig = 0
+                close_now = False
+            else:
+                sig, det = generate_signals_reference_copula(
+                    cop=cop, sorted_s1=s1_sorted, sorted_s2=s2_sorted,
+                    s1_val=s1_val, s2_val=s2_val,
+                    entry=p.entry, exit=p.exit
+                )
+                close_now = bool(det.get("close", 0.0) > 0.5)
+
+            # schedule execution at next bar
+            if pos != 0 and close_now:
+                pending_close = True
+            elif sig != 0:
+                pending_sig = int(sig)
+
+            # 4) update equity marks (equity series is global portfolio)
             equity.loc[ts] = current_equity + net_pnl  # net_pnl inclut fees/unrealized
             equity_gross.loc[ts] = current_equity_gross + gross_pnl
 
             prev_ts = ts
             prev_p1, prev_p2 = p1, p2
 
-        # end-of-week forced close
         last_bar = df_trade[[coin1, coin2]].dropna().tail(1)
         if not last_bar.empty:
             ts_end = last_bar.index[0]
@@ -1232,6 +1321,28 @@ def fig_copula_freq(cop_freq: pd.DataFrame) -> go.Figure:
 # Dash App
 # -----------------------------------------------------------------------------
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+app.index_string = """
+<!DOCTYPE html>
+<html>
+  <head>
+    {%metas%}
+    <title>{%title%}</title>
+    {%favicon%}
+    {%css%}
+    <style>
+""" + DROPDOWN_DARK_CSS + """
+    </style>
+  </head>
+  <body>
+    {%app_entry%}
+    <footer>
+      {%config%}
+      {%scripts%}
+      {%renderer%}
+    </footer>
+  </body>
+</html>
+"""
 server = app.server
 
 ALL_COPULAS = _get_all_copula_values()
@@ -1572,12 +1683,9 @@ def run_backtest(
         return dash.no_update, "❌ No price data returned for selected symbols/time range."
 
     # data clean / drop problematic symbols (late listing, holes, etc.)
-    prices, drop_reasons = clean_prices(
-        prices=prices,
-        ref=str(ref_asset),
-        min_coverage=float(min_coverage or 0.90),
-        min_points=int(min_obs or 200),
-    )
+    prices = clean_prices_basic(prices)  # fonction à ajouter (voir ci-dessous)
+    drop_reasons = {}
+
     # Keep only requested symbols that survived cleaning
     available_syms = [s for s in (symbols or []) if s in prices.columns]
     if str(ref_asset) not in available_syms and str(ref_asset) in prices.columns:

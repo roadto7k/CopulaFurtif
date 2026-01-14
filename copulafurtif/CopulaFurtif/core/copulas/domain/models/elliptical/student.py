@@ -211,7 +211,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param (np.ndarray, optional): [rho, nu]
 
         Returns:
-            float: Conditional CDF value
+            float
         """
         if param is None:
             rho, nu = self.parameters
