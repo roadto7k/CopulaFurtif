@@ -4,7 +4,7 @@ import os
 import time
 import json
 from datetime import datetime
-from config import SYMBOLS, INTERVAL, START_DATE, DATA_PATH, USE_API_KEY, API_KEY, API_SECRET
+from DataAnalysis.config import SYMBOLS, INTERVAL, START_DATE, DATA_PATH, USE_API_KEY, API_KEY, API_SECRET
 
 META_PATH = os.path.join(DATA_PATH, "..", "meta.json")
 
