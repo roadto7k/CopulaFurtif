@@ -41,7 +41,7 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return u * v * (1 + theta * (1 - u) * (1 - v))
 
@@ -57,7 +57,7 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF value(s).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return 1 + theta * (1 - 2 * u) * (1 - 2 * v)
 
@@ -75,7 +75,7 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             np.ndarray: Samples of shape (n, 2).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         u = np.random.rand(n)
         v = np.random.rand(n)
         return np.column_stack((u, v))  # NOTE: approximate sample, not exact FGM
@@ -90,7 +90,7 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Kendall's tau.
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         return (2 * theta) / 9
 
@@ -134,7 +134,7 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         theta = param[0]
         u = np.asarray(u)
         v = np.asarray(v)

@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 try:
     from DataAnalysis.Utils.spread import compute_spread, compute_beta
     from DataAnalysis.Utils.tests import run_adf_test, kss_test
-    from DataAnalysis.Utils.copulas import pseudo_obs, fit_copulas
+    from DataAnalysis.Utils.copulas import fit_copulas
     from DataAnalysis.Utils.load_prices import load_all_prices
     try:
         from DataAnalysis.config import DATA_PATH  # type: ignore
@@ -405,66 +405,79 @@ def _copula_type_from_value(val: str):
 
 def build_copula(name: str, params: Any):
     """
-    Reconstruit un objet copula à partir du nom (value CopulaType) + params.
-    Priorité: CopulaFurtif, fallback statsmodels (quelques familles).
+    Reconstruit un objet copula à partir du nom + params.
+    Priorité: CopulaFurtif, fallback statsmodels.
     """
-    nm = str(name)
-    if HAS_COPULAFURTIF and CopulaFactory is not None and not (HAS_SM_COPULA and str(name).lower() in SM_FAMILIES):
-        ct = _copula_type_from_value(nm)
-        if ct is None:
-            raise ValueError(f"CopulaType introuvable pour '{nm}' (vérifie l'Enum CopulaType).")
-        cop = CopulaFactory.create(ct)
-        # params peut être scalaire / tuple / array
-        p = _nudge_params(np.atleast_1d(params).astype(float))
+    nm_raw = str(name)
+    nm = nm_raw.strip()
+    p = _nudge_params(np.atleast_1d(params).astype(float))
+
+    def _set_params_furtif(cop, p):
         if hasattr(cop, "set_parameters"):
             cop.set_parameters(p)
-        elif hasattr(cop, "set_params"):
-            cop.set_params(p)
-        else:
-            # dernier recours
-            try:
-                cop.set_parameters(p)
-            except Exception:
-                pass
-        return cop
+            return
+        if hasattr(cop, "parameters"):
+            cop.parameters = p
+            return
+        if hasattr(cop, "_parameters"):
+            cop._parameters = p
+            return
+        raise AttributeError("No parameter setter found for CopulaFurtif object.")
 
-    # statsmodels fallback
-    nm = nm.lower()
-    if not HAS_SM_COPULA:
-        raise RuntimeError("Aucun backend copula dispo (CopulaFurtif ou statsmodels).")
+    def _to_copulatype(nm: str):
+        n = nm.lower().replace("_", "-").strip()
+        # alias
+        if n in ("t", "student", "studentt", "student-t", "student-t-copula"):
+            return CopulaType.STUDENT
+        if n in ("gaussian", "normal", "gauss"):
+            return CopulaType.GAUSSIAN
+        # sinon: ton resolver existant
+        ct = _copula_type_from_value(nm)
+        return ct
 
-    p = _nudge_params(np.atleast_1d(params).astype(float))
-    if nm in ("gaussian", "normal"):
-        # Student/gaussian in statsmodels use corr param
-        cop = GaussianCopula()
+    # 1) CopulaFurtif FIRST
+    last_err = None
+    if HAS_COPULAFURTIF and CopulaFactory is not None:
         try:
-            # corr must be within [-1,1]
-            cop.corr = float(np.clip(p[0], -0.999, 0.999))  # type: ignore
-        except Exception:
-            pass
+            ct = _to_copulatype(nm)
+            if ct is None:
+                raise ValueError(f"CopulaType introuvable pour '{nm_raw}'")
+            cop = CopulaFactory.create(ct)
+            _set_params_furtif(cop, p)
+            return cop
+        except Exception as e:
+            last_err = e  # on garde pour debug, et on tente fallback
+
+    # 2) statsmodels fallback
+    if not HAS_SM_COPULA:
+        raise RuntimeError(f"Aucun backend copula dispo. CopulaFurtif failed with: {last_err}")
+
+    n = nm.lower()
+    if n in ("gaussian", "normal", "gauss"):
+        cop = GaussianCopula()
+        cop.corr = float(np.clip(p[0], -0.999, 0.999))  # type: ignore
         return cop
-    if nm in ("student", "student-t", "t"):
+
+    if n in ("student", "student-t", "t", "studentt"):
         df = float(p[1]) if len(p) > 1 else 5.0
         df = max(df, 2.1001)
         cop = StudentTCopula(df=df)
-        # corr + df
-        try:
-            cop.corr = float(np.clip(p[0], -0.999, 0.999))  # type: ignore
-        except Exception:
-            pass
+        cop.corr = float(np.clip(p[0], -0.999, 0.999))  # type: ignore
         return cop
-    if nm == "clayton":
-        return ClaytonCopula(theta=float(p[0]))
-    if nm == "frank":
-        return FrankCopula(theta=float(p[0]))
-    if nm == "gumbel":
-        return GumbelCopula(theta=float(p[0]))
-    raise ValueError(f"Copula '{name}' non supportée en fallback statsmodels.")
 
+    if n == "clayton":
+        return ClaytonCopula(theta=float(p[0]))
+    if n == "frank":
+        return FrankCopula(theta=float(p[0]))
+    if n == "gumbel":
+        return GumbelCopula(theta=float(p[0]))
+
+    raise ValueError(f"Copula '{nm_raw}' non supportée en fallback statsmodels.")
 def _call_cdf(cop, u: float, v: float) -> float:
     """
-    Essaie d'évaluer C(u,v) pour différents backends (statsmodels / CopulaFurtif / autres).
+    Évalue C(u,v) en privilégiant CopulaFurtif, puis statsmodels, puis heuristiques.
     """
+
     # Clamp in (0,1)
     u = float(np.clip(u, 1e-10, 1 - 1e-10))
     v = float(np.clip(v, 1e-10, 1 - 1e-10))
@@ -473,16 +486,45 @@ def _call_cdf(cop, u: float, v: float) -> float:
     xyp = np.array([u, v], dtype=float)
     uv_list = [u, v]
 
-    # 1) statsmodels: .cdf(xy)
+    def _as_float(out):
+        return float(np.asarray(out).ravel()[0])
+
+    # --- 0) Détection/chemin CopulaFurtif (PRIORITÉ) ---
+    # Heuristique robuste: le module contient souvent "CopulaFurtif" / "copulafurtif"
+    mod = getattr(cop.__class__, "__module__", "") or ""
+    is_furtif = ("copulafurtif" in mod.lower()) or ("copulafurtif" in str(type(cop)).lower())
+
+    # CopulaFurtif API typique : get_cdf(u, v)
+    if is_furtif:
+        print("CDF backend:", type(cop), getattr(cop.__class__, "__module__", ""))
+        if hasattr(cop, "get_cdf"):
+            try:
+                return _as_float(cop.get_cdf(u, v))
+            except Exception:
+                pass
+        # certains modèles peuvent exposer get_CDF / etc
+        for attr in ("get_CDF", "cdf", "CDF"):
+            if hasattr(cop, attr):
+                try:
+                    fn = getattr(cop, attr)
+                    return _as_float(fn(u, v))
+                except Exception:
+                    pass
+        # si c'est furtif mais rien ne marche, on continue (fallback)
+        # pour ne pas casser toute la stratégie.
+
+    # --- 1) Statsmodels (ensuite seulement) : .cdf(xy) ---
     if hasattr(cop, "cdf"):
         try:
             out = cop.cdf(xy)
-            return float(np.asarray(out).ravel()[0])
+            return _as_float(out)
         except Exception:
             pass
 
-    # 2) méthodes possibles (CopulaFurtif / autres libs)
+    # --- 2) Heuristiques multi-lib (fallback) ---
     cand_attrs = [
+        # Ajout important : get_cdf avant le reste
+        "get_cdf", "get_CDF",
         "cdf", "CDF", "C", "Cumulative", "cumulative", "cumdist", "cum_dist",
         "cumul", "cumul_dist", "cumulative_distribution", "copula_cdf",
         "CDF2", "cdf2", "cdf2d", "cdf_2d", "Cdf", "CopulaCDF",
@@ -490,20 +532,15 @@ def _call_cdf(cop, u: float, v: float) -> float:
     ]
 
     def _try_call(fn):
-        # essais de signatures courantes
         for args in (
-            (u, v),
-            (xy,),
-            (xyp,),
-            (uv_list,),
-            (float(u), float(v)),
+            (u, v),        # la meilleure signature
+            (xy,),         # statsmodels-like
+            (xyp,),        # vector-like
+            (uv_list,),    # list-like
         ):
             try:
-                if isinstance(args, tuple) and len(args) > 1:
-                    out = fn(*args)  # type: ignore
-                else:
-                    out = fn(args[0])  # type: ignore
-                return float(np.asarray(out).ravel()[0])
+                out = fn(*args) if len(args) > 1 else fn(args[0])
+                return _as_float(out)
             except Exception:
                 continue
         return None
@@ -515,13 +552,13 @@ def _call_cdf(cop, u: float, v: float) -> float:
             if res is not None:
                 return float(res)
 
-    # 3) dernier recours: objet callable
+    # --- 3) Dernier recours : objet callable ---
     if callable(cop):
         res = _try_call(cop)
         if res is not None:
             return float(res)
 
-    raise RuntimeError("Impossible d'évaluer la CDF du copula (méthodes cdf/CDF/C/Cumulative).")
+    raise RuntimeError("Impossible d'évaluer la CDF du copula (CopulaFurtif/statsmodels/heuristiques).")
 
 def copula_h_funcs(cop, u: float, v: float, eps: float = 1e-4) -> Tuple[float, float]:
     """
@@ -750,19 +787,20 @@ def fit_pair_copula(
     s1, s2 = s1.align(s2, join="inner")
     if len(s1) < 50:
         return None, None, pd.DataFrame(), ["Pas assez d'obs pour fitter le copula."]
-    u, v = pseudo_obs(s1), pseudo_obs(s2)
+    x = s1.to_numpy()
+    y = s2.to_numpy()
     # fit (optionnellement en silence pour éviter le spam CMLE sur les bornes)
     import io, contextlib
     if suppress_logs:
         _buf = io.StringIO()
         with contextlib.redirect_stdout(_buf), contextlib.redirect_stderr(_buf):
-            df_fit, msgs = fit_copulas(u, v)
+            df_fit, msgs = fit_copulas(x, y)
         _fit_log = _buf.getvalue().strip()
         # on ne garde le log que si aucune sortie
         if (not msgs) and _fit_log:
             msgs = [_fit_log]
     else:
-        df_fit, msgs = fit_copulas(u, v)
+        df_fit, msgs = fit_copulas(x, y)
     if df_fit is None or df_fit.empty:
         return None, None, pd.DataFrame(), (msgs or ["fit_copulas: aucun résultat."])
 
@@ -1865,3 +1903,6 @@ def render_tab(tab, store):
 
 if __name__ == "__main__":
     app.run(debug=True, port=8050)
+
+
+

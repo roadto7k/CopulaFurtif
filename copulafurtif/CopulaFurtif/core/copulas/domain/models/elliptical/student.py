@@ -38,7 +38,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "student"
         # self.bounds_param = [(-0.999, 0.999), (2.01, 30.0)] 
         # self.param_names = ["rho", "nu"]
-        self.parameters = [0.5, 4.0] 
+        # self.parameters = [0.5, 4.0]
         self.default_optim_method = "SLSQP"
         self.n_nodes = 64
         self.init_parameters(CopulaParameters([0.5, 4.0],[(-0.999, 0.999), (2.01, 30.0)], ["rho", "nu"] ))
@@ -54,7 +54,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: Value of the CDF at (u, v).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         rho, nu = param
         print( "u,v", u,v)
         if u <= 0 or v <= 0:
@@ -214,7 +214,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float
         """
         if param is None:
-            rho, nu = self.parameters
+            rho, nu = self.get_parameters()
         else:
             rho, nu = param
 
