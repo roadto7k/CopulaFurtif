@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.stats import kendalltau
 
+from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
+
 
 def compute_aic(copula):
     """
@@ -43,126 +45,128 @@ def compute_bic(copula):
     return k * np.log(copula.n_obs) - 2 * copula.log_likelihood_
 
 
-def compute_iad_score(copula, data):
-    """
-    Compute the Integrated Anderson-Darling (IAD) statistic between the empirical copula and a parametric copula model.
+def compute_iad_score(copula, data, *, max_n=250, seed=0, q_tail=0.10, tail_frac=0.33):
+    eps = 1e-10  # <-- moved up
 
-    Args:
-        copula (object): Copula model with methods:
-            - get_cdf(u, v, params) -> array-like: CDF values on a grid.
-            - parameters (Sequence): Fitted parameter values.
-        data (Sequence[array-like, array-like]): Two-element sequence [u, v] of pseudo-observations.
-
-    Returns:
-        float: IAD goodness-of-fit score (lower is better).
-
-    Raises:
-        ValueError: If `u` and `v` have different lengths.
-    """
-
-    # data must be a list [u, v] where u and v are 1D arrays
     u, v = data
-    n = len(u)
-    if len(v) != n:
-        raise ValueError("Mismatch: len(u) != len(v)")
+    u, v = _prepare_uv(u, v, max_n=max_n, seed=seed, q_tail=q_tail, tail_frac=tail_frac)
 
-    # Use the fitted parameters of the copula
+    n = len(u)
     params = copula.get_parameters()
 
-    # --- Construct the empirical copula ---
-    # Sort the pseudo-observations to define the grid points.
-    u_sorted = np.sort(u)  # shape: (n,)
-    v_sorted = np.sort(v)  # shape: (n,)
+    u_sorted = np.sort(u)
+    v_sorted = np.sort(v)
 
-    # Build comparison matrices via broadcasting:
-    # below_u[i, j] = True if u[i] <= u_sorted[j]
-    below_u = u[:, None] <= u_sorted[None, :]  # shape: (n, n)
-    below_v = v[:, None] <= v_sorted[None, :]  # shape: (n, n)
+    below_u = u[:, None] <= u_sorted[None, :]
+    below_v = v[:, None] <= v_sorted[None, :]
+    C_empirical = (below_u.T @ below_v) / n
+    C_empirical = np.clip(C_empirical, eps, 1 - eps)
 
-    # For each grid (i,j), count the number of points (u[k], v[k])
-    # such that u[k] <= u_sorted[j] and v[k] <= v_sorted[j].
-    # Using np.dot: (below_u.T @ Below_v)[i,j] = sum_{k=1}^n (below_u[k, i] * Below_v[k, j])
-    C_empirical = np.dot(below_u.T, below_v) / n  # shape: (n, n)
+    uu, vv = np.meshgrid(u_sorted, v_sorted, indexing="ij")
+    C_model = copula.get_cdf(uu.ravel(), vv.ravel(), params).reshape(n, n)
 
-    # --- Construct the parametric (model) copula grid ---
-    # We construct a regular grid in (1/n, 1-1/n)
-    grid = np.linspace(1 / n, 1 - 1 / n, n)
-    uu, vv = np.meshgrid(grid, grid, indexing='ij')  # uu and vv de shape (n, n)
-    u_flat = uu.ravel()
-    v_flat = vv.ravel()
-
-    # Calculate the model: returns an array of shape (n, n)
-    C_model = copula.get_cdf(u_flat, v_flat, params).reshape(n, n)
-
-    # --- Calculating the IAD Score ---
-    # Avoids divisions by zero using np.clip on the denominator
-    eps = 1e-10
+    C_model = np.clip(C_model, eps, 1 - eps)
     denom = np.clip(C_model * (1 - C_model), eps, None)
 
-    iad_score = np.sum(((C_empirical - C_model) ** 2) / denom)
+    iad_score = np.mean(((C_empirical - C_model) ** 2) / denom)
+    return float(iad_score)
 
-    return iad_score
 
-
-def AD_score(copula, data):
-    """
-    Compute the Anderson-Darling (AD) goodness-of-fit statistic between the empirical copula and a parametric model.
-
-    Args:
-        copula (object): Copula model with methods:
-            - get_cdf(u, v, params) -> array-like: CDF values on a grid.
-            - parameters (Sequence): Fitted parameter values.
-        data (Sequence[array-like, array-like]): Two-element sequence [u, v] of pseudo-observations.
-
-    Returns:
-        float: AD goodness-of-fit score (lower is better, sensitive to tails).
-
-    Raises:
-        ValueError: If `u` and `v` have different lengths.
-    """
-
-    # Use fitted parameters if requested
-
+def AD_score(copula, data, *, max_n=300, seed=0, q_tail=0.10, tail_frac=0.33):
     params = copula.get_parameters()
 
-    # Extract pseudo-observations
     u, v = data
+    u, v = _prepare_uv(u, v, max_n=max_n, seed=seed, q_tail=q_tail, tail_frac=tail_frac)
+
     n = len(u)
-    if len(v) != n:
-        raise ValueError("Mismatch: len(u) != len(v)")
 
-    # Sort the pseudo-observations to define the grid
-    u_sorted = np.sort(u)  # shape: (n,)
-    v_sorted = np.sort(v)  # shape: (n,)
+    u_sorted = np.sort(u)
+    v_sorted = np.sort(v)
 
-    # Build the empirical copula matrix:
-    # For each threshold (u_sorted[i], v_sorted[j]), compute the fraction of observations
-    # with u_k <= u_sorted[i] and v_k <= v_sorted[j].
-    below_u = u[:, None] <= u_sorted[None, :]  # shape: (n, n)
-    below_v = v[:, None] <= v_sorted[None, :]  # shape: (n, n)
-    C_empirical = np.dot(below_u.T, below_v) / n  # shape: (n, n)
+    below_u = u[:, None] <= u_sorted[None, :]
+    below_v = v[:, None] <= v_sorted[None, :]
+    C_empirical = (below_u.T @ below_v) / n
 
-    # Build a regular grid in (1/n, 1-1/n) to evaluate the model CDF.
-    grid = np.linspace(1 / n, 1 - 1 / n, n)
-    uu, vv = np.meshgrid(grid, grid, indexing='ij')  # shapes: (n, n)
-    u_flat = uu.ravel()  # shape: (n*n,)
-    v_flat = vv.ravel()  # shape: (n*n,)
+    uu, vv = np.meshgrid(u_sorted, v_sorted, indexing="ij")
+    C_model = copula.get_cdf(uu.ravel(), vv.ravel(), params).reshape(n, n)
 
-    # Compute the theoretical copula CDF over the grid and reshape to (n, n)
-    C_model = copula.get_cdf(u_flat, v_flat, params).reshape(n, n)
-
-    # To avoid division by zero in weights, clip C_model to (eps, 1-eps)
     eps = 1e-10
     C_model = np.clip(C_model, eps, 1 - eps)
+    weights = np.clip(C_model * (1 - C_model), eps, None)
 
-    # Define weights emphasizing the tails
-    weights = C_model * (1 - C_model)
-
-    # Compute the maximum weighted squared deviation (the AD score)
+    # ton AD actuel = max weighted deviation (plus proche d’un “sup” score)
     ad_score = np.max(((C_empirical - C_model) ** 2) / weights)
+    return float(ad_score)
 
-    return ad_score
+def subsample_uv_tail_aware(u, v, m=300, seed=0, q_tail=0.10, tail_frac=0.33):
+    """
+    Subsample (u,v) to m points, over-representing tails.
+    tail_frac ~ fraction of points forced in tails.
+    """
+    u = np.asarray(u).ravel()
+    v = np.asarray(v).ravel()
+    n = len(u)
+    if n <= m:
+        return u, v
 
+    rng = np.random.default_rng(seed)
+
+    lo_u = u <= q_tail
+    hi_u = u >= 1 - q_tail
+    lo_v = v <= q_tail
+    hi_v = v >= 1 - q_tail
+
+    tail_mask = (lo_u & lo_v) | (hi_u & hi_v) | (lo_u & hi_v) | (hi_u & lo_v)
+    tail_idx = np.flatnonzero(tail_mask)
+    mid_idx  = np.flatnonzero(~tail_mask)
+
+    m_tail = min(len(tail_idx), int(round(m * tail_frac)))
+    m_mid  = m - m_tail
+
+    pick = []
+    if m_tail > 0:
+        pick.append(rng.choice(tail_idx, size=m_tail, replace=False))
+    if m_mid > 0:
+        pick.append(rng.choice(mid_idx, size=m_mid, replace=False))
+
+    if not pick:
+        idx = rng.choice(n, size=m, replace=False)
+    else:
+        idx = np.concatenate(pick)
+
+    rng.shuffle(idx)
+    return u[idx], v[idx]
+
+
+def _prepare_uv(u, v, *, max_n=None, seed=0, q_tail=0.10, tail_frac=0.33, eps=1e-10):
+    u = np.asarray(u).ravel()
+    v = np.asarray(v).ravel()
+    if len(u) != len(v):
+        raise ValueError("Mismatch: len(u) != len(v)")
+
+    # keep strictly inside (0,1) for weights
+    u = np.clip(u, eps, 1 - eps)
+    v = np.clip(v, eps, 1 - eps)
+
+    if (max_n is not None) and (len(u) > int(max_n)):
+        u, v = subsample_uv_tail_aware(u, v, m=int(max_n), seed=seed, q_tail=q_tail, tail_frac=tail_frac)
+    return u, v
+
+
+def AD_score_subsampled(copula, x, y, m=300, seed=0):
+    u, v = pseudo_obs([x, y])
+    return AD_score(copula, (u, v), max_n=m, seed=seed)
+
+def IAD_score_subsampled(copula, x, y, m=250, seed=0):
+    u, v = pseudo_obs([x, y])
+    return compute_iad_score(copula, (u, v), max_n=m, seed=seed)
+
+def AD_score_bootstrap(copula, x, y, m=300, n_boot=3, seed=0):
+    u, v = pseudo_obs([x, y])
+    vals = []
+    for b in range(n_boot):
+        vals.append(float(AD_score(copula, (u, v), max_n=m, seed=seed + b)))
+    return float(np.mean(vals)), float(np.std(vals))
 
 def kendall_tau_distance(copula, data):
     """
