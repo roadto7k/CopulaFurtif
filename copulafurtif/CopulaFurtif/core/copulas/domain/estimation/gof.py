@@ -6,42 +6,34 @@ from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
 
 def compute_aic(copula):
     """
-    Compute the Akaike Information Criterion (AIC) for a fitted copula.
+    AIC = 2k - 2 logL
 
-    Args:
-        copula (object): Fitted copula with attributes:
-            - log_likelihood_ (float): Log-likelihood of the model.
-            - bounds_param (Sequence): Parameter bounds.
-
-    Returns:
-        float: AIC score.
+    IMPORTANT (math):
+    - If copula.log_likelihood_ is COPULA-ONLY: k = #copula params
+    - If copula.log_likelihood_ is JOINT (copula+marginals): k must include marginal params too.
+      In that case, set copula.n_params_total accordingly.
     """
-
-    k = len(copula.get_bounds())
+    if hasattr(copula, "n_params_total") and copula.n_params_total is not None:
+        k = int(copula.n_params_total)
+    else:
+        k = len(copula.get_bounds())
     return 2 * k - 2 * copula.log_likelihood_
 
 
 def compute_bic(copula):
     """
-    Compute the Bayesian Information Criterion (BIC) for a fitted copula.
+    BIC = k log(n) - 2 logL
 
-    Args:
-        copula (object): Fitted copula with attributes:
-            - log_likelihood_ (float): Log-likelihood of the model.
-            - bounds_param (Sequence): Parameter bounds.
-            - n_obs (int): Number of observations.
-
-    Returns:
-        float: BIC score.
-
-    Raises:
-        ValueError: If `n_obs` is missing or None on the copula object.
+    IMPORTANT (math): same comment as compute_aic regarding k.
     """
-
     if not hasattr(copula, "n_obs") or copula.n_obs is None:
         raise ValueError("n_obs (number of observations) is missing in copula object.")
 
-    k = len(copula.get_bounds())
+    if hasattr(copula, "n_params_total") and copula.n_params_total is not None:
+        k = int(copula.n_params_total)
+    else:
+        k = len(copula.get_bounds())
+
     return k * np.log(copula.n_obs) - 2 * copula.log_likelihood_
 
 

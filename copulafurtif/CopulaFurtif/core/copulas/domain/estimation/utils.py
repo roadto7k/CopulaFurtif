@@ -99,53 +99,50 @@ def flatten_theta(param):
         return list(param)
 
 
-def log_likelihood_only_copula(theta_array, copula : CopulaModel, X, Y, marginals, adapt_theta_func):
+def log_likelihood_only_copula(theta_array, copula: CopulaModel, X, Y, marginals, adapt_theta_func):
     """
-    Compute the negative log-likelihood for the copula alone assuming fixed marginals.
+    Negative log-likelihood of the COPULA ONLY, assuming FIXED marginals.
 
-    Args:
-        theta_array (array-like): Flattened copula parameter values.
-        copula (object): Copula instance with method get_pdf(u, v, theta).
-        X (array-like): Observations for the first margin.
-        Y (array-like): Observations for the second margin.
-        marginals (Sequence[dict]): Fixed marginal distribution specifications.
-        adapt_theta_func (callable): Function to convert theta_array to copula parameter format.
+    Model:
+      u_i = F_X(x_i)  (fixed)
+      v_i = F_Y(y_i)  (fixed)
+      log L_c(theta) = sum_i log c_theta(u_i, v_i)
 
     Returns:
-        float: Negative log-likelihood combining copula PDF and marginal PDFs.
+      - sum log c_theta(u_i, v_i)
     """
-
-    # 1) Reconstruct copula parameters
     theta = adapt_theta_func(theta_array, copula)
 
-    # 2) Fetch fixed marginal parameters
-    shape_keys_0 = [k for k in marginals[0] if k not in ("distribution", "loc", "scale")]
-    shape_keys_1 = [k for k in marginals[1] if k not in ("distribution", "loc", "scale")]
+    dist0 = marginals[0]["distribution"]
+    dist1 = marginals[1]["distribution"]
 
-    shape_params_0 = tuple(marginals[0][key] for key in shape_keys_0)
-    shape_params_1 = tuple(marginals[1][key] for key in shape_keys_1)
+    def _ordered_shape_params(m, dist):
+        shapes = getattr(dist, "shapes", None)
+        if shapes:
+            names = [s.strip() for s in shapes.split(",")]
+            return tuple(m[name] for name in names)
+        keys = [k for k in m.keys() if k not in ("distribution", "loc", "scale")]
+        keys = sorted(keys)
+        return tuple(m[k] for k in keys)
 
-    loc1, scale1 = marginals[0].get('loc', 0.0), marginals[0].get('scale', 1.0)
-    loc2, scale2 = marginals[1].get('loc', 0.0), marginals[1].get('scale', 1.0)
+    shape_params_0 = _ordered_shape_params(marginals[0], dist0)
+    shape_params_1 = _ordered_shape_params(marginals[1], dist1)
 
-    # 3) Compute cdf/pdf for each margin
-    dist0 = marginals[0]['distribution']
-    dist1 = marginals[1]['distribution']
+    loc1, scale1 = marginals[0].get("loc", 0.0), marginals[0].get("scale", 1.0)
+    loc2, scale2 = marginals[1].get("loc", 0.0), marginals[1].get("scale", 1.0)
 
     u = dist0.cdf(X, *shape_params_0, loc=loc1, scale=scale1)
     v = dist1.cdf(Y, *shape_params_1, loc=loc2, scale=scale2)
 
-    pdf1 = dist0.pdf(X, *shape_params_0, loc=loc1, scale=scale1)
-    pdf2 = dist1.pdf(Y, *shape_params_1, loc=loc2, scale=scale2)
+    eps_u = 1e-12
+    u = np.clip(u, eps_u, 1 - eps_u)
+    v = np.clip(v, eps_u, 1 - eps_u)
 
-    # 4) Copula pdf
     cop_pdf = copula.get_pdf(u, v, theta)
-    eps = 1e-8
+    eps = 1e-12
     cop_pdf = np.clip(cop_pdf, eps, None)
-    pdf1 = np.clip(pdf1, eps, None)
-    pdf2 = np.clip(pdf2, eps, None)
-    # 5) Negative log-likelihood
-    return -np.sum(np.log(cop_pdf) + np.log(pdf1) + np.log(pdf2))
+
+    return -np.sum(np.log(cop_pdf))
 
 
 def log_likelihood_joint(param_vec,

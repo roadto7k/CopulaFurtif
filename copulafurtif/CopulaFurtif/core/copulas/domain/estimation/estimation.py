@@ -43,24 +43,45 @@ def pseudo_obs(data: Sequence[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
 
 def huang_lambda(u, v, side="upper", k=None):
     """
-    Huang (1992) estimator of tail dependence. k ~ sqrt(n) by default.
+    Huang (1992) estimator of tail dependence.
+
+    For sample (U_i, V_i), with k ~ sqrt(n):
+      Upper tail:  (1/k) * sum 1{ U_i > U_(n-k),  V_i > V_(n-k) }
+      Lower tail:  (1/k) * sum 1{ U_i <= U_(k),  V_i <= V_(k) }
+
+    Here U_(j) is the j-th order statistic with j in {1,...,n}.
     """
-    u = np.asarray(u); v = np.asarray(v)
-    n = len(u)
+    u = np.asarray(u, dtype=float).ravel()
+    v = np.asarray(v, dtype=float).ravel()
+    if u.shape != v.shape:
+        raise ValueError("u and v must have the same shape.")
+    n = u.size
+    if n < 2:
+        return np.nan
+
     if k is None:
-        k = int(np.sqrt(n)) if n > 0 else 1
-        k = max(1, min(k, n-1))
+        k = int(np.sqrt(n))
+    k = int(k)
+    k = max(1, min(k, n - 1))
 
-    if side == "upper":
-        u_thr = np.partition(u, n-k)[-k]
-        v_thr = np.partition(v, n-k)[-k]
+    side = str(side).lower()
+    if side in ("upper", "u", "up"):
+        # threshold = U_(n-k) -> 0-based index = (n-k)-1
+        idx = n - k - 1
+        u_thr = np.partition(u, idx)[idx]
+        v_thr = np.partition(v, idx)[idx]
         count = np.sum((u > u_thr) & (v > v_thr))
+    elif side in ("lower", "l", "down"):
+        # threshold = U_(k) -> 0-based index = k-1
+        idx = k - 1
+        u_thr = np.partition(u, idx)[idx]
+        v_thr = np.partition(v, idx)[idx]
+        count = np.sum((u <= u_thr) & (v <= v_thr))
     else:
-        u_thr = np.partition(u, k)[k]
-        v_thr = np.partition(v, k)[k]
-        count = np.sum((u < u_thr) & (v < v_thr))
+        raise ValueError("side must be 'upper' or 'lower'.")
 
-    return count / max(1, k)
+    return count / k
+
 
 # ==============================================================================
 # Helpers: bounds / init / U,V from marginals
@@ -109,15 +130,27 @@ def _robust_init_from_uv(copula: CopulaModel, u: np.ndarray, v: np.ndarray, boun
 def _uv_from_marginals(X: np.ndarray, Y: np.ndarray, marginals) -> Tuple[np.ndarray, np.ndarray]:
     """
     Build (U,V) from provided marginals dicts (already fitted or with guesses).
+
+    IMPORTANT (math): shape parameters must be passed to scipy.stats in the
+    exact order defined by dist.shapes, not by arbitrary dict iteration.
+
     Clips to (eps, 1-eps) for numerical stability.
     """
     m0, m1 = marginals
     dist0, dist1 = m0["distribution"], m1["distribution"]
 
-    s0_keys = [k for k in m0 if k not in ("distribution", "loc", "scale")]
-    s1_keys = [k for k in m1 if k not in ("distribution", "loc", "scale")]
-    s0_vals = [m0[k] for k in s0_keys]
-    s1_vals = [m1[k] for k in s1_keys]
+    def _ordered_shape_params(m, dist):
+        shapes = getattr(dist, "shapes", None)
+        if shapes:
+            names = [s.strip() for s in shapes.split(",")]
+            return [m[name] for name in names]
+        # fallback: deterministic but only safe if your keys already match the needed order
+        keys = [k for k in m.keys() if k not in ("distribution", "loc", "scale")]
+        keys = sorted(keys)
+        return [m[k] for k in keys]
+
+    s0_vals = _ordered_shape_params(m0, dist0)
+    s1_vals = _ordered_shape_params(m1, dist1)
 
     loc0, scale0 = float(m0.get("loc", 0.0)), float(m0.get("scale", 1.0))
     loc1, scale1 = float(m1.get("loc", 0.0)), float(m1.get("scale", 1.0))
@@ -129,6 +162,7 @@ def _uv_from_marginals(X: np.ndarray, Y: np.ndarray, marginals) -> Tuple[np.ndar
     U = np.clip(U, eps, 1 - eps)
     V = np.clip(V, eps, 1 - eps)
     return U, V
+
 
 
 # ==============================================================================
