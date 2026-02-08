@@ -51,6 +51,7 @@ try:
         IAD_score_subsampled,
         AD_score_bootstrap,
         tail_metrics_huang,
+        rosenblatt_pit_metrics,
     )
     _HAS_GOF_EXT = True
 except Exception:
@@ -370,6 +371,31 @@ class ModelSelectionMixin:
             return {}
 
     # -----------------------
+    # PIT diagnostics
+    # -----------------------
+
+    def gof_PIT(
+            self,
+            data: ArrayLike,
+            *,
+            m: int = 400,
+            seed: int = 0,
+            q_tail: float = 0.10,
+            tail_frac: float = 0.33,
+    ):
+        """
+        Rosenblatt-PIT diagnostics (KS vs U(0,1) on z2 = F_{V|U}(V)).
+        Returns dict (PIT_ks_D, PIT_ks_pvalue, optional tail slices...).
+        """
+        if not _HAS_GOF_EXT or rosenblatt_pit_metrics is None:
+            return {"PIT": np.nan}
+
+        try:
+            return rosenblatt_pit_metrics(self, data, max_n=m, seed=seed, q_tail=q_tail, tail_frac=tail_frac)
+        except Exception:
+            return {"PIT": np.nan}
+
+    # -----------------------
     # Convenience bundle
     # -----------------------
     def gof_summary(
@@ -382,12 +408,17 @@ class ModelSelectionMixin:
         include_tails: bool = True,
         include_ad: bool = True,
         include_iad: bool = True,
+        include_pit: bool = True,
         ad_mode: str = "subsample",
         ad_m: int = 300,
         ad_seed: int = 0,
         ad_boot: int = 0,
         iad_m: int = 250,
         iad_seed: int = 0,
+        pit_m: int = 400,
+        pit_seed: int = 0,
+        pit_q_tail: float = 0.10,
+        pit_tail_frac: float = 0.33,
     ) -> Dict[str, Any]:
         """
         Compute a diagnostic bundle used for model selection.
@@ -463,6 +494,11 @@ class ModelSelectionMixin:
                 res["IAD"] = self.gof_IAD(data, m=iad_m, seed=iad_seed)
             except Exception:
                 res["IAD"] = np.nan
+
+        if include_pit:
+            res.update(self.gof_PIT(
+                data, m=pit_m, seed=pit_seed, q_tail=pit_q_tail, tail_frac=pit_tail_frac
+            ))
 
         return res
 

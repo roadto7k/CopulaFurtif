@@ -35,10 +35,19 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     # ---------- helpers ----------
     @staticmethod
-    def _xyz(u, v, d):
+    def _xyz(u, v, d, eps=1e-10):
+        u = np.clip(np.asarray(u, float), eps, 1.0 - eps)
+        v = np.clip(np.asarray(v, float), eps, 1.0 - eps)
+
         x = -np.log(u)
         y = -np.log(v)
-        S = x ** (-d) + y ** (-d)
+
+        # avoid x=0 or y=0 leading to 0**(-d)
+        x = np.maximum(x, eps)
+        y = np.maximum(y, eps)
+
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
+            S = x ** (-d) + y ** (-d)
         return x, y, S
 
     def get_cdf(self, u, v, param=None):
@@ -53,8 +62,16 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Value(s) of the CDF.
         """
         d = float(self.get_parameters()[0]) if param is None else float(param[0])
-        _, _, S = self._xyz(u, v, d)
-        return u * v * np.exp(S ** (-1.0 / d))
+        _, _, S = self._xyz(u, v, d, eps=1e-10)
+
+        u = np.clip(np.asarray(u, float), 1e-10, 1.0 - 1e-10)
+        v = np.clip(np.asarray(v, float), 1e-10, 1.0 - 1e-10)
+
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
+            A = S ** (-1.0 / d)
+            out = u * v * np.exp(A)
+
+        return np.clip(out, 0.0, 1.0)
 
     def get_pdf(self, u, v, param=None):
         """
@@ -249,10 +266,17 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             ∂C/∂u = v · exp(S^{-1/δ}) · [ 1 − (1 + r)^{−1−1/δ} ]   ∈ (0,1)
         """
         d = float(self.get_parameters()[0]) if param is None else float(param[0])
-        x, y, S = self._xyz(u, v, d)
 
-        ratio = (x / y) ** d
-        return v * np.exp(S ** (-1.0 / d)) * (1.0 - (1.0 + ratio) ** (-1.0 - 1.0 / d))
+        u = np.clip(np.asarray(u, float), 1e-10, 1.0 - 1e-10)
+        v = np.clip(np.asarray(v, float), 1e-10, 1.0 - 1e-10)
+
+        x, y, S = self._xyz(u, v, d, eps=1e-10)
+
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
+            ratio = (x / y) ** d
+            out = v * np.exp(S ** (-1.0 / d)) * (1.0 - (1.0 + ratio) ** (-1.0 - 1.0 / d))
+
+        return np.clip(out, 1e-12, 1.0 - 1e-12)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """Compute ∂C(u,v)/∂v via symmetry.

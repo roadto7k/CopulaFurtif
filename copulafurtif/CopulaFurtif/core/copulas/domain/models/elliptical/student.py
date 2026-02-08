@@ -19,7 +19,6 @@ Attributes:
 """
 
 import numpy as np
-from math import sqrt
 from scipy.stats import kendalltau, t as student_t
 from scipy.optimize import brentq
 from scipy.stats import t, multivariate_t, kendalltau, multivariate_normal
@@ -73,7 +72,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         z_nodes, w_weights = roots_genlaguerre(self.n_nodes, alpha)
         cov = [[1.0, rho], [rho, 1.0]]
         mvn = multivariate_normal(mean=[0.0, 0.0], cov=cov)
-        total = sum(wi * mvn.cdf([x * sqrt(2.0 * zi / nu), y * sqrt(2.0 * zi / nu)])
+        total = sum(wi * mvn.cdf([x * np.sqrt(2.0 * zi / nu), y * np.sqrt(2.0 * zi / nu)])
                     for zi, wi in zip(z_nodes, w_weights))
         return total / gamma(k)
 
@@ -123,7 +122,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         L = np.linalg.cholesky(cov)
         z = np.random.standard_normal((n, 2))
         chi2 = np.random.chisquare(df=nu, size=n)
-        scaled = (z @ L.T) / np.sqrt((chi2 / nu)[:, None])
+        scaled = (z @ L.T) / np.np.sqrt((chi2 / nu)[:, None])
         u = t.cdf(scaled[:, 0], df=nu)
         v = t.cdf(scaled[:, 1], df=nu)
         return np.column_stack((u, v))
@@ -147,7 +146,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         L = np.linalg.cholesky(cov)
         z = rng.standard_normal((n_samples, 2))
         chi2 = rng.chisquare(df=nu, size=n_samples)
-        scaled = (z @ L.T) / np.sqrt((chi2 / nu)[:, None])
+        scaled = (z @ L.T) / np.np.sqrt((chi2 / nu)[:, None])
         u = t.cdf(scaled[:, 0], df=nu)
         v = t.cdf(scaled[:, 1], df=nu)
         tau, _ = kendalltau(u, v)
@@ -165,7 +164,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.parameters
         rho, nu = param
-        return 2 * t.cdf(-sqrt((nu + 1) * (1 - rho) / (1 + rho)), df=nu + 1)
+        return 2 * t.cdf(-np.sqrt((nu + 1) * (1 - rho) / (1 + rho)), df=nu + 1)
 
     def UTDC(self, param=None):
         """Upper Tail Dependence Coefficient (same as LTDC for Student copula).
@@ -225,7 +224,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         tx = t.ppf(u, df=nu)
         ty = t.ppf(v, df=nu)
         df_c = nu + 1
-        scale = sqrt((1 - rho**2) * (nu + ty**2) / df_c)
+        scale = np.sqrt((1 - rho**2) * (nu + ty**2) / df_c)
         loc = rho * ty
         z = (tx - loc) / scale
         return t.pdf(z, df=df_c) / scale
@@ -268,7 +267,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         df_c = nu + 1
         loc_c = rho * ty
-        scale_c = sqrt((nu + ty**2) * (1 - rho**2) / df_c)
+        scale_c = np.sqrt((nu + ty**2) * (1 - rho**2) / df_c)
 
         return t.cdf((tx - loc_c) / scale_c, df=df_c)
 
@@ -355,7 +354,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             def lambda_of_nu(nu):
                 # guard denom 1+rho
                 den = max(1e-8, 1.0 + rho0)
-                arg = -np.sqrt((nu + 1.0) * (1.0 - rho0) / den)
+                arg = -np.np.sqrt((nu + 1.0) * (1.0 - rho0) / den)
                 return 2.0 * student_t.cdf(arg, df=nu + 1.0)
 
             # robust bracketing
