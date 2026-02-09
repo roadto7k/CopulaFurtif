@@ -42,7 +42,7 @@ class BB10Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB10 Copula"
         self.type = "bb10"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([2.0, 0.5], [(1e-6, np.inf), (1e-6, 1.0)], ["theta", "pi"]))
+        self.init_parameters(CopulaParameters(np.array([2.0, 0.5]), [(1e-6, np.inf), (1e-6, 1.0)], ["theta", "pi"]))
 
 
     def get_cdf(self, u, v, param=None):
@@ -149,14 +149,14 @@ class BB10Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         u = np.clip(u, 1e-12, 1 - 1e-12)
         v = np.clip(v, 1e-12, 1 - 1e-12)
 
-        uθ = _safe_pow(u, theta)
-        vθ = _safe_pow(v, theta)
-        T = 1.0 - pi * (1.0 - uθ) * (1.0 - vθ)
+        utheta = _safe_pow(u, theta)
+        vtheta = _safe_pow(v, theta)
+        T = 1.0 - pi * (1.0 - utheta) * (1.0 - vtheta)
         T = np.clip(T, 1e-12, None)
 
         C = u * v * _safe_pow(T, -1.0 / theta)
 
-        return C * (1.0 / u - pi * uθ / u * (1.0 - vθ) / T)
+        return C * (1.0 / u - pi * utheta / u * (1.0 - vtheta) / T)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """

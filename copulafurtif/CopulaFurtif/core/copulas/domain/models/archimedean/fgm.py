@@ -27,7 +27,7 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "FGM Copula"
         self.type = "fgm"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([0.3],  [(-1.0, 1.0)], ["theta"]))
+        self.init_parameters(CopulaParameters(np.array([0.3]),  [(-1.0, 1.0)], ["theta"]))
         
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).

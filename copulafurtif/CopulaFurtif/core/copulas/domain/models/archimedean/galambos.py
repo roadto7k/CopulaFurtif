@@ -95,23 +95,20 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         d = float(self.get_parameters()[0]) if param is None else float(param[0])
 
         # guard against log(0) -- clip *very* lightly; RNG draws are in [0,1)
-        eps = 1e-15
-        u = np.clip(u, eps, 1.0 - eps)
-        v = np.clip(v, eps, 1.0 - eps)
+        eps = 1e-10
+        u = np.clip(np.asarray(u, float), eps, 1.0 - eps)
+        v = np.clip(np.asarray(v, float), eps, 1.0 - eps)
 
-        x = -np.log(u)  # >0
-        y = -np.log(v)  # >0
-        S = x ** (-d) + y ** (-d)  # x^{-δ} + y^{-δ}
-        A = S ** (-1.0 / d)  # S^{-1/δ}
+        x, y, S = self._xyz(u, v, d, eps=eps)
 
-        # pieces of the bracketed factor g(x,y)
-        term2 = S ** (-1.0 - 1.0 / d) * (x ** (-d - 1) + y ** (-d - 1))
-        term3 = S ** (-2.0 - 1.0 / d) * (x * y) ** (-d - 1) * (1.0 + d + A)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
+            A = S ** (-1.0 / d)
+            term2 = S ** (-1.0 - 1.0 / d) * (x ** (-d - 1) + y ** (-d - 1))
+            term3 = S ** (-2.0 - 1.0 / d) * (x * y) ** (-d - 1) * (1.0 + d + A)
+            g = 1.0 - term2 + term3
+            pdf = np.exp(A) * g
 
-        g = 1.0 - term2 + term3
-
-        # c(u,v) = exp(A) * g  because C(u,v)/(u v) = exp(A)
-        return np.exp(A) * g
+        return np.clip(pdf, 1e-300, np.inf)
 
     def sample(self,
                n: int,

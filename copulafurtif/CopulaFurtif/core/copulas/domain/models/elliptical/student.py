@@ -37,44 +37,77 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "student"
         # self.bounds_param = [(-0.999, 0.999), (2.01, 30.0)] 
         # self.param_names = ["rho", "nu"]
-        # self.parameters = [0.5, 4.0]
+        # self.get_parameters() = [0.5, 4.0]
         self.default_optim_method = "SLSQP"
         self.n_nodes = 64
-        self.init_parameters(CopulaParameters([0.5, 4.0],[(-0.999, 0.999), (2.01, 30.0)], ["rho", "nu"] ))
+        self.init_parameters(CopulaParameters(np.array([0.5, 4.0]),[(-0.999, 0.999), (2.01, 30.0)], ["rho", "nu"] ))
+
     def get_cdf(self, u, v, param=None):
-        """Numerically compute the CDF C(u,v) using Gauss-Laguerre quadrature.
+        """Compute copula CDF C(u,v) = P(U≤u, V≤v) for the t-copula.
 
-        Args:
-            u (float): Pseudo-observation in (0,1).
-            v (float): Pseudo-observation in (0,1).
-            param (np.ndarray, optional): [rho, nu]
-
-        Returns:
-            float: Value of the CDF at (u, v).
+        Vectorized when possible via scipy.stats.multivariate_t.cdf.
+        Falls back to the Gauss–Laguerre mixture-of-normals representation if needed.
         """
         if param is None:
             param = self.get_parameters()
         rho, nu = param
-        print( "u,v", u,v)
-        if u <= 0 or v <= 0:
-            return 0.0
-        if u >= 1 and v >= 1:
-            return 1.0
-        if u >= 1:
-            return v
-        if v >= 1:
-            return u
+        rho = float(np.clip(rho, -0.999999, 0.999999))
+        nu = float(nu)
 
-        x = t.ppf(u, df=nu)
-        y = t.ppf(v, df=nu)
-        k = nu / 2.0
-        alpha = k - 1.0
-        z_nodes, w_weights = roots_genlaguerre(self.n_nodes, alpha)
-        cov = [[1.0, rho], [rho, 1.0]]
-        mvn = multivariate_normal(mean=[0.0, 0.0], cov=cov)
-        total = sum(wi * mvn.cdf([x * np.sqrt(2.0 * zi / nu), y * np.sqrt(2.0 * zi / nu)])
-                    for zi, wi in zip(z_nodes, w_weights))
-        return total / gamma(k)
+        u_arr = np.asarray(u, dtype=float)
+        v_arr = np.asarray(v, dtype=float)
+        scalar = (u_arr.ndim == 0 and v_arr.ndim == 0)
+
+        # Boundary logic (vectorized)
+        out = np.zeros(np.broadcast(u_arr, v_arr).shape, dtype=float)
+        uu = np.broadcast_to(u_arr, out.shape).copy()
+        vv = np.broadcast_to(v_arr, out.shape).copy()
+
+        # Exact boundaries
+        mask0 = (uu <= 0.0) | (vv <= 0.0)
+        out[mask0] = 0.0
+
+        mask_u1 = (uu >= 1.0) & (~mask0)
+        out[mask_u1] = np.clip(vv[mask_u1], 0.0, 1.0)
+
+        mask_v1 = (vv >= 1.0) & (~mask0) & (~mask_u1)
+        out[mask_v1] = np.clip(uu[mask_v1], 0.0, 1.0)
+
+        mask_main = (~mask0) & (~mask_u1) & (~mask_v1)
+        if np.any(mask_main):
+            eps = 1e-12
+            uc = np.clip(uu[mask_main], eps, 1.0 - eps)
+            vc = np.clip(vv[mask_main], eps, 1.0 - eps)
+
+            x = t.ppf(uc, df=nu)
+            y = t.ppf(vc, df=nu)
+            pts = np.column_stack([x, y])
+
+            try:
+                shape = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
+                vals = multivariate_t.cdf(pts, loc=np.zeros(2), shape=shape, df=nu)
+                out[mask_main] = vals
+            except Exception:
+                # Fallback: your Gauss–Laguerre mixture-of-normals quadrature (scalar)
+                # Use the same internal logic as before, but per-point.
+                k = nu / 2.0
+                alpha = k - 1.0
+                z_nodes, w_weights = roots_genlaguerre(self.n_nodes, alpha)
+                cov = [[1.0, rho], [rho, 1.0]]
+                mvn = multivariate_normal(mean=[0.0, 0.0], cov=cov)
+
+                vals = []
+                for xi, yi in pts:
+                    total = 0.0
+                    for zi, wi in zip(z_nodes, w_weights):
+                        sx = xi * np.sqrt(2.0 * zi / nu)
+                        sy = yi * np.sqrt(2.0 * zi / nu)
+                        total += wi * mvn.cdf([sx, sy])
+                    vals.append(total / gamma(k))
+                out[mask_main] = np.array(vals, dtype=float)
+
+        out = np.clip(out, 0.0, 1.0)
+        return float(out) if scalar else out
 
     def get_pdf(self, u, v, param=None):
         """Compute the joint PDF c(u,v) of the Student copula.
@@ -88,7 +121,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF values at (u, v)
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         rho, nu = param
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
@@ -105,52 +138,46 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         log_c = log_num - log_den - log_det + log_prod - log_dent
         return np.exp(log_c)
 
-    def sample(self, n, param=None):
+    def sample(self, n, param=None, random_state=None):
         """Generate n samples from the Student copula.
 
-        Args:
-            n (int): Number of samples.
-            param (np.ndarray, optional): [rho, nu]
-
         Returns:
-            np.ndarray: Samples of shape (n, 2).
+            np.ndarray: shape (n, 2) with pseudo-observations (u,v) in (0,1).
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         rho, nu = param
-        cov = np.array([[1.0, rho], [rho, 1.0]])
+
+        rho = float(np.clip(rho, -0.999999, 0.999999))
+        nu = float(nu)
+
+        rng = np.random.RandomState(random_state) if random_state is not None else np.random
+
+        cov = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
         L = np.linalg.cholesky(cov)
-        z = np.random.standard_normal((n, 2))
-        chi2 = np.random.chisquare(df=nu, size=n)
-        scaled = (z @ L.T) / np.np.sqrt((chi2 / nu)[:, None])
+
+        z = rng.standard_normal((n, 2))
+        chi2 = rng.chisquare(df=nu, size=n)
+
+        scaled = (z @ L.T) / np.sqrt((chi2 / nu)[:, None])
+
         u = t.cdf(scaled[:, 0], df=nu)
         v = t.cdf(scaled[:, 1], df=nu)
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
         return np.column_stack((u, v))
 
-    def kendall_tau(self, param=None, n_samples=10000, random_state=None):
-        """Estimate Kendall's tau via sampling.
+    def kendall_tau(self, param=None, **_kwargs):
+        """Exact Kendall's tau for elliptical copulas (Gaussian / Student).
 
-        Args:
-            param (np.ndarray, optional): [rho, nu]
-            n_samples (int): Number of Monte Carlo samples.
-            random_state (int, optional): Seed for reproducibility.
-
-        Returns:
-            float: Estimated Kendall's tau.
+        tau = 2/pi * arcsin(rho)
         """
         if param is None:
-            param = self.parameters
-        rho, nu = param
-        rng = np.random.RandomState(random_state) if random_state is not None else np.random
-        cov = np.array([[1.0, rho], [rho, 1.0]])
-        L = np.linalg.cholesky(cov)
-        z = rng.standard_normal((n_samples, 2))
-        chi2 = rng.chisquare(df=nu, size=n_samples)
-        scaled = (z @ L.T) / np.np.sqrt((chi2 / nu)[:, None])
-        u = t.cdf(scaled[:, 0], df=nu)
-        v = t.cdf(scaled[:, 1], df=nu)
-        tau, _ = kendalltau(u, v)
-        return tau
+            param = self.get_parameters()
+        rho, _nu = param
+        rho = float(np.clip(rho, -0.999999, 0.999999))
+        return float((2.0 / np.pi) * np.arcsin(rho))
 
     def LTDC(self, param=None):
         """Lower Tail Dependence Coefficient.
@@ -162,7 +189,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float: LTDC value
         """
         if param is None:
-            param = self.parameters
+            param = self.get_parameters()
         rho, nu = param
         return 2 * t.cdf(-np.sqrt((nu + 1) * (1 - rho) / (1 + rho)), df=nu + 1)
 
@@ -202,86 +229,45 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return np.nan
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
-        """Compute ∂C(u,v)/∂v = P(U ≤ u | V = v).
-
-        Args:
-            u (float): Pseudo-observation.
-            v (float): Pseudo-observation.
-            param (np.ndarray, optional): [rho, nu]
-
-        Returns:
-            float
-        """
-        if param is None:
-            rho, nu = self.get_parameters()
-        else:
-            rho, nu = param
-
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-
-        tx = t.ppf(u, df=nu)
-        ty = t.ppf(v, df=nu)
-        df_c = nu + 1
-        scale = np.sqrt((1 - rho**2) * (nu + ty**2) / df_c)
-        loc = rho * ty
-        z = (tx - loc) / scale
-        return t.pdf(z, df=df_c) / scale
+        """∂C(u,v)/∂v = P(U ≤ u | V = v) (must be a CDF in [0,1])."""
+        return self.conditional_cdf_u_given_v(u, v, param)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
-        """Compute ∂C(u,v)/∂u using symmetry.
-
-        Args:
-            u (float): Pseudo-observation.
-            v (float): Pseudo-observation.
-            param (np.ndarray, optional): [rho, nu]
-
-        Returns:
-            float: Conditional CDF value
-        """
-        return self.partial_derivative_C_wrt_v(v, u, param)
+        """∂C(u,v)/∂u = P(V ≤ v | U = u) (must be a CDF in [0,1])."""
+        return self.conditional_cdf_v_given_u(u, v, param)
 
     def conditional_cdf_u_given_v(self, u, v, param=None):
-        """Compute conditional CDF P(U ≤ u | V = v).
+        """P(U ≤ u | V = v) for the t-copula.
 
-        Args:
-            u (float): Pseudo-observation.
-            v (float): Pseudo-observation.
-            param (np.ndarray, optional): [rho, nu]
-
-        Returns:
-            float: Conditional CDF value
+        Uses the known closed-form conditional for multivariate t:
+        T1 | T2=ty ~ t_{nu+1}(loc=rho*ty, scale=sqrt((nu+ty^2)*(1-rho^2)/(nu+1))).
         """
         if param is None:
-            rho, nu = self.parameters
-        else:
-            rho, nu = param
+            param = self.get_parameters()
+        rho, nu = param
+        rho = float(np.clip(rho, -0.999999, 0.999999))
+        nu = float(nu)
+
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
 
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
 
         tx = t.ppf(u, df=nu)
         ty = t.ppf(v, df=nu)
 
-        df_c = nu + 1
+        df_c = nu + 1.0
         loc_c = rho * ty
-        scale_c = np.sqrt((nu + ty**2) * (1 - rho**2) / df_c)
+        scale_c = np.sqrt((nu + ty ** 2) * (1.0 - rho ** 2) / df_c)
 
-        return t.cdf((tx - loc_c) / scale_c, df=df_c)
+        z = (tx - loc_c) / scale_c
+        out = t.cdf(z, df=df_c)
+        return np.clip(out, 1e-12, 1.0 - 1e-12)
 
     def conditional_cdf_v_given_u(self, u, v, param=None):
-        """Compute conditional CDF P(V ≤ v | U = u).
-
-        Args:
-            u (float): Pseudo-observation.
-            v (float): Pseudo-observation.
-            param (np.ndarray, optional): [rho, nu]
-
-        Returns:
-            float: Conditional CDF value
-        """
+        """P(V ≤ v | U = u). Symmetry holds for the bivariate t-copula."""
         return self.conditional_cdf_u_given_v(v, u, param)
 
     def init_from_data(self, u, v):
@@ -354,7 +340,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             def lambda_of_nu(nu):
                 # guard denom 1+rho
                 den = max(1e-8, 1.0 + rho0)
-                arg = -np.np.sqrt((nu + 1.0) * (1.0 - rho0) / den)
+                arg = -np.sqrt((nu + 1.0) * (1.0 - rho0) / den)
                 return 2.0 * student_t.cdf(arg, df=nu + 1.0)
 
             # robust bracketing

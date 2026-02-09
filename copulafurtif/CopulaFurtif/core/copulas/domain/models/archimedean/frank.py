@@ -32,7 +32,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Frank Copula"
         self.type = "frank"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([5.0],  [(-35.0, 35.0)], ["theta"]))
+        self.init_parameters(CopulaParameters(np.array([5.0]),  [(-35.0, 35.0)], ["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).

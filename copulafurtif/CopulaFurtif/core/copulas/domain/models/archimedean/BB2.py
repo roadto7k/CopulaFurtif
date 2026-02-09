@@ -120,7 +120,7 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.type = "bb2"
         self.default_optim_method = "Powell"
         self.bounds_param = [(0.05, 10.0), (1.0, 10.0)]
-        self.init_parameters(CopulaParameters([2, 1.5],self.bounds_param, ["theta", "delta"] ))
+        self.init_parameters(CopulaParameters(np.array([2, 1.5]),self.bounds_param, ["theta", "delta"] ))
 
     # ----- PyTree plumbing -----
     def tree_flatten(self):

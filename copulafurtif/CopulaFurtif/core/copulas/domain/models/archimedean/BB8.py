@@ -44,7 +44,7 @@ class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB8 Copula (Durante)"
         self.type = "bb8"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([2.0, 0.7], [(1.0, np.inf), (1e-6, 1.0)], ["theta", "delta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0, 0.7]), [(1.0, np.inf), (1e-6, 1.0)], ["theta", "delta"]))
 
     @staticmethod
     def _transform(u, theta):

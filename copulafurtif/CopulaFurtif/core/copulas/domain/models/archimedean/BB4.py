@@ -25,7 +25,7 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB4 Copula"
         self.type = "bb4"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([1.0, 1.0], [(1e-6, np.inf), (1e-6, np.inf)], ["theta", "delta"]))
+        self.init_parameters(CopulaParameters(np.array([1.0, 1.0]), [(1e-6, np.inf), (1e-6, np.inf)], ["theta", "delta"]))
 
     @staticmethod
     def _logsumexp(a, b):

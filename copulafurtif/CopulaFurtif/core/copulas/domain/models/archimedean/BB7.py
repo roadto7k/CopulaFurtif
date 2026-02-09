@@ -42,7 +42,7 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB7 Copula"
         self.type = "bb7"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([2.0, 2.0], [(1e-6, np.inf), (1e-6, np.inf)], ["theta", "delta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0, 2.0]), [(1e-6, np.inf), (1e-6, np.inf)], ["theta", "delta"]))
 
     @staticmethod
     def _phi(t, theta, delta):

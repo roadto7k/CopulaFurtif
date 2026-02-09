@@ -48,7 +48,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB3 Copula"
         self.type = "bb3"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([2, 1.5], [(1.0, 10.0),(0.05, 10.0) ], ["theta", "delta"]))
+        self.init_parameters(CopulaParameters(np.array([2, 1.5]), [(1.0, 10.0),(0.05, 10.0) ], ["theta", "delta"]))
 
 
     def _h(self, s, param=None):

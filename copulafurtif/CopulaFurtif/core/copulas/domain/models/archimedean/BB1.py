@@ -29,7 +29,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         # self.param_names = ["theta", "delta"]
         # self.parameters = [0.5, 1.5]
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters([0.5, 1.5],[(1e-6, np.inf), (1.0, np.inf)], ["theta", "delta"] ))
+        self.init_parameters(CopulaParameters(np.array([0.5, 1.5]),[(1e-6, np.inf), (1.0, np.inf)], ["theta", "delta"] ))
 
     def get_cdf(self, u, v, param=None):
         """

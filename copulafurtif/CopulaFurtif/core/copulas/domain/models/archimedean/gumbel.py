@@ -30,7 +30,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Gumbel Copula"
         self.type = "gumbel"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([2.0], [(1, 30)], ["theta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0]), [(1, 30)], ["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -46,6 +46,9 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
+        eps = 1e-15
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
         log_u = -np.log(u)
         log_v = -np.log(v)
         sum_pow = (log_u ** theta + log_v ** theta) ** (1 / theta)
@@ -105,11 +108,11 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         U = rng.uniform(low=0.0, high=np.pi, size=size)
         E = rng.exponential(scale=1.0, size=size)
 
-        sinαU = np.sin(alpha * U)
+        singU = np.sin(alpha * U)
         sinU = np.sin(U)
         cosU = np.cos(U)
 
-        factor1 = sinαU / (sinU ** (1.0 / alpha))
+        factor1 = singU / (sinU ** (1.0 / alpha))
         factor2 = (np.sin((1.0 - alpha) * U) / E) ** ((1.0 - alpha) / alpha)
 
         return factor1 * factor2
@@ -227,6 +230,9 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
+        eps = 1e-15
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
         theta = param[0]
         log_u = -np.log(u)
         log_v = -np.log(v)

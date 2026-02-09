@@ -32,7 +32,7 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Joe Copula"
         self.type = "joe"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([2.0],[(1.01, 30.0)] , ["theta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0]),[(1.01, 30.0)] , ["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -164,22 +164,22 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def kendall_tau(self, param=None):
         """
-        Closed-form Kendall's τ for the Joe copula (θ ≥ 1).
+        Closed-form Kendall's τ for the Joe copula (theta ≥ 1).
 
-        τ(θ)=1+2/(2−θ)·[ψ(2)−ψ(2/θ+1)].
-        Handles θ≈1 (independence) and θ≈2 (removable singularity).
+        τ(theta)=1+2/(2−theta)·[ψ(2)−ψ(2/theta+1)].
+        Handles theta≈1 (independence) and theta≈2 (removable singularity).
         """
-        θ = float(self.get_parameters()[0]) if param is None else float(param[0])
+        theta = float(self.get_parameters()[0]) if param is None else float(param[0])
 
         # independence
-        if abs(θ - 1.0) < 1e-12:
+        if abs(theta - 1.0) < 1e-12:
             return 0.0
 
-        # removable singularity at θ = 2
-        if abs(θ - 2.0) < 1e-10:
+        # removable singularity at theta = 2
+        if abs(theta - 2.0) < 1e-10:
             return 1.0 - polygamma(1, 2.0)  # trigamma(2)
 
-        return 1.0 + 2.0 * (digamma(2.0) - digamma(2.0 / θ + 1.0)) / (2.0 - θ)
+        return 1.0 + 2.0 * (digamma(2.0) - digamma(2.0 / theta + 1.0)) / (2.0 - theta)
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (0 for Joe copula).

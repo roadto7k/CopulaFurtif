@@ -109,12 +109,6 @@ class CopulaParameters:
         if pdf_expr:
             self.pdf_expr = pdf_expr
 
-    def set_symbolic_expressions(self, cdf_expr=None, pdf_expr=None):
-        if cdf_expr:
-            self.cdf_expr = cdf_expr
-        if pdf_expr:
-            self.pdf_expr = pdf_expr
-
     def get_bounds(self):
         return self.bounds.copy()
     
@@ -302,49 +296,67 @@ class CopulaModel(ABC):
 
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def conditional_cdf_u_given_v(self, u, v, param = None, normalize=True):
+    def conditional_cdf_u_given_v(self, u, v, param=None, normalize=True):
         """
         Computes the conditional CDF P(U ≤ u | V = v).
 
-        Args:
-            u: U value(s) in (0,1).
-            v: V value(s) in (0,1).
-            param: Copula parameters [theta, delta]. If None, uses self.get_parameters().
-            normalize: If True, divides by ∂C/∂v at u=1 to force CDF=1 at u=1.
-
-        Returns:
-            The conditional CDF values P(U ≤ u | V = v).
+        For any copula: ∂C(1,v)/∂v = 1. Hence normalization at u=1 is theoretically unnecessary,
+        and evaluating at the boundary can be numerically unstable for some families.
         """
         if param is None:
             param = self.get_parameters()
-        # Denominator for normalization (≈1 in theory)
-        duv = self.partial_derivative_C_wrt_v(u, v, param)
-        if normalize:
-            d1v = self.partial_derivative_C_wrt_v(1.0, v, param)
-            # Avoid division by zero
-            return duv / np.where(d1v != 0, d1v, 1.0)
-        return duv
+        if param is None:
+            raise ValueError("conditional_cdf_u_given_v: param is None and get_parameters() returned None")
 
-    def conditional_cdf_v_given_u(self, u, v, param = None, normalize=True):
+        u = np.asarray(u, float)
+        v = np.asarray(v, float)
+
+        eps = 1e-10
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        duv = self.partial_derivative_C_wrt_v(u, v, param)
+        if duv is None:
+            raise ValueError(f"{type(self).__name__}.partial_derivative_C_wrt_v returned None")
+
+        duv = np.asarray(duv, float)
+
+        # Theoretical normalization: d/dv C(1,v) = 1
+        # Keep `normalize` switch for API compatibility, but avoid boundary evaluation.
+        out = duv
+
+        # Make sure it behaves like a CDF
+        return np.clip(out, 1e-12, 1.0 - 1e-12)
+
+    def conditional_cdf_v_given_u(self, u, v, param=None, normalize=True):
         """
         Computes the conditional CDF P(V ≤ v | U = u).
 
-        Args:
-            u: U value(s) in (0,1).
-            v: V value(s) in (0,1).
-            param: Copula parameters [theta, delta]. If None, uses self.get_parameters().
-            normalize: If True, divides by ∂C/∂u at v=1 to force CDF=1 at v=1.
-
-        Returns:
-            The conditional CDF values P(V ≤ v | U = u).
+        For any copula: ∂C(u,1)/∂u = 1. Hence normalization at v=1 is theoretically unnecessary,
+        and evaluating at the boundary can be numerically unstable for some families.
         """
         if param is None:
             param = self.get_parameters()
+        if param is None:
+            raise ValueError("conditional_cdf_v_given_u: param is None and get_parameters() returned None")
+
+        u = np.asarray(u, float)
+        v = np.asarray(v, float)
+
+        eps = 1e-10
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
         duv = self.partial_derivative_C_wrt_u(u, v, param)
-        if normalize:
-            du1 = self.partial_derivative_C_wrt_u(u, 1.0, param)
-            return duv / np.where(du1 != 0, du1, 1.0)
-        return duv
+        if duv is None:
+            raise ValueError(f"{type(self).__name__}.partial_derivative_C_wrt_u returned None")
+
+        duv = np.asarray(duv, float)
+
+        # Theoretical normalization: d/du C(u,1) = 1
+        out = duv
+
+        return np.clip(out, 1e-12, 1.0 - 1e-12)
 
     def IAD(self, data):
         print(f"[INFO] IAD is disabled for {self.name}.")

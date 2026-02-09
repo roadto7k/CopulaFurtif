@@ -31,7 +31,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         # self.param_names = ["theta"]
         # self.parameters = [0.3]
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([0.3], 
+        self.init_parameters(CopulaParameters(np.array([0.3]),
                             [(-1.0, 1.0)], 
                             ["theta"]))
 

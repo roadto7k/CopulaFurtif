@@ -35,7 +35,7 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Clayton Copula"
         self.type = "clayton"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([2.0],[(0.01, 30.0)] , ["theta"] ))
+        self.init_parameters(CopulaParameters(np.array([2.0]),[(0.01, 30.0)] , ["theta"] ))
 
     @staticmethod
     def _log_S(u, v, theta):

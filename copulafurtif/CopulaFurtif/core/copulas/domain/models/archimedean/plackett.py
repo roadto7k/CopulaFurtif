@@ -32,7 +32,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Plackett Copula"
         self.type = "plackett"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([2.0],  [(0.01, 100.0)],["theta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0]),  [(0.01, 100.0)],["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
