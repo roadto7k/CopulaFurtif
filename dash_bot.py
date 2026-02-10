@@ -136,11 +136,11 @@ RANK_METHODS = [
 ]
 
 COPULA_PICK = [
-    ("best_aic", "Auto (best by AIC)"),
+    ("best_score", "Auto (best by Score: AIC + tau + tails)"),
+    ("best_score_pit", "Auto (best by Score + PIT)"),
+    ("best_aic", "Auto (best by AIC only)"),
     ("manual", "Manual (force a copula family)"),
 ]
-
-
 def _to_datetime(s: str) -> pd.Timestamp:
     return pd.to_datetime(s, utc=False)
 
@@ -789,35 +789,44 @@ def fit_pair_copula(
         return None, None, pd.DataFrame(), ["Pas assez d'obs pour fitter le copula."]
     x = s1.to_numpy()
     y = s2.to_numpy()
-    # fit (optionnellement en silence pour éviter le spam CMLE sur les bornes)
+
+    # Decide selection logic (fast/medium) based on the dashboard choice
+    pick = str(pick_mode or "").lower().strip()
+    if pick == "best_aic":
+        fit_kwargs = dict(selection="aic", include_pit=False, refine_topk=0)
+    elif pick == "best_score_pit":
+        # Most expensive option: adds Rosenblatt-PIT and refines top candidates with a quick CMLE.
+        fit_kwargs = dict(selection="score", include_pit=True, pit_m=250, refine_topk=2)
+    else:
+        # Default: robust score using AIC + Kendall-tau error + tail mismatch (no PIT).
+        fit_kwargs = dict(selection="score", include_pit=False, refine_topk=0)
+
+    # Fit (optionally silence logs to avoid CMLE/diagnostic spam)
     import io, contextlib
     if suppress_logs:
         _buf = io.StringIO()
         with contextlib.redirect_stdout(_buf), contextlib.redirect_stderr(_buf):
-            df_fit, msgs = fit_copulas(x, y)
+            df_fit, msgs = fit_copulas(x, y, **fit_kwargs)
         _fit_log = _buf.getvalue().strip()
-        # on ne garde le log que si aucune sortie
+        # keep captured logs only if nothing else is reported
         if (not msgs) and _fit_log:
             msgs = [_fit_log]
     else:
-        df_fit, msgs = fit_copulas(x, y)
+        df_fit, msgs = fit_copulas(x, y, **fit_kwargs)
+
     if df_fit is None or df_fit.empty:
         return None, None, pd.DataFrame(), (msgs or ["fit_copulas: aucun résultat."])
-
-    # tri par AIC si possible
-    if "aic" in df_fit.columns:
-        df_fit = df_fit.sort_values("aic", ascending=True).reset_index(drop=True)
 
     # marquer les copulas évaluables (CDF/h-functions disponibles)
     if "evaluable" not in df_fit.columns:
         df_fit = df_fit.copy()
         df_fit["evaluable"] = [is_copula_evaluable(r["name"], r["params"]) for _, r in df_fit.iterrows()]
 
-    if pick_mode == "manual":
+    if pick == "manual":
         target = str(manual_name).lower()
         row = df_fit[df_fit["name"].astype(str).str.lower() == target]
         if row.empty:
-            msgs = (msgs or []) + [f"Copula '{manual_name}' introuvable dans le fit => fallback meilleur AIC évaluable."]
+            msgs = (msgs or []) + [f"Copula '{manual_name}' introuvable dans le fit => fallback meilleur modèle évaluable."]
         else:
             cand = row.iloc[0]
             if bool(cand.get("evaluable", True)):
@@ -1500,7 +1509,7 @@ app.layout = dbc.Container(fluid=True, children=[
                     dcc.Dropdown(
                         id="copula-pick",
                         options=[{"label": lbl, "value": v} for v, lbl in COPULA_PICK],
-                        value="best_aic",
+                        value="best_score",
                         clearable=False,
                     ),
                     html.Label("Manual copula (if manual)"),

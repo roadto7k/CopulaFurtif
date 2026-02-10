@@ -252,165 +252,20 @@ def aic(loglik: float, k: int) -> float:
 #     return df, msgs
 
 def fit_copulas(u: np.ndarray, v: np.ndarray) -> Tuple[pd.DataFrame, List[str]]:
-    """
-    Fit rapide des copules bivariées via inversion de Kendall (CopulaFitter.fit_tau),
-    plus tail dependence et (optionnel) loglik/AIC si disponible.
-    Retourne (df, msgs) avec: name, params, loglik, aic, tail_dep_L, tail_dep_U
-    """
-    from scipy.optimize import minimize  # utilisé dans le fallback statsmodels
-    msgs, results = [], []
+    """Fit and rank copulas using the unified CopulaFurtif selection pipeline.
 
-    # normalisation des entrées
+    This wraps :func:`DataAnalysis.Utils.copulas.fit_copulas` so the dashboard
+    always uses the same selection logic as the repo demo:
+    `copulafurtif/CopulaFurtif/debugging/demo_fitting_tau_then_cmle.py`.
+
+    Defaults here are *analysis-friendly* (include PIT + quick refinement).
+    """
+    from DataAnalysis.Utils.copulas import fit_copulas as _fit
+
     u = np.asarray(u).ravel()
     v = np.asarray(v).ravel()
-    data = np.column_stack([u, v])
+    return _fit(u, v, selection="score", include_pit=True, pit_m=300, refine_topk=2)
 
-    def _aic(ll, k: int) -> float:
-        return np.nan if not np.isfinite(ll) else (2 * k - 2 * ll)
-
-    # ---------- Chemin prioritaire : CopulaFurtif via fit_tau ----------
-    if HAS_COPULAFURTIF:
-        # imports locaux pour éviter de casser si la lib n'est pas installée
-
-        fitter = CopulaFitter()
-        candidates = [
-            ("Gaussian",  CopulaType.GAUSSIAN),
-            ("Student-t", CopulaType.STUDENT),
-            ("Clayton",   CopulaType.CLAYTON),
-            ("Gumbel",    CopulaType.GUMBEL),
-            ("Frank",     CopulaType.FRANK),
-        ]
-
-        for name, ctype in candidates:
-            try:
-                cop = CopulaFactory.create(ctype)
-
-                # 1) Estimation ultra-rapide par inversion de τ (fit_tau rankifie en interne)
-                params = np.array(fitter.fit_tau(data=(u, v), copula=cop), dtype=float)  # fit_tau init-only
-
-                # 2) Dépendances de queues (formules fermées exposées par la copule)
-                try:
-                    tdL = float(cop.LTDC(params))
-                except Exception:
-                    tdL = np.nan
-                try:
-                    tdU = float(cop.UTDC(params))
-                except Exception:
-                    tdU = np.nan
-
-                # 3) Tentative de log-likelihood au point 'params' (optionnel)
-                ll = np.nan
-                for call in (
-                    lambda: np.sum(cop.logpdf(data)),              # certaines implémentations lisent l'état interne
-                    lambda: np.sum(cop.logpdf(data, params)),     # d’autres exigent params à l’appel
-                    lambda: np.sum(np.log(cop.pdf(data))),
-                    lambda: np.sum(np.log(cop.pdf(data, params))),
-                ):
-                    try:
-                        val = float(call())
-                        if np.isfinite(val):
-                            ll = val
-                            break
-                    except Exception:
-                        pass
-
-                aic_val = _aic(ll, len(np.atleast_1d(params)))
-
-                results.append(
-                    dict(
-                        name=name,
-                        params=params,
-                        loglik=ll,
-                        aic=aic_val,
-                        tail_dep_L=tdL,
-                        tail_dep_U=tdU,
-                    )
-                )
-            except Exception as e:
-                msgs.append(f"{name} (fit_tau) failed: {e}")
-
-    # ---------- Fallback : statsmodels (conserve ton bloc existant) ----------
-    elif HAS_SM_COPULA:
-        def fit_sm(name, cls):
-            try:
-                # Elliptiques
-                if name.lower().startswith("gaussian") or name.lower().startswith("student"):
-                    rho0 = 0.0
-                    if "student" in name.lower():
-                        df0 = 5.0
-
-                        def nll(x):
-                            rho, df = np.tanh(x[0]), 2.1 + np.exp(x[1])
-                            c = cls(rho, df=df)
-                            return -np.sum(c.logpdf(data))
-
-                        res = minimize(nll, x0=np.array([np.arctanh(rho0 + 1e-6), np.log(df0 - 2.1 + 1e-6)]),
-                                       method="Nelder-Mead")
-                        rho_hat, df_hat = np.tanh(res.x[0]), 2.1 + np.exp(res.x[1])
-                        cop_hat = cls(rho_hat, df=df_hat)
-                        ll = np.sum(cop_hat.logpdf(data))
-                        return dict(name=name, params=np.array([rho_hat, df_hat]), loglik=float(ll), aic=float(_aic(ll, 2)),
-                                    tail_dep_L=np.nan, tail_dep_U=np.nan)
-                    else:
-                        def nll(x):
-                            rho = np.tanh(x[0])
-                            c = cls(rho)
-                            return -np.sum(c.logpdf(data))
-
-                        res = minimize(nll, x0=np.array([np.arctanh(rho0 + 1e-6)]), method="Nelder-Mead")
-                        rho_hat = np.tanh(res.x[0])
-                        cop_hat = cls(rho_hat)
-                        ll = np.sum(cop_hat.logpdf(data))
-                        return dict(name=name, params=np.array([rho_hat]), loglik=float(ll), aic=float(_aic(ll, 1)),
-                                    tail_dep_L=0.0, tail_dep_U=0.0)
-                # Archimédiennes
-                else:
-                    th0 = 1.0
-
-                    def nll(x):
-                        theta = 1e-6 + np.exp(x[0])
-                        c = cls(theta)
-                        return -np.sum(c.logpdf(data))
-
-                    res = minimize(nll, x0=np.array([np.log(th0)]), method="Nelder-Mead")
-                    th_hat = 1e-6 + np.exp(res.x[0])
-                    cop_hat = cls(th_hat)
-                    ll = np.sum(cop_hat.logpdf(data))
-                    tdL = tdU = 0.0
-                    lname = name.lower()
-                    if lname.startswith("clayton"):
-                        tdL, tdU = float(2 ** (-1 / th_hat)), 0.0
-                    elif lname.startswith("gumbel"):
-                        tdL, tdU = 0.0, float(2 - 2 ** (1 / th_hat))
-                    return dict(name=name, params=np.array([th_hat]), loglik=float(ll), aic=float(_aic(ll, 1)),
-                                tail_dep_L=tdL, tail_dep_U=tdU)
-            except Exception as e:
-                msgs.append(f"{name} (statsmodels) fit failed: {e}")
-                return None
-
-        fams = [
-            ("Gaussian", GaussianCopula),
-            ("Student-t", StudentTCopula),
-            ("Clayton", ClaytonCopula),
-            ("Gumbel", GumbelCopula),
-            ("Frank", FrankCopula),
-        ]
-        for name, cls in fams:
-            out = fit_sm(name, cls)
-            if out is not None:
-                results.append(out)
-
-    else:
-        msgs.append("Aucune librairie de copules trouvée. Installez 'CopulaFurtif' ou 'statsmodels>=0.13'.")
-
-    df = pd.DataFrame(results).sort_values(
-        by=["aic", "loglik"], ascending=[True, False], na_position="last"
-    ).reset_index(drop=True) if results else pd.DataFrame(
-        columns=["name", "params", "loglik", "aic", "tail_dep_L", "tail_dep_U"]
-    )
-    return df, msgs
-
-# -------------- Dash App --------------
 def make_dash_app(artifacts_dir: str, reference_symbol: str):
     dfs, spreads, paths, meta = load_artifacts(artifacts_dir)
     coins_available = sorted(spreads.keys())
@@ -429,7 +284,7 @@ def make_dash_app(artifacts_dir: str, reference_symbol: str):
 
     app.layout = dbc.Container(fluid=True, children=[
         html.H2("Cointegration → Copula Lab", style={'textAlign': 'center'}),
-        html.H6("Formation ⇒ screening EG/KSS ⇒ ranking Kendall τ ⇒ sélection paires ⇒ copules (AIC)",
+        html.H6("Formation ⇒ screening EG/KSS ⇒ ranking Kendall τ ⇒ sélection paires ⇒ copules (Score)",
                 style={'textAlign': 'center', 'color': '#AAAAAA'}),
         dbc.Row([
             dbc.Col([
