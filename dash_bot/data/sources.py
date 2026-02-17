@@ -1,6 +1,6 @@
 # dash_bot/data/sources.py
 import pandas as pd
-
+from typing import List
 from DataAnalysis.config import DATA_PATH
 
 try:
@@ -14,8 +14,16 @@ try:
     HAS_CCXT = True
 except Exception:
     HAS_CCXT = False
-    
-def fetch_prices_yfinance(symbols, *, interval: str, lookback_days: int, tz: str | None = None):
+
+def _map_usdt_to_yf(symbol_usdt: str) -> str:
+    # 'BTCUSDT' -> 'BTC-USD'
+    s = symbol_usdt.upper()
+    if s.endswith("USDT"):
+        base = s[:-4]
+        return f"{base}-USD"
+    return s
+
+def fetch_prices_yfinance(symbols: List[str], start: str, end: str, interval: str) -> pd.DataFrame:
     if not HAS_YFINANCE:
         raise RuntimeError("yfinance non installé: pip install yfinance")
     tickers = [_map_usdt_to_yf(s) for s in symbols]
