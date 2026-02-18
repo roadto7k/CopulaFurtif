@@ -113,7 +113,7 @@ class GaussianCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         rho = param[0]
         return (2.0 / np.pi) * np.arcsin(rho)
 
-    def sample(self, n: int, param: np.ndarray = None) -> np.ndarray:
+    def sample(self, n: int, param: np.ndarray = None, rng=None) -> np.ndarray:
         """
         Generate random samples from the Gaussian copula.
 
@@ -126,11 +126,15 @@ class GaussianCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
-        rho = param[0]
+        rho = float(param[0])
+
+        if rng is None:
+            rng = np.random.default_rng()
+
         cov = np.array([[1.0, rho], [rho, 1.0]])
         L = np.linalg.cholesky(cov)
 
-        z = np.random.randn(n, 2)
+        z = rng.standard_normal((n, 2))
         corr = z @ L.T
         u = norm.cdf(corr[:, 0])
         v = norm.cdf(corr[:, 1])

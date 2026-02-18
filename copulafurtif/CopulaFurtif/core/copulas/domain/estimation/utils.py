@@ -3,6 +3,26 @@ import scipy.stats as stats
 from scipy.stats import rv_continuous
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 
+def safe_log(x, eps: float = 1e-300):
+    """Numerically safe natural log.
+
+    Parameters
+    ----------
+    x : array-like
+        Input values.
+    eps : float
+        Lower clip to avoid log(0) and -inf.
+
+    Returns
+    -------
+    np.ndarray
+        log(clip(x, eps, +inf))
+    """
+    import numpy as np
+
+    x = np.asarray(x, dtype=float)
+    return np.log(np.clip(x, eps, None))
+
 def auto_initialize_marginal_params(data, dist_name):
     """
     Automatically fit a scipy.stats distribution to 1D data and return best-fit parameters.

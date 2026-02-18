@@ -249,7 +249,7 @@ class CopulaModel(ABC):
         pass
 
     @abstractmethod
-    def sample(self, n, param=None):
+    def sample(self, n, param=None, rng=None):
         """
         Generate n random samples from the copula.
 

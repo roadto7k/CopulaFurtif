@@ -9,6 +9,16 @@ from scipy.optimize import brentq
 from enum import Enum
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel
 
+from .plots_corner import plot_simulated_corner_with_kdes, plot_rosenblatt_pit_corner
+from .plots_dependence import (
+    plot_tail_concentration_curves,
+    plot_kendall_k_plot,
+    plot_chi_plot,
+    plot_pickands_dependence_function,
+    plot_conditional_simulation_fan,
+)
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GLOBAL STYLE
@@ -471,3 +481,25 @@ def plot_arbitrage_frontiers(
 
     fig.tight_layout()
     plt.show()
+
+def plot_pdf_contour_grid_calibrated_tau(*args, **kwargs):
+    from CopulaFurtif.core.copulas.infrastructure.visualization.plots_comparison import (
+        plot_pdf_contour_grid_calibrated_tau as _impl,
+    )
+    return _impl(*args, **kwargs)
+
+
+def plot_aic_bic_vs_param_profile(*args, **kwargs):
+    from CopulaFurtif.core.copulas.infrastructure.visualization.plots_comparison import (
+        plot_aic_bic_vs_param_profile as _impl,
+    )
+    return _impl(*args, **kwargs)
+
+@staticmethod
+def plot_rosenblatt_pit_diagnostic(copula, x, y, **kwargs):
+    return plot_rosenblatt_pit_corner(copula, x, y, **kwargs)
+
+@staticmethod
+def plot_kendall_k_plot(x, y, **kwargs):
+    return plot_kendall_k_plot(x, y, **kwargs)
+

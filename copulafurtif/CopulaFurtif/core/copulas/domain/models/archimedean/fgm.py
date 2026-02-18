@@ -61,24 +61,73 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         theta = param[0]
         return 1 + theta * (1 - 2 * u) * (1 - 2 * v)
 
-    def sample(self, n, param=None):
-        """Generate random samples from the FGM copula (approximate).
+    def sample(self, n: int, param=None, rng=None):
+        """Generate random samples from the FGM copula (exact, 2D) via conditional inversion.
 
-        Note:
-            The current implementation returns independent uniform samples (approximate).
+        Copula: C(u,v) = u v [1 + theta (1-u)(1-v)], theta in [-1, 1].
+
+        Sampling:
+            U ~ Unif(0,1)
+            W ~ Unif(0,1)
+            Solve W = v + a v(1-v) with a = theta (1 - 2U).
 
         Args:
-            n (int): Number of samples to generate.
-            param (np.ndarray, optional): Copula parameter [theta].
+            n (int): number of samples
+            param (np.ndarray, optional): [theta]
+            rng (np.random.Generator, optional): RNG
 
         Returns:
-            np.ndarray: Samples of shape (n, 2).
+            np.ndarray: shape (n,2)
         """
+        import numpy as np
+
         if param is None:
             param = self.get_parameters()
-        u = np.random.rand(n)
-        v = np.random.rand(n)
-        return np.column_stack((u, v))  # NOTE: approximate sample, not exact FGM
+        theta = float(np.asarray(param, dtype=float).ravel()[0])
+
+        # FGM parameter domain
+        if theta < -1.0 or theta > 1.0:
+            raise ValueError(f"FGM theta must be in [-1,1], got {theta}")
+
+        if rng is None:
+            rng = np.random.default_rng()
+
+        u = rng.random(int(n))
+        w = rng.random(int(n))
+
+        a = theta * (1.0 - 2.0 * u)  # a in [-|theta|, |theta|]
+        eps = 1e-12
+
+        v = np.empty_like(u)
+
+        # If a ~ 0 => conditional CDF is ~ v, so v = w
+        mask0 = np.abs(a) < 1e-12
+        v[mask0] = w[mask0]
+
+        # Solve quadratic for others
+        am = a[~mask0]
+        wm = w[~mask0]
+
+        # Discriminant: (1+a)^2 - 4 a w
+        disc = (1.0 + am) ** 2 - 4.0 * am * wm
+        disc = np.maximum(disc, 0.0)
+        sqrt_disc = np.sqrt(disc)
+
+        # Two roots
+        r1 = ((1.0 + am) - sqrt_disc) / (2.0 * am)
+        r2 = ((1.0 + am) + sqrt_disc) / (2.0 * am)
+
+        # Pick the root in [0,1]
+        # (there will be exactly one valid root for admissible parameters)
+        in1 = (r1 >= -eps) & (r1 <= 1.0 + eps)
+        vm = np.where(in1, r1, r2)
+
+        # Clip to open interval for numerical safety
+        vm = np.clip(vm, eps, 1.0 - eps)
+        v[~mask0] = vm
+
+        u = np.clip(u, eps, 1.0 - eps)
+        return np.column_stack((u, v))
 
     def kendall_tau(self, param=None):
         """Compute Kendall's tau for the FGM copula.

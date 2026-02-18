@@ -6,7 +6,8 @@ from CopulaFurtif.copulas import CopulaFactory, CopulaType
 from CopulaFurtif.visualization import MatplotlibCopulaVisualizer
 from CopulaFurtif.copulas import CopulaFitter
 from CopulaFurtif.copulas import CopulaDiagnostics
-from CopulaFurtif.copula_utils import pseudo_obs
+from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
+
 
 def main():
     np.random.seed(42)

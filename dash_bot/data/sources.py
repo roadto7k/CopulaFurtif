@@ -107,7 +107,7 @@ def fetch_prices_binance_ccxt(symbols: List[str], start: str, end: str, interval
     df = pd.DataFrame(out).sort_index()
     return df, errors
 
-def load_prices_csv(data_path: str, *, tz: str | None = None):
+def load_prices_csv(data_path: str, *, tz = None):
     from DataAnalysis.src.data_fetching import fetch_price_data
     from DataAnalysis.Utils.load_prices import load_all_prices
     fetch_price_data()

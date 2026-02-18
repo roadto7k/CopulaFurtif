@@ -9,7 +9,7 @@ from CopulaFurtif.core.DAO.generate_data_beta_lognorm import generate_data_beta_
 from CopulaFurtif.copulas import CopulaFitter
 from CopulaFurtif.visualization import MatplotlibCopulaVisualizer
 from CopulaFurtif.copulas import CopulaDiagnostics
-from CopulaFurtif.copula_utils import pseudo_obs
+from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
 from CopulaFurtif.copulas import CopulaFactory, CopulaType
 
 def main():

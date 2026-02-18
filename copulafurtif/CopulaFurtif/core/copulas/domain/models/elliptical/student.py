@@ -138,7 +138,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         log_c = log_num - log_den - log_det + log_prod - log_dent
         return np.exp(log_c)
 
-    def sample(self, n, param=None, random_state=None):
+    def sample(self, n, param=None, random_state=None, rng=None):
         """Generate n samples from the Student copula.
 
         Returns:
@@ -151,18 +151,19 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         rho = float(np.clip(rho, -0.999999, 0.999999))
         nu = float(nu)
 
-        rng = np.random.RandomState(random_state) if random_state is not None else np.random
+        if rng is None:
+            rng = np.random.default_rng()
 
         cov = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
         L = np.linalg.cholesky(cov)
 
         z = rng.standard_normal((n, 2))
         chi2 = rng.chisquare(df=nu, size=n)
-
         scaled = (z @ L.T) / np.sqrt((chi2 / nu)[:, None])
 
         u = t.cdf(scaled[:, 0], df=nu)
         v = t.cdf(scaled[:, 1], df=nu)
+
         eps = 1e-12
         u = np.clip(u, eps, 1.0 - eps)
         v = np.clip(v, eps, 1.0 - eps)

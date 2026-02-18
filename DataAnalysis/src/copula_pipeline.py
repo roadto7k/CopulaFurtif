@@ -1,5 +1,6 @@
 from CopulaFurtif.copulas import CopulaFactory, CopulaFitter, CopulaType
-from CopulaFurtif.copula_utils import pseudo_obs, compare_tail_dependence
+from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
+from CopulaFurtif.core.copulas.domain.estimation.tail_dependance import compare_tail_dependence
 from CopulaFurtif.visualization import MatplotlibCopulaVisualizer
 from CopulaFurtif.copulas import CopulaFitter, CopulaDiagnostics
 from DataAnalysis.config import COPULA_TYPE, SEED
