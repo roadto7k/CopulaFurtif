@@ -118,11 +118,9 @@ def register_callbacks(app):
         fetch_errors = {}
         try:
             if data_source == "yfinance":
-                # adapte si ton fetcher a une autre signature
-                prices = fetch_prices_yfinance(symbols, interval=interval, lookback_days=3650)
+                prices = fetch_prices_yfinance(symbols, start_date, end_date, interval)
             elif data_source == "binance":
-                # adapte si ton fetcher a une autre signature
-                prices, fetch_errors = fetch_prices_binance_ccxt(symbols, timeframe=interval, lookback_days=3650)
+                prices, fetch_errors = fetch_prices_binance_ccxt(symbols, start_date, end_date, interval)
             else:
                 if not DATA_PATH:
                     raise RuntimeError("DATA_PATH manquant pour mode CSV.")
