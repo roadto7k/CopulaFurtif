@@ -1,7 +1,8 @@
 # dash_bot/data/sources.py
 import pandas as pd
-from typing import List
+from typing import List, Dict, Tuple
 from DataAnalysis.config import DATA_PATH
+import numpy as np
 
 try:
     import yfinance as yf  # type: ignore
@@ -51,7 +52,7 @@ def fetch_prices_yfinance(symbols: List[str], start: str, end: str, interval: st
     res.index = pd.to_datetime(res.index)
     return res
 
-def fetch_prices_binance_ccxt(symbols, *, timeframe: str, lookback_days: int, limit: int | None = None):
+def fetch_prices_binance_ccxt(symbols: List[str], start: str, end: str, interval: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
     if not HAS_CCXT:
         raise RuntimeError("ccxt non installé: pip install ccxt")
     # Binance futures: binanceusdm (USDT-margined perpetual futures)

@@ -1,7 +1,14 @@
 # dash_bot/data/cleaning.py
 import pandas as pd
+from typing import Dict, Tuple
 
-def clean_prices(prices, *, dropna: bool = True, sort_index: bool = True):
+def clean_prices(
+    prices: pd.DataFrame,
+    ref: str,
+    min_coverage: float,
+    min_points: int,
+    ffill_limit: int = 2,
+) -> Tuple[pd.DataFrame, Dict[str, str]]:
     """
     Nettoie les données:
     - index trié / unique
