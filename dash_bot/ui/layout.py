@@ -53,11 +53,10 @@ def build_layout():
                                             dcc.Dropdown(
                                                 id="data-source",
                                                 options=[
-                                                    {"label": "CSV (DATA_PATH)", "value": "csv"},
-                                                    {"label": "yfinance (spot, tickers -USD)", "value": "yfinance"},
-                                                    {"label": "Binance via ccxt (USDT futures)", "value": "binance"},
+                                                    {"label": "🟢 Binance SPOT — recommandé (cache local)", "value": "binance"},
+                                                    {"label": "📁 CSV locaux (DataAnalysis/data/raw/)", "value": "csv"},
                                                 ],
-                                                value="csv",
+                                                value="binance",
                                                 clearable=False,
                                             ),
                                             html.Div(id="data-source-warning", style={"marginTop": "6px", "color": "#ff6f1a"}),

@@ -12,7 +12,7 @@ from .serialization import serialize_results, _deserialize_series
 from ..viz.figures import fig_equity, fig_drawdown, fig_monthly_heatmap, fig_copula_freq
 
 # data (tu dis OK)
-from ..data.sources import fetch_prices_yfinance, fetch_prices_binance_ccxt, load_prices_csv
+from ..data.sources import fetch_prices_cached, load_prices_csv
 from ..data.cleaning import clean_prices_basic
 
 # core (tu dis OK)
@@ -24,13 +24,14 @@ from ..core.metrics import _safe_pct
 try:
     from ..data.sources import HAS_YFINANCE, HAS_CCXT, DATA_PATH
 except Exception:
-    HAS_YFINANCE, HAS_CCXT, DATA_PATH = True, True, None
+    HAS_YFINANCE, HAS_CCXT, DATA_PATH = False, False, None
 
 try:
     from ..core.copula_engine import HAS_COPULAFURTIF
 except Exception:
     HAS_COPULAFURTIF = False
-    
+
+
 def register_callbacks(app):
     # --- Data source warning (comme avant) ---
     @app.callback(
@@ -41,11 +42,10 @@ def register_callbacks(app):
         msgs = []
         if src == "csv":
             if not DATA_PATH:
-                msgs.append("⚠️ DATA_PATH non trouvé. Renseigne-le ou utilise yfinance/ccxt.")
-        if src == "yfinance" and not HAS_YFINANCE:
-            msgs.append("⚠️ yfinance non installé: pip install yfinance")
-        if src == "binance" and not HAS_CCXT:
-            msgs.append("⚠️ ccxt non installé: pip install ccxt")
+                msgs.append("⚠️ DATA_PATH non trouvé. Renseigne-le ou passe sur Binance.")
+        if src == "binance":
+            msgs.append(
+                "ℹ️ Binance SPOT — API REST directe, cache local. Seules les périodes manquantes sont retéléchargées.")
         if not HAS_COPULAFURTIF:
             msgs.append("⚠️ CopulaFurtif non disponible (optionnel).")
         return html.Div(msgs) if msgs else ""
@@ -83,32 +83,32 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def run_backtest(
-        n_clicks,
-        data_source,
-        strategy,
-        interval,
-        start_date,
-        end_date,
-        symbols,
-        ref_asset,
-        formation_weeks,
-        trading_weeks,
-        step_weeks,
-        adf_alpha,
-        use_kss,
-        min_obs,
-        min_coverage,
-        rank_method,
-        top_k,
-        copula_pick,
-        copula_manual,
-        suppress_logs,
-        entry,
-        exit,
-        flip,
-        cap_per_leg,
-        initial_equity,
-        fee_rate,
+            n_clicks,
+            data_source,
+            strategy,
+            interval,
+            start_date,
+            end_date,
+            symbols,
+            ref_asset,
+            formation_weeks,
+            trading_weeks,
+            step_weeks,
+            adf_alpha,
+            use_kss,
+            min_obs,
+            min_coverage,
+            rank_method,
+            top_k,
+            copula_pick,
+            copula_manual,
+            suppress_logs,
+            entry,
+            exit,
+            flip,
+            cap_per_leg,
+            initial_equity,
+            fee_rate,
     ):
         # ensure ref in universe
         if not symbols or ref_asset not in symbols:
@@ -117,16 +117,17 @@ def register_callbacks(app):
         # fetch data
         fetch_errors = {}
         try:
-            if data_source == "yfinance":
-                prices = fetch_prices_yfinance(symbols, start_date, end_date, interval)
-            elif data_source == "binance":
-                prices, fetch_errors = fetch_prices_binance_ccxt(symbols, start_date, end_date, interval)
+            if data_source == "binance":
+                prices, fetch_errors = fetch_prices_cached(
+                    symbols, start_date, end_date, interval, source="binance"
+                )
             else:
                 if not DATA_PATH:
                     raise RuntimeError("DATA_PATH manquant pour mode CSV.")
                 prices = load_prices_csv(DATA_PATH)
                 # slice dates
-                prices = prices.loc[(prices.index >= pd.to_datetime(start_date)) & (prices.index < pd.to_datetime(end_date))]
+                prices = prices.loc[
+                    (prices.index >= pd.to_datetime(start_date)) & (prices.index < pd.to_datetime(end_date))]
                 # resample best effort
                 if interval != "1h":
                     rule_map = {"5m": "5T", "15m": "15T", "1h": "1H", "4h": "4H", "1d": "1D"}
@@ -185,7 +186,7 @@ def register_callbacks(app):
         warns = []
         if fetch_errors:
             bad = ", ".join(list(fetch_errors.keys())[:8])
-            extra = "" if len(fetch_errors) <= 8 else f" (+{len(fetch_errors)-8})"
+            extra = "" if len(fetch_errors) <= 8 else f" (+{len(fetch_errors) - 8})"
             warns.append(f"⚠️ fetch issues: {bad}{extra}")
 
         status = "✅ Backtest terminé."
@@ -277,18 +278,23 @@ def register_callbacks(app):
             "padding": "8px",
         }
         tron_data_cond = [
-            {"if": {"state": "active"}, "backgroundColor": "rgba(0,240,255,0.08)", "border": "1px solid rgba(0,240,255,0.3)"},
-            {"if": {"state": "selected"}, "backgroundColor": "rgba(0,240,255,0.06)", "border": "1px solid rgba(0,240,255,0.25)"},
+            {"if": {"state": "active"}, "backgroundColor": "rgba(0,240,255,0.08)",
+             "border": "1px solid rgba(0,240,255,0.3)"},
+            {"if": {"state": "selected"}, "backgroundColor": "rgba(0,240,255,0.06)",
+             "border": "1px solid rgba(0,240,255,0.25)"},
         ]
 
         if tab == "tab-equity":
             return dbc.Row(
                 [
-                    dbc.Col(dcc.Graph(figure=fig_equity(equity, equity_g), style={"height": "420px"}, config={"responsive": True}), width=8),
+                    dbc.Col(dcc.Graph(figure=fig_equity(equity, equity_g), style={"height": "420px"},
+                                      config={"responsive": True}), width=8),
                     dbc.Col(
                         [
-                            dcc.Graph(figure=fig_drawdown(equity), style={"height": "300px"}, config={"responsive": True}),
-                            dcc.Graph(figure=fig_monthly_heatmap(monthly), style={"height": "360px"}, config={"responsive": True}),
+                            dcc.Graph(figure=fig_drawdown(equity), style={"height": "300px"},
+                                      config={"responsive": True}),
+                            dcc.Graph(figure=fig_monthly_heatmap(monthly), style={"height": "360px"},
+                                      config={"responsive": True}),
                         ],
                         width=4,
                     ),
@@ -338,7 +344,8 @@ def register_callbacks(app):
         if tab == "tab-copulas":
             return dbc.Row(
                 [
-                    dbc.Col(dcc.Graph(figure=fig_copula_freq(copfreq), style={"height": "380px"}, config={"responsive": True}), width=6),
+                    dbc.Col(dcc.Graph(figure=fig_copula_freq(copfreq), style={"height": "380px"},
+                                      config={"responsive": True}), width=6),
                     dbc.Col(
                         dbc.Card(
                             dbc.CardBody(
@@ -348,25 +355,36 @@ def register_callbacks(app):
                                         [
                                             html.Div(
                                                 [
-                                                    html.Span("COPULA BACKEND: ", style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
+                                                    html.Span("COPULA BACKEND: ", style={"color": "#5a7a90",
+                                                                                         "fontFamily": "Share Tech Mono",
+                                                                                         "fontSize": "0.75rem"}),
                                                     html.Span(
                                                         f"{'CopulaFurtif' if HAS_COPULAFURTIF else 'Not installed'}",
-                                                        style={"color": "#00f0ff", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"},
+                                                        style={"color": "#00f0ff", "fontFamily": "Share Tech Mono",
+                                                               "fontSize": "0.75rem"},
                                                     ),
                                                 ],
                                                 style={"marginBottom": "8px"},
                                             ),
                                             html.Div(
                                                 [
-                                                    html.Span("CYCLES: ", style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
-                                                    html.Span(f"{len(weekly)}", style={"color": "#ff2eed", "fontFamily": "Orbitron", "fontSize": "0.85rem"}),
+                                                    html.Span("CYCLES: ", style={"color": "#5a7a90",
+                                                                                 "fontFamily": "Share Tech Mono",
+                                                                                 "fontSize": "0.75rem"}),
+                                                    html.Span(f"{len(weekly)}",
+                                                              style={"color": "#ff2eed", "fontFamily": "Orbitron",
+                                                                     "fontSize": "0.85rem"}),
                                                 ],
                                                 style={"marginBottom": "8px"},
                                             ),
                                             html.Div(
                                                 [
-                                                    html.Span("TRADES: ", style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
-                                                    html.Span(f"{len(trades)}", style={"color": "#00ff88", "fontFamily": "Orbitron", "fontSize": "0.85rem"}),
+                                                    html.Span("TRADES: ", style={"color": "#5a7a90",
+                                                                                 "fontFamily": "Share Tech Mono",
+                                                                                 "fontSize": "0.75rem"}),
+                                                    html.Span(f"{len(trades)}",
+                                                              style={"color": "#00ff88", "fontFamily": "Orbitron",
+                                                                     "fontSize": "0.85rem"}),
                                                 ],
                                                 style={"marginBottom": "8px"},
                                             ),
