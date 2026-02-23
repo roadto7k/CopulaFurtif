@@ -6,6 +6,14 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from CopulaFurtif.visualization import (
+    plot_arbitrage_frontiers,
+    plot_pdf,
+    plot_cdf,
+    plot_mpdf,
+    Plot_type,
+)
+
 
 # ---------------------------------------------------------------------
 # Make repo imports work when running from repo root
@@ -191,6 +199,96 @@ def main():
     plt.show()
 
     print(f"\nSaved showcase figures to: {out_dir}")
+
+    # -------------------------------------------------------------------------
+    # 3bis) Existing "classic" visualizations (already in your package API)
+    #      (CDF / PDF / MPDF / arbitrage frontiers) — like example_viz.py
+    # -------------------------------------------------------------------------
+
+    # (A) CDF 3D + contour
+    print("→ Existing viz: CDF (3D + contour)")
+    plot_cdf(cop_fit, plot_type=Plot_type.DIM3, Nsplit=80, cmap='coolwarm')
+    _save_and_show_latest_fig(out_dir / "10_cdf_3d.png", dpi=150)
+
+    plot_cdf(
+        cop_fit,
+        plot_type=Plot_type.CONTOUR,
+        Nsplit=100,
+        levels=np.linspace(0.1, 0.9, 9),
+        cmap='viridis'
+    )
+    _save_and_show_latest_fig(out_dir / "11_cdf_contour.png", dpi=150)
+
+    # (B) PDF 3D + contour
+    print("→ Existing viz: PDF (3D + contour)")
+    plot_pdf(cop_fit, plot_type=Plot_type.DIM3, Nsplit=70, cmap='plasma')
+    _save_and_show_latest_fig(out_dir / "12_pdf_3d.png", dpi=150)
+
+    plot_pdf(
+        cop_fit,
+        plot_type=Plot_type.CONTOUR,
+        Nsplit=100,
+        log_scale=True,
+        levels=[0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1.2, 2.0]
+    )
+    _save_and_show_latest_fig(out_dir / "13_pdf_contour_log.png", dpi=150)
+
+    # (C) MPDF (copula + marginals) — here Normal x Normal for showcase
+    print("→ Existing viz: MPDF (with marginals)")
+    margins = [
+        {'distribution': norm, 'loc': 0.0, 'scale': 1.0},
+        {'distribution': norm, 'loc': 0.0, 'scale': 1.0},
+    ]
+    plot_mpdf(
+        cop_fit,
+        margins,
+        plot_type=Plot_type.CONTOUR,
+        Nsplit=90,
+        levels=12,
+        cmap='terrain'
+    )
+    _save_and_show_latest_fig(out_dir / "14_mpdf_contour.png", dpi=150)
+
+    # (D) Arbitrage frontiers (existing) — without and with scatter points
+    print("→ Existing viz: Arbitrage frontiers (with/without scatter)")
+    plot_arbitrage_frontiers(
+        cop_fit,
+        alpha_low=0.05,
+        alpha_high=0.95,
+        levels=220
+    )
+    _save_and_show_latest_fig(out_dir / "15_arbitrage_frontiers.png", dpi=150)
+
+    # Reuse pseudo-observations from fitted data as scatter overlay (subsample for readability)
+    rng_scatter = np.random.default_rng(seed + 1)
+    idx_sc = rng_scatter.choice(len(u_data), size=min(400, len(u_data)), replace=False)
+
+    plot_arbitrage_frontiers(
+        cop_fit,
+        alpha_low=0.05,
+        alpha_high=0.95,
+        levels=220,
+        scatter=(u_data[idx_sc], v_data[idx_sc]),
+        scatter_alpha=0.25
+    )
+    _save_and_show_latest_fig(out_dir / "16_arbitrage_frontiers_scatter.png", dpi=150)
+
+def _save_and_show_latest_fig(save_path, dpi=150):
+    """
+    Save and show the latest existing Matplotlib figure without creating a new empty one.
+    Avoids plt.gcf() side-effect (which can create a blank figure).
+    """
+    fignums = plt.get_fignums()
+    if not fignums:
+        print(f"[WARN] No active figure to save for: {save_path}")
+        return
+
+    fig = plt.figure(fignums[-1])  # get latest existing figure
+    fig.savefig(save_path, dpi=dpi)
+    plt.show()
+    plt.close(fig)
+
+
 
 
 if __name__ == "__main__":
