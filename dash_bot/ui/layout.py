@@ -203,6 +203,55 @@ def build_layout():
 
                                             html.Hr(),
 
+                                            html.Label("⚠️ Risk Management / Stop-Loss",
+                                                       style={"color": "#ff6f1a", "fontWeight": "bold"}),
+
+                                            dbc.Checklist(
+                                                options=[{"label": " Trade Stop-Loss (per-trade max loss)",
+                                                          "value": "trade_sl"}],
+                                                value=["trade_sl"],
+                                                id="use-trade-sl",
+                                                style={"marginTop": "4px"},
+                                            ),
+                                            html.Div("Max loss per trade (% du notionnel 2 legs)",
+                                                     className="tip-text"),
+                                            dbc.Input(id="trade-sl-pct", type="number", value=0.03, min=0.005, max=0.20,
+                                                      step=0.005),
+
+                                            dbc.Checklist(
+                                                options=[{"label": " Daily Drawdown Limit", "value": "daily_dd"}],
+                                                value=[],
+                                                id="use-daily-dd",
+                                                style={"marginTop": "6px"},
+                                            ),
+                                            html.Div("Max daily equity loss (%)", className="tip-text"),
+                                            dbc.Input(id="daily-dd-pct", type="number", value=0.02, min=0.005, max=0.10,
+                                                      step=0.005),
+
+                                            dbc.Checklist(
+                                                options=[{"label": " Max Portfolio Drawdown Stop", "value": "max_dd"}],
+                                                value=["max_dd"],
+                                                id="use-max-dd-stop",
+                                                style={"marginTop": "6px"},
+                                            ),
+                                            html.Div("Portfolio DD limit (% depuis HWM)", className="tip-text"),
+                                            dbc.Input(id="max-dd-stop-pct", type="number", value=0.15, min=0.03,
+                                                      max=0.50, step=0.01),
+
+                                            dbc.Checklist(
+                                                options=[{"label": " Trailing Stop on Profit", "value": "trail"}],
+                                                value=[],
+                                                id="use-trailing-stop",
+                                                style={"marginTop": "6px"},
+                                            ),
+                                            html.Div("Trail % / Activation %", className="tip-text"),
+                                            dbc.Row([
+                                                dbc.Col(dbc.Input(id="trailing-pct", type="number", value=0.02,
+                                                                  min=0.005, max=0.10, step=0.005), width=6),
+                                                dbc.Col(dbc.Input(id="trailing-activation", type="number", value=0.01,
+                                                                  min=0.005, max=0.10, step=0.005), width=6),
+                                            ]),
+
                                             dbc.Button("▶  RUN BACKTEST", id="run-btn", className="tron-run-btn w-100"),
                                             html.Div(id="run-status", className="tron-status", style={"marginTop": "10px"}),
                                         ]
@@ -240,6 +289,19 @@ def build_layout():
                                                      html.Div(id="m-fees", children="—", className="metric-value",
                                                               style={"color": "#ff6f1a", "textShadow": "0 0 12px rgba(255,111,26,0.4)"})],
                                                     className="metric-card"), width=2),
+                                    dbc.Col(
+                                        html.Div([
+                                            html.Div("SL Triggers", className="metric-label"),
+                                            html.Div(
+                                                id="m-sl-count",
+                                                children="—",
+                                                className="metric-value",
+                                                style={"color": "#ff6f1a",
+                                                       "textShadow": "0 0 12px rgba(255,111,26,0.4)"}
+                                            )
+                                        ], className="metric-card"),
+                                        width=2
+                                    ),
                                 ],
                                 style={"marginBottom": "14px"},
                             ),

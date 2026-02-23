@@ -80,6 +80,15 @@ def register_callbacks(app):
         State("cap-per-leg", "value"),
         State("initial-equity", "value"),
         State("fee-rate", "value"),
+        State("use-trade-sl", "value"),
+        State("trade-sl-pct", "value"),
+        State("use-daily-dd", "value"),
+        State("daily-dd-pct", "value"),
+        State("use-max-dd-stop", "value"),
+        State("max-dd-stop-pct", "value"),
+        State("use-trailing-stop", "value"),
+        State("trailing-pct", "value"),
+        State("trailing-activation", "value"),
         prevent_initial_call=True,
     )
     def run_backtest(
@@ -109,6 +118,15 @@ def register_callbacks(app):
             cap_per_leg,
             initial_equity,
             fee_rate,
+            use_trade_sl,
+            trade_sl_pct,
+            use_daily_dd,
+            daily_dd_pct,
+            use_max_dd_stop,
+            max_dd_stop_pct,
+            use_trailing_stop,
+            trailing_pct,
+            trailing_activation,
     ):
         # ensure ref in universe
         if not symbols or ref_asset not in symbols:
@@ -171,6 +189,15 @@ def register_callbacks(app):
             cap_per_leg=float(cap_per_leg or 20000.0),
             initial_equity=float(initial_equity or 40000.0),
             fee_rate=float(fee_rate or 0.0004),
+            use_trade_stop_loss=("trade_sl" in (use_trade_sl or [])),
+            trade_stop_loss_pct=float(trade_sl_pct or 0.03),
+            use_daily_drawdown_limit=("daily_dd" in (use_daily_dd or [])),
+            daily_drawdown_limit_pct=float(daily_dd_pct or 0.02),
+            use_max_drawdown_stop=("max_dd" in (use_max_dd_stop or [])),
+            max_drawdown_stop_pct=float(max_dd_stop_pct or 0.15),
+            use_trailing_stop=("trail" in (use_trailing_stop or [])),
+            trailing_stop_pct=float(trailing_pct or 0.02),
+            trailing_stop_activation=float(trailing_activation or 0.01),
         )
 
         if getattr(p, "strategy", None) != "reference_copula":
@@ -203,11 +230,12 @@ def register_callbacks(app):
         Output("m-mdd", "children"),
         Output("m-trades", "children"),
         Output("m-fees", "children"),
+        Output("m-sl-count", "children"),  # <-- AJOUT ICI
         Input("store-results", "data"),
     )
     def update_metrics(store):
         if not store:
-            return ("—", "—", "—", "—", "—", "—")
+            return ("—", "—", "—", "—", "—", "—", "—")
 
         m = store.get("metrics", {}) or {}
         tot = m.get("total_return", np.nan)
@@ -223,6 +251,9 @@ def register_callbacks(app):
             except Exception:
                 fees = np.nan
 
+        sl_stats = store.get("stop_loss_stats", {})
+        sl_count = sl_stats.get("total_stop_loss_trades", 0)
+
         def f(x, pct=False):
             if x is None or not np.isfinite(x):
                 return "—"
@@ -235,6 +266,7 @@ def register_callbacks(app):
             f(mdd, pct=True),
             str(len(trades) if trades else 0),
             (f"{fees:,.0f}" if np.isfinite(fees) else "—"),
+            str(sl_count),
         )
 
     # --- Tabs render (reprend ton code) ---

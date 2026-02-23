@@ -13,6 +13,7 @@ from .signals import generate_signals_reference_copula
 def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[str, Any]:
     """
     Backtest de la stratégie proposée (reference spread copula).
+    Avec risk management: trade stop-loss, daily DD limit, max DD stop, trailing stop.
     """
     prices = prices.copy()
     prices = prices.loc[(prices.index >= _to_datetime(p.start)) & (prices.index < _to_datetime(p.end))]
@@ -41,8 +42,15 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
     trades = []
     weekly = []
 
+    # --- RISK MANAGEMENT: tracking ---
+    stop_loss_events = []
+
     current_equity = float(p.initial_equity)
     current_equity_gross = float(p.initial_equity)
+
+    # High Water Mark pour max drawdown stop
+    hwm = float(p.initial_equity)
+    portfolio_stopped = False  # si True, on ne trade plus du tout
 
     # iterate cycles
     t0 = start_dt
@@ -54,28 +62,52 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         if t_trade_end > end_dt:
             break
 
+        # --- RISK MANAGEMENT: check max drawdown stop AVANT le cycle ---
+        if p.use_max_drawdown_stop and not portfolio_stopped:
+            dd_from_hwm = (current_equity - hwm) / hwm if hwm > 0 else 0.0
+            if dd_from_hwm < -abs(p.max_drawdown_stop_pct):
+                portfolio_stopped = True
+                stop_loss_events.append(dict(
+                    time=str(t_form_end),
+                    type="MAX_DRAWDOWN_STOP",
+                    detail=f"DD={dd_from_hwm:.4f} < -{p.max_drawdown_stop_pct:.4f}",
+                    equity=current_equity,
+                ))
+
+        if portfolio_stopped:
+            df_trade = prices.loc[(prices.index >= t_form_end) & (prices.index < t_trade_end)]
+            for ts in df_trade.index:
+                equity.loc[ts] = current_equity
+                equity_gross.loc[ts] = current_equity_gross
+            weekly.append(dict(
+                cycle=cycle_id,
+                formation_start=str(t0), formation_end=str(t_form_end),
+                trade_start=str(t_form_end), trade_end=str(t_trade_end),
+                status="STOPPED (max drawdown limit reached)",
+                selected_pair=None, copula=None,
+            ))
+            t0 = t0 + step_delta
+            cycle_id += 1
+            continue
+
         df_form = prices.loc[(prices.index >= t0) & (prices.index < t_form_end)]
         df_trade = prices.loc[(prices.index >= t_form_end) & (prices.index < t_trade_end)]
 
         # stationarity filter on formation
-        # 1) candidates: coins dispo dans ce df_form
         candidates = [s for s in p.symbols if (s != p.ref and s in df_form.columns)]
 
-        # 2) calcule coverage / points SUR LA FORMATION WINDOW uniquement
         ref_ok = df_form[p.ref].notna()
         form_slice = df_form.loc[ref_ok, candidates]
 
-        coverage = form_slice.notna().mean()  # % de points non-NaN
-        points = form_slice.notna().sum()  # nb de points non-NaN
+        coverage = form_slice.notna().mean()
+        points = form_slice.notna().sum()
 
-        # 3) garde seulement ceux qui passent les seuils
         eligible = [
             s for s in candidates
             if float(coverage.get(s, 0.0)) >= float(p.min_coverage)
                and int(points.get(s, 0)) >= int(p.min_obs)
         ]
 
-        # 4) stationarity test uniquement sur eligible
         summary, spreads, betas = select_stationary_spreads(
             prices=df_form,
             ref=p.ref,
@@ -95,7 +127,6 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                 selected_pair=None,
                 copula=None,
             ))
-            # write equity (flat) over trading window
             for ts in df_trade.index:
                 equity.loc[ts] = current_equity
                 equity_gross.loc[ts] = current_equity_gross
@@ -151,7 +182,7 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         s1_sorted = np.sort(s1_form.dropna().values.astype(float))
         s2_sorted = np.sort(s2_form.dropna().values.astype(float))
 
-        # quantities fixed for the week using opening prices (paper: <= 20k USDT each coin)
+        # quantities fixed for the week
         first_bar = df_trade[[coin1, coin2]].dropna().head(1)
         if first_bar.empty:
             weekly.append(dict(
@@ -172,7 +203,10 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         q1 = (p.cap_per_leg / p1_open) if (np.isfinite(p1_open) and p1_open > 0) else 0.0
         q2 = (p.cap_per_leg / p2_open) if (np.isfinite(p2_open) and p2_open > 0) else 0.0
 
-        pos = 0  # +1 long coin1 short coin2 ; -1 short coin1 long coin2 ; 0 flat
+        # --- RISK MANAGEMENT: notionnel total pour seuils ---
+        total_notional = p.cap_per_leg * 2.0
+
+        pos = 0
         entry_ts = None
         entry_p1 = entry_p2 = None
         entry_fee = 0.0
@@ -180,27 +214,100 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         net_pnl = 0.0
         fees_paid = 0.0
 
+        # --- RISK MANAGEMENT: état intra-cycle ---
+        peak_trade_pnl = 0.0        # Peak unrealized PnL du trade en cours
+        daily_start_equity = None    # Equity début de journée
+        current_day = None           # Date courante
+        daily_stopped = False        # Flag: stop pour la journée
+
         prev_ts = None
         prev_p1 = prev_p2 = None
 
-        # run through trading window bars (signals at t, execution at t+1 -> apply pending orders)
         pending_sig: int = 0
         pending_close: bool = False
 
         def _fee(notional: float) -> float:
             return float(p.fee_rate) * float(abs(notional))
 
-        # run through trading window bars (only where ref/coin1/coin2 prices exist)
+        # -------------------------------------------------------
+        # HELPER: ferme la position (factorisé)
+        # -------------------------------------------------------
+        def _close_position(close_ts, close_p1, close_p2, reason="signal"):
+            nonlocal pos, entry_ts, entry_p1, entry_p2
+            nonlocal gross_pnl, net_pnl, fees_paid
+            nonlocal current_equity, current_equity_gross
+            nonlocal hwm, peak_trade_pnl
+
+            notional = abs(q1 * close_p1) + abs(q2 * close_p2)
+            fee = _fee(notional)
+            fees_paid += fee
+            net_pnl -= fee
+
+            is_stop = reason not in ("signal", "week_end")
+
+            trades.append(dict(
+                cycle=cycle_id,
+                pair=f"{coin1}-{coin2}",
+                copula=best_name,
+                entry_time=str(entry_ts),
+                exit_time=str(close_ts),
+                direction=("LONG1_SHORT2" if pos == +1 else "SHORT1_LONG2"),
+                q1=q1, q2=q2,
+                entry_p1=entry_p1, entry_p2=entry_p2,
+                exit_p1=close_p1, exit_p2=close_p2,
+                gross_pnl=gross_pnl,
+                net_pnl=net_pnl,
+                fees=fees_paid,
+                bars=int((pd.to_datetime(close_ts) - pd.to_datetime(
+                    entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
+                forced_week_end=(reason == "week_end"),
+                exit_reason=reason,
+            ))
+
+            if is_stop:
+                stop_loss_events.append(dict(
+                    time=str(close_ts),
+                    type=reason,
+                    detail=f"PnL={net_pnl:.2f}",
+                    equity=current_equity + net_pnl,
+                ))
+
+            current_equity = float(current_equity + net_pnl)
+            current_equity_gross = float(current_equity_gross + gross_pnl)
+
+            # Update HWM
+            if current_equity > hwm:
+                hwm = current_equity
+
+            pos = 0
+            entry_ts = None
+            entry_p1 = entry_p2 = None
+            gross_pnl = 0.0
+            net_pnl = 0.0
+            fees_paid = 0.0
+            peak_trade_pnl = 0.0
+
+        # -------------------------------------------------------
+        # Boucle de trading (bar par bar)
+        # -------------------------------------------------------
         trade_bars = df_trade[[p.ref, coin1, coin2]].dropna()
         for ts, row in trade_bars.iterrows():
             pref = float(row[p.ref])
             p1 = float(row[coin1])
             p2 = float(row[coin2])
 
-            # 1) mark-to-market PnL since prev bar (position held during prev->ts)
+            # --- RISK MANAGEMENT: Daily DD tracking ---
+            ts_dt = pd.to_datetime(ts) if not isinstance(ts, pd.Timestamp) else ts
+            ts_date = ts_dt.date()
+            if current_day != ts_date:
+                current_day = ts_date
+                daily_start_equity = current_equity + net_pnl
+                daily_stopped = False
+
+            # 1) mark-to-market PnL since prev bar
             if prev_ts is not None and pos != 0:
-                dp1 = p1 - float(prev_p1)  # type: ignore
-                dp2 = p2 - float(prev_p2)  # type: ignore
+                dp1 = p1 - float(prev_p1)
+                dp2 = p2 - float(prev_p2)
                 if pos == +1:
                     step_pnl = q1 * dp1 - q2 * dp2
                 else:
@@ -208,100 +315,89 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                 gross_pnl += step_pnl
                 net_pnl += step_pnl
 
-            # 2) execute pending orders from previous bar at *current* prices
-            notional1 = q1 * p1
-            notional2 = q2 * p2
-            trade_notional = abs(notional1) + abs(notional2)
+            # ===================================================
+            # RISK MANAGEMENT: vérifications stop-loss
+            # ===================================================
+            stop_triggered = False
 
-            # pending close first
-            if pos != 0 and pending_close:
-                fee = _fee(trade_notional)
-                fees_paid += fee
-                net_pnl -= fee
-                trades.append(dict(
-                    cycle=cycle_id,
-                    pair=f"{coin1}-{coin2}",
-                    copula=best_name,
-                    entry_time=str(entry_ts),
-                    exit_time=str(ts),
-                    direction=("LONG1_SHORT2" if pos == +1 else "SHORT1_LONG2"),
-                    q1=q1, q2=q2,
-                    entry_p1=entry_p1, entry_p2=entry_p2,
-                    exit_p1=p1, exit_p2=p2,
-                    gross_pnl=gross_pnl,
-                    net_pnl=net_pnl,
-                    fees=fees_paid,
-                    bars=int(
-                        (pd.to_datetime(ts) - pd.to_datetime(entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
-                    forced_week_end=False,
-                ))
-                # realize PnL at execution time
-                current_equity = float(current_equity + net_pnl)
-                current_equity_gross = float(current_equity_gross + gross_pnl)
-                pos = 0
-                entry_ts = None
-                entry_p1 = entry_p2 = None
-                gross_pnl = 0.0
-                net_pnl = 0.0
-                fees_paid = 0.0
+            if pos != 0:
+                # A) Trade-level stop-loss
+                if p.use_trade_stop_loss and not stop_triggered:
+                    sl_threshold = -abs(p.trade_stop_loss_pct) * total_notional
+                    if net_pnl < sl_threshold:
+                        _close_position(ts, p1, p2, reason="TRADE_STOP_LOSS")
+                        stop_triggered = True
+                        pending_close = False
+                        pending_sig = 0
 
-            pending_close = False  # consumed
+                # B) Trailing stop
+                if p.use_trailing_stop and not stop_triggered and pos != 0:
+                    if net_pnl > peak_trade_pnl:
+                        peak_trade_pnl = net_pnl
+                    activation_level = abs(p.trailing_stop_activation) * total_notional
+                    if peak_trade_pnl > activation_level:
+                        trail_threshold = peak_trade_pnl - abs(p.trailing_stop_pct) * total_notional
+                        if net_pnl < trail_threshold:
+                            _close_position(ts, p1, p2, reason="TRAILING_STOP")
+                            stop_triggered = True
+                            pending_close = False
+                            pending_sig = 0
 
-            # pending open/flip
-            if pending_sig != 0:
-                if pos == 0:
-                    # open at current prices
-                    fee = _fee(trade_notional)
-                    fees_paid += fee
-                    net_pnl -= fee
-                    pos = int(pending_sig)
-                    entry_ts = ts
-                    entry_p1, entry_p2 = p1, p2
-                else:
-                    # flip at current prices (close then open) if allowed
-                    if p.flip_on_opposite and int(pending_sig) != int(pos):
-                        fee_close = _fee(trade_notional)
-                        fees_paid += fee_close
-                        net_pnl -= fee_close
-                        trades.append(dict(
-                            cycle=cycle_id,
-                            pair=f"{coin1}-{coin2}",
-                            copula=best_name,
-                            entry_time=str(entry_ts),
-                            exit_time=str(ts),
-                            direction=("LONG1_SHORT2" if pos == +1 else "SHORT1_LONG2"),
-                            q1=q1, q2=q2,
-                            entry_p1=entry_p1, entry_p2=entry_p2,
-                            exit_p1=p1, exit_p2=p2,
-                            gross_pnl=gross_pnl,
-                            net_pnl=net_pnl,
-                            fees=fees_paid,
-                            bars=int((pd.to_datetime(ts) - pd.to_datetime(
-                                entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
-                            forced_week_end=False,
-                        ))
-                        # realize PnL at flip-close
-                        current_equity = float(current_equity + net_pnl)
-                        current_equity_gross = float(current_equity_gross + gross_pnl)
+                # C) Daily drawdown limit
+                if p.use_daily_drawdown_limit and not stop_triggered and daily_start_equity is not None and pos != 0:
+                    intraday_equity = current_equity + net_pnl
+                    daily_dd = (intraday_equity - daily_start_equity) / daily_start_equity if daily_start_equity > 0 else 0.0
+                    if daily_dd < -abs(p.daily_drawdown_limit_pct):
+                        _close_position(ts, p1, p2, reason="DAILY_DD_LIMIT")
+                        stop_triggered = True
+                        daily_stopped = True
+                        pending_close = False
+                        pending_sig = 0
 
-                        # reset and open new
-                        pos = 0
-                        entry_ts = None
-                        entry_p1 = entry_p2 = None
-                        gross_pnl = 0.0
-                        net_pnl = 0.0
-                        fees_paid = 0.0
+            # Si daily stopped => pas de nouveaux trades
+            if daily_stopped:
+                pending_sig = 0
 
-                        fee_open = _fee(trade_notional)
-                        fees_paid += fee_open
-                        net_pnl -= fee_open
+            # 2) execute pending orders from previous bar (si pas de stop trigger)
+            if not stop_triggered:
+                notional1 = q1 * p1
+                notional2 = q2 * p2
+                trade_notional = abs(notional1) + abs(notional2)
+
+                # pending close first
+                if pos != 0 and pending_close:
+                    _close_position(ts, p1, p2, reason="signal")
+
+                pending_close = False
+
+                # pending open/flip
+                if pending_sig != 0:
+                    if pos == 0:
+                        # open at current prices
+                        fee = _fee(trade_notional)
+                        fees_paid += fee
+                        net_pnl -= fee
                         pos = int(pending_sig)
                         entry_ts = ts
                         entry_p1, entry_p2 = p1, p2
+                        peak_trade_pnl = 0.0
+                    else:
+                        # flip at current prices (close then open) if allowed
+                        if p.flip_on_opposite and int(pending_sig) != int(pos):
+                            _close_position(ts, p1, p2, reason="signal")
 
-            pending_sig = 0  # consumed
+                            # open new position
+                            fee_open = _fee(trade_notional)
+                            fees_paid += fee_open
+                            net_pnl -= fee_open
+                            pos = int(pending_sig)
+                            entry_ts = ts
+                            entry_p1, entry_p2 = p1, p2
+                            peak_trade_pnl = 0.0
 
-            # 3) compute current spreads (using betas from formation) + signal for next bar
+                pending_sig = 0
+
+            # 3) compute current spreads + signal for next bar
             s1_val = float(pref - beta1 * p1) if np.isfinite(beta1) else np.nan
             s2_val = float(pref - beta2 * p2) if np.isfinite(beta2) else np.nan
             if not np.isfinite(s1_val) or not np.isfinite(s2_val):
@@ -315,19 +411,21 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                 )
                 close_now = bool(det.get("close", 0.0) > 0.5)
 
-            # schedule execution at next bar
-            if pos != 0 and close_now:
-                pending_close = True
-            elif sig != 0:
-                pending_sig = int(sig)
+            # schedule execution at next bar (sauf si daily stopped)
+            if not daily_stopped:
+                if pos != 0 and close_now:
+                    pending_close = True
+                elif sig != 0:
+                    pending_sig = int(sig)
 
-            # 4) update equity marks (equity series is global portfolio)
-            equity.loc[ts] = current_equity + net_pnl  # net_pnl inclut fees/unrealized
+            # 4) update equity marks
+            equity.loc[ts] = current_equity + net_pnl
             equity_gross.loc[ts] = current_equity_gross + gross_pnl
 
             prev_ts = ts
             prev_p1, prev_p2 = p1, p2
 
+        # --- End of week: force-close ---
         last_bar = df_trade[[coin1, coin2]].dropna().tail(1)
         if not last_bar.empty:
             ts_end = last_bar.index[0]
@@ -335,33 +433,9 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
             p2_end = float(last_bar.iloc[0][coin2])
 
             if pos != 0:
-                notional_end = abs(q1 * p1_end) + abs(q2 * p2_end)
-                fee = float(p.fee_rate) * notional_end
-                fees_paid += fee
-                net_pnl -= fee
-                trades.append(dict(
-                    cycle=cycle_id,
-                    pair=f"{coin1}-{coin2}",
-                    copula=best_name,
-                    entry_time=str(entry_ts),
-                    exit_time=str(ts_end),
-                    direction=("LONG1_SHORT2" if pos == +1 else "SHORT1_LONG2"),
-                    q1=q1, q2=q2,
-                    entry_p1=entry_p1, entry_p2=entry_p2,
-                    exit_p1=p1_end, exit_p2=p2_end,
-                    gross_pnl=gross_pnl,
-                    net_pnl=net_pnl,
-                    fees=fees_paid,
-                    bars=int((pd.to_datetime(ts_end) - pd.to_datetime(entry_ts)).total_seconds() // 60) if entry_ts else np.nan,
-                    forced_week_end=True
-                ))
-                pos = 0
+                _close_position(ts_end, p1_end, p2_end, reason="week_end")
 
-            # update equity at week end and roll portfolio equity forward
-            current_equity = float(current_equity + net_pnl)
-            current_equity_gross = float(current_equity_gross + gross_pnl)
-
-            # fill equity series for bars not set (if any)
+            # fill equity series for bars not set
             for ts in df_trade.index:
                 if pd.isna(equity.loc[ts]):
                     equity.loc[ts] = current_equity
@@ -411,6 +485,22 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
     else:
         cop_freq = pd.DataFrame(columns=["copula", "count"])
 
+    # --- RISK MANAGEMENT: stop-loss stats ---
+    sl_stats = {}
+    if trades_df is not None and not trades_df.empty and "exit_reason" in trades_df.columns:
+        reason_counts = trades_df["exit_reason"].value_counts().to_dict()
+        sl_stats["reason_counts"] = {str(k): int(v) for k, v in reason_counts.items()}
+        sl_types = ["TRADE_STOP_LOSS", "TRAILING_STOP", "DAILY_DD_LIMIT"]
+        sl_trades = trades_df[trades_df["exit_reason"].isin(sl_types)]
+        sl_stats["total_stop_loss_trades"] = int(sl_trades.shape[0])
+        sl_stats["total_sl_pnl"] = float(sl_trades["net_pnl"].sum()) if not sl_trades.empty else 0.0
+    else:
+        sl_stats["reason_counts"] = {}
+        sl_stats["total_stop_loss_trades"] = 0
+        sl_stats["total_sl_pnl"] = 0.0
+    sl_stats["events"] = stop_loss_events
+    sl_stats["portfolio_stopped"] = portfolio_stopped
+
     return dict(
         equity=equity,
         equity_gross=equity_gross,
@@ -421,4 +511,5 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         monthly_returns=monthly,
         copula_freq=cop_freq,
         params=p,
+        stop_loss_stats=sl_stats,
     )

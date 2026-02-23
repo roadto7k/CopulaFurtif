@@ -38,12 +38,18 @@ def fig_empty(title: str = "") -> go.Figure:
     fig.update_layout(**TRON_LAYOUT, height=320, title=title)
     return fig
 
-def fig_equity(equity: pd.Series, equity_gross: Optional[pd.Series] = None) -> go.Figure:
+def fig_equity(
+    equity: pd.Series,
+    equity_gross: Optional[pd.Series] = None,
+    stop_loss_events: Optional[list] = None,
+) -> go.Figure:
     equity = pd.Series(equity).replace([np.inf, -np.inf], np.nan).dropna()
     if equity_gross is not None:
         equity_gross = pd.Series(equity_gross).replace([np.inf, -np.inf], np.nan).dropna()
+
     fig = go.Figure()
-    # Glow effect: wider transparent trace behind main
+
+    # Equity net
     fig.add_trace(go.Scatter(
         x=equity.index, y=equity.values,
         name="Equity (net)", mode="lines",
@@ -51,14 +57,67 @@ def fig_equity(equity: pd.Series, equity_gross: Optional[pd.Series] = None) -> g
         fill="tozeroy",
         fillcolor="rgba(0,240,255,0.04)",
     ))
+
+    # Equity gross
     if equity_gross is not None and len(equity_gross) > 0:
         fig.add_trace(go.Scatter(
             x=equity_gross.index, y=equity_gross.values,
             name="Equity (gross)", mode="lines",
             line=dict(dash="dot", color="#ff2eed", width=1.5),
         ))
-    fig.update_layout(**TRON_LAYOUT, height=360, title="⬡  EQUITY CURVE",
-                      xaxis_title="Date", yaxis_title="USDT")
+
+    # >>> Stop-loss markers
+    if stop_loss_events:
+        sl_x, sl_y, sl_text = [], [], []
+
+        for e in stop_loss_events:
+            try:
+                t = e.get("time")
+                eq = e.get("equity", None)
+                tp = e.get("type", "stop_loss")
+
+                if t is None or eq is None:
+                    continue
+
+                ts = pd.to_datetime(t)
+                if pd.isna(ts):
+                    continue
+
+                # equity value must be numeric
+                y = float(eq)
+                if not np.isfinite(y):
+                    continue
+
+                sl_x.append(ts)
+                sl_y.append(y)
+                sl_text.append(tp)
+            except Exception:
+                # On ignore les events mal formés au lieu de casser le graph
+                continue
+
+        if sl_x:
+            fig.add_trace(go.Scatter(
+                x=sl_x,
+                y=sl_y,
+                mode="markers",
+                name="Stop-Loss Triggers",
+                marker=dict(
+                    symbol="x",
+                    size=10,
+                    color="#ff3355",
+                    line=dict(width=2, color="#ff3355"),
+                ),
+                text=sl_text,
+                hovertemplate="<b>%{text}</b><br>Date: %{x}<br>Equity: %{y:.0f}<extra></extra>",
+            ))
+
+    fig.update_layout(
+        **TRON_LAYOUT,
+        height=360,
+        title="⬡  EQUITY CURVE",
+        xaxis_title="Date",
+        yaxis_title="USDT",
+    )
     return fig
 
 def fig_drawdown(equity: pd.Series) -> go.Figure:

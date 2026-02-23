@@ -41,5 +41,25 @@ class BacktestParams:
     initial_equity: float = 40000.0
     fee_rate: float = 0.0004       # taker futures typical
 
+    # ============================================================
+    # RISK MANAGEMENT / STOP-LOSS
+    # ============================================================
+    # Trade-level stop-loss: ferme le trade si unrealized PnL < -X% du notionnel (2 legs)
+    use_trade_stop_loss: bool = True
+    trade_stop_loss_pct: float = 0.03      # 3% du notionnel total (2 * cap_per_leg)
+
+    # Daily drawdown limit: stop trading pour la journée si equity baisse de > Y%
+    use_daily_drawdown_limit: bool = False
+    daily_drawdown_limit_pct: float = 0.02  # 2% de l'equity au début de la journée
+
+    # Max portfolio drawdown: arrête totalement si drawdown > Z% depuis HWM
+    use_max_drawdown_stop: bool = True
+    max_drawdown_stop_pct: float = 0.15     # 15% de drawdown max => stop tout
+
+    # Trailing stop sur PnL du trade (optionnel) : si le trade a gagné, protège les gains
+    use_trailing_stop: bool = False
+    trailing_stop_pct: float = 0.02         # 2% depuis le peak PnL du trade
+    trailing_stop_activation: float = 0.01  # s'active quand PnL > 1% du notionnel
+
     # misc
     seed: int = 42

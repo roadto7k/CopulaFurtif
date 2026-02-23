@@ -93,6 +93,7 @@ def _deserialize_series(obj: Dict[str, Any]) -> pd.Series:
 def serialize_results(res: Dict[str, Any]) -> Dict[str, Any]:
     def ser_series(s: pd.Series) -> Dict[str, Any]:
         return {"index": s.index.astype(str).tolist(), "values": s.values.tolist()}
+
     out = {
         "equity": ser_series(res["equity"]),
         "equity_gross": ser_series(res["equity_gross"]),
@@ -104,6 +105,8 @@ def serialize_results(res: Dict[str, Any]) -> Dict[str, Any]:
         "monthly_returns": ser_series(res["monthly_returns"]) if isinstance(res["monthly_returns"], pd.Series) else {"index": [], "values": []},
         "params": res["params"].__dict__,
     }
+
+    out["stop_loss_stats"] = res.get("stop_loss_stats", {})
     return out
 
 def deserialize_results(payload: dict) -> dict:

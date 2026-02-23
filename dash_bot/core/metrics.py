@@ -54,3 +54,37 @@ def performance_metrics(equity, returns, interval: str = "D"):
         max_drawdown=float(mdd),
         romad=float(romad) if romad is not None else np.nan,
     )
+
+
+def risk_metrics(trades_df, equity, stop_loss_stats):
+    """Métriques spécifiques au risk management."""
+    if trades_df is None or trades_df.empty:
+        return {}
+
+    result = {}
+
+    # Win rate
+    if "net_pnl" in trades_df.columns:
+        wins = (trades_df["net_pnl"] > 0).sum()
+        total = len(trades_df)
+        result["win_rate"] = float(wins / total) if total > 0 else 0.0
+        result["avg_win"] = float(trades_df.loc[trades_df["net_pnl"] > 0, "net_pnl"].mean()) if wins > 0 else 0.0
+        result["avg_loss"] = float(trades_df.loc[trades_df["net_pnl"] <= 0, "net_pnl"].mean()) if (
+                                                                                                              total - wins) > 0 else 0.0
+        result["profit_factor"] = abs(result["avg_win"] * wins / (result["avg_loss"] * (total - wins))) if result[
+                                                                                                               "avg_loss"] != 0 else np.inf
+
+    # Stop-loss specific
+    if "exit_reason" in trades_df.columns:
+        sl_types = ["TRADE_STOP_LOSS", "TRAILING_STOP", "DAILY_DD_LIMIT"]
+        sl_trades = trades_df[trades_df["exit_reason"].isin(sl_types)]
+        result["sl_trigger_count"] = len(sl_trades)
+        result["sl_total_loss"] = float(sl_trades["net_pnl"].sum()) if not sl_trades.empty else 0.0
+        result["sl_avg_loss"] = float(sl_trades["net_pnl"].mean()) if not sl_trades.empty else 0.0
+
+        # Worst trade (sans SL) vs worst trade (avec SL)
+        signal_trades = trades_df[~trades_df["exit_reason"].isin(sl_types)]
+        result["worst_trade_sl"] = float(sl_trades["net_pnl"].min()) if not sl_trades.empty else 0.0
+        result["worst_trade_signal"] = float(signal_trades["net_pnl"].min()) if not signal_trades.empty else 0.0
+
+    return result
