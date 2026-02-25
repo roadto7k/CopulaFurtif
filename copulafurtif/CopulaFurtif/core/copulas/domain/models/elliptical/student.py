@@ -40,7 +40,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         # self.get_parameters() = [0.5, 4.0]
         self.default_optim_method = "SLSQP"
         self.n_nodes = 64
-        self.init_parameters(CopulaParameters(np.array([0.5, 4.0]),[(-0.999, 0.999), (2.01, 30.0)], ["rho", "nu"] ))
+        self.init_parameters(CopulaParameters(np.array([0.5, 4.0]),[(-1, 1), (2.01, 30.0)], ["rho", "nu"] ))
 
     def get_cdf(self, u, v, param=None):
         """Compute copula CDF C(u,v) = P(U≤u, V≤v) for the t-copula.

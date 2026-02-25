@@ -12,6 +12,7 @@ Attributes:
     parameters (np.ndarray): Copula parameter [theta].
     default_optim_method (str): Optimization method used for parameter fitting.
 """
+from __future__ import annotations
 
 import numpy as np
 from scipy.optimize import root_scalar
@@ -47,12 +48,22 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
-        theta = param[0]
-        if np.isclose(theta, 0.0):
-            return u * v
-        num = (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1)
-        denom = np.exp(-theta) - 1
-        return -1 / theta * np.log(1 + num / denom)
+        theta = float(param[0])
+
+        # independence limit
+        if abs(theta) < 1e-8:
+            return np.asarray(u) * np.asarray(v)
+
+        # optional safety (copula is defined on (0,1))
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        A = np.expm1(-theta * u)  # exp(-θu) - 1
+        B = np.expm1(-theta * v)  # exp(-θv) - 1
+        D = np.expm1(-theta)  # exp(-θ) - 1
+
+        return -(1.0 / theta) * np.log1p((A * B) / D)
 
     def get_pdf(self, u, v, param=None):
         """Compute the copula PDF c(u, v).
@@ -93,39 +104,47 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return num / denom
 
-    def sample(self, n, param=None, rng=None):
-        """Generate samples from the Frank copula.
-
-        Args:
-            n (int): Number of samples to generate.
-            param (np.ndarray, optional): Copula parameter [theta].
+    def sample(self, n: int, seed: int | None = None, param=None, rng=None):
+        """
+        Sample (u, v) from the Frank copula using conditional inversion.
 
         Returns:
-            np.ndarray: Array of shape (n, 2) of pseudo-observations.
+            ndarray of shape (n, 2)
         """
         if param is None:
-            theta = self.get_parameters()[0]
-        else:
-            theta = float(param[0])
+            param = self.get_parameters()
+        theta = float(param[0])
 
         if rng is None:
-            rng = default_rng()
+            rng = np.random.default_rng(seed)
 
-            # --- independence limit ------------------------------------------
+        # Independence limit
         if abs(theta) < 1e-8:
             return rng.random((n, 2))
 
-            # --- core algorithm ----------------------------------------------
+        # Draw U and an auxiliary W ~ U(0,1) for inversion
         u = rng.random(n)
         w = rng.random(n)
 
-        D = np.exp(-theta) - 1.0  # common denominator   D = e^{-θ} − 1
-        A = np.exp(-theta * u) - 1.0  # A = e^{-θu} − 1
+        # Stable building blocks
+        # a = exp(-θu), d = exp(-θ), but use expm1 for stability where it matters
+        a = np.exp(-theta * u)  # could use exp here; u in (0,1), theta bounded
+        d = np.exp(-theta)  # same
+        D = np.expm1(-theta)  # d - 1, stable even if theta small
 
-        B = (w * D) / (A + 1.0 - w * A)  # inversion term  B = w D /(A+1−w A)
-        v = -1.0 / theta * np.log1p(B)  # v = −(1/θ)·ln(1+B)
+        # Inversion formula (stable form):
+        # v = -(1/θ) * log( 1 + D*w / (a - w*(a - 1)) )
+        denom = a - w * (a - 1.0)  # always positive for w in (0,1), a > 0
+        inside = 1.0 + (D * w) / denom
 
-        return np.column_stack((u, v))
+        v = -(1.0 / theta) * np.log(inside)
+
+        # Safety clip to (0,1) in case of tiny numeric drift
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        return np.column_stack([u, v])
 
     @staticmethod
     def debye1(theta, *, epsabs=1e-12, epsrel=1e-12):
