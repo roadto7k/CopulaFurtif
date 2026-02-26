@@ -35,24 +35,18 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Clayton Copula"
         self.type = "clayton"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters(np.array([2.0]),[(0.01, 30.0)] , ["theta"] ))
+        self.init_parameters(CopulaParameters(np.array([2.0]),[(0, 30.0)] , ["theta"] ))
 
     @staticmethod
     def _log_S(u, v, theta):
         """
-        Return log( u^{-θ} + v^{-θ} − 1 ) without overflow.
+        log( u^{-θ} + v^{-θ} − 1 ) in log-space, stable.
 
-        Works in pure log‑space:
-            log_sum = logaddexp(−θ log u, −θ log v)
-            log_S   = log( exp(log_sum) − 1 )
-        For large log_sum,     exp(log_sum)−1 ≈ exp(log_sum)  ⇒ log_S ≈ log_sum
+        log_sum = log(u^{-θ} + v^{-θ})
+        log_S = log(exp(log_sum) - 1) = log_sum + log1p(-exp(-log_sum))
         """
         log_sum = np.logaddexp(-theta * np.log(u), -theta * np.log(v))
-        big = log_sum > 20.0  # exp(20) ≈ 4.8×10^8  → safe cutoff
-        log_S = np.where(big,
-                         log_sum,
-                         np.log(np.expm1(log_sum)))  # accurate when sum is small
-        return log_S
+        return log_sum + np.log1p(-np.exp(-log_sum))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -67,12 +61,20 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
 
-        # guard lower endpoint only
-        u = np.maximum(u, _TINY)
-        v = np.maximum(v, _TINY)
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
+        u, v = np.broadcast_arrays(u, v)
 
-        log_S = self._log_S(u, v, theta)  # ln S
-        return np.exp(-log_S / theta)  # C(u,v) = S^{-1/θ}
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        # independence limit (Clayton: θ -> 0)
+        if abs(theta) < 1e-8:
+            return u * v
+
+        log_S = self._log_S(u, v, theta)
+        return np.exp(-log_S / theta)
 
     def get_pdf(self, u, v, param=None):
         """
@@ -87,50 +89,48 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
 
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
+
         u = np.asarray(u, dtype=float)
         v = np.asarray(v, dtype=float)
+        u, v = np.broadcast_arrays(u, v)
 
-        # ------------------------------------------------------------------ #
-        # split domain
-        # ------------------------------------------------------------------ #
-        dist = np.minimum.reduce([u, v, 1.0 - u, 1.0 - v])
-        mask_edge = dist <= _EDGE
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
 
-        pdf = np.empty_like(u, dtype=float)
+        # independence limit
+        if abs(theta) < 1e-8:
+            return np.ones_like(u, dtype=float)
 
-        # ---------- closed‑form on the “safe” zone ------------------------ #
-        if np.any(~mask_edge):
-            uu = np.maximum(u[~mask_edge], _TINY)
-            vv = np.maximum(v[~mask_edge], _TINY)
+        log_S = self._log_S(u, v, theta)
+        log_pdf = (
+                np.log(theta + 1.0)
+                - (theta + 1.0) * (np.log(u) + np.log(v))
+                - (2.0 + 1.0 / theta) * log_S
+        )
+        pdf = np.exp(log_pdf)
 
-            log_S = self._log_S(uu, vv, theta)
-            log_pdf = (
-                    np.log(theta + 1.0)
-                    - (theta + 1.0) * (np.log(uu) + np.log(vv))
-                    - (2.0 + 1.0 / theta) * log_S
-            )
-            pdf[~mask_edge] = np.exp(log_pdf)
-
-        # ---------- finite diff near the borders ------------------------- #
-        if np.any(mask_edge):
-            uu = u[mask_edge]
-            vv = v[mask_edge]
-
-            # local CDF working on guaranteed‑safe inputs
-            def _cdf_local(a, b):
-                aa = np.maximum(a, _TINY)
-                bb = np.maximum(b, _TINY)
-                return self.get_cdf(aa, bb, param=[theta])  # reuse analytic CDF
-
+        # Fallback finite-diff ONLY where analytic produced NaN/inf
+        bad = ~np.isfinite(pdf)
+        if np.any(bad):
             h = _HFD
-            pdf[mask_edge] = (
-                                     _cdf_local(uu + h, vv + h)
-                                     - _cdf_local(uu + h, vv - h)
-                                     - _cdf_local(uu - h, vv + h)
-                                     + _cdf_local(uu - h, vv - h)
-                             ) / (4.0 * h * h)
+            uu = u[bad]
+            vv = v[bad]
 
-        return np.maximum(pdf, 0.0, out=pdf)
+            def _cdf_local(a, b):
+                aa = np.clip(a, eps, 1.0 - eps)
+                bb = np.clip(b, eps, 1.0 - eps)
+                return self.get_cdf(aa, bb, param=[theta])
+
+            pdf[bad] = (
+                               _cdf_local(uu + h, vv + h)
+                               - _cdf_local(uu + h, vv - h)
+                               - _cdf_local(uu - h, vv + h)
+                               + _cdf_local(uu - h, vv - h)
+                       ) / (4.0 * h * h)
+
+        pdf = np.maximum(pdf, 0.0)
+        return float(pdf) if np.ndim(pdf) == 0 else pdf
 
     def sample(self, n, param=None, rng=None):
         """
@@ -260,8 +260,17 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Partial derivative values.
         """
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
-        u = np.maximum(u, _TINY)
-        v = np.maximum(v, _TINY)
+
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
+        u, v = np.broadcast_arrays(u, v)
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        if abs(theta) < 1e-8:
+            return v
 
         log_S = self._log_S(u, v, theta)
         log_du = (-theta - 1.0) * np.log(u) + (-1.0 / theta - 1.0) * log_S

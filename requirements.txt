@@ -7,4 +7,3 @@ matplotlib
 pytest-cov
 hypothesis
 autograd
-dash

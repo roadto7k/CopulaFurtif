@@ -42,6 +42,11 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+
         theta = param[0]
         return u * v * (1 + theta * (1 - u) * (1 - v))
 
@@ -58,6 +63,11 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+
         theta = param[0]
         return 1 + theta * (1 - 2 * u) * (1 - 2 * v)
 
@@ -79,7 +89,6 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Returns:
             np.ndarray: shape (n,2)
         """
-        import numpy as np
 
         if param is None:
             param = self.get_parameters()
@@ -184,6 +193,11 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         if param is None:
             param = self.get_parameters()
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1 - eps)
+        v = np.clip(v, eps, 1 - eps)
+
         theta = param[0]
         u = np.asarray(u)
         v = np.asarray(v)
@@ -202,4 +216,36 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Value of ∂C/∂u = v + θ·v·(1−v)·(1−2u).
         """
 
-        return self.partial_derivative_C_wrt_u(v, u, param)
+        return self.partial_derivative_C_wrt_v(v, u, param=param)
+
+    def blomqvist_beta(self, param=None) -> float:
+        if param is None:
+            param = self.get_parameters()
+        theta = float(np.asarray(param, dtype=float).ravel()[0])
+        return theta / 4.0
+
+    def init_from_data(self, u, v):
+        u = np.asarray(u, dtype=float).ravel()
+        v = np.asarray(v, dtype=float).ravel()
+        mask = np.isfinite(u) & np.isfinite(v)
+        u = u[mask];
+        v = v[mask]
+        if u.size < 10:
+            return self.get_parameters()
+
+        # open interval safety
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        # Empirical C(0.5, 0.5) ~ proportion of (u<=0.5, v<=0.5)
+        c_hat = np.mean((u <= 0.5) & (v <= 0.5))
+        beta_emp = 4.0 * c_hat - 1.0  # in [-1, 1]
+        theta0 = 4.0 * beta_emp  # in [-4, 4] but true FGM theta in [-1,1]
+
+        lo, hi = self.get_bounds()[0]
+        eps_th = 1e-6
+        theta0 = float(np.clip(theta0, lo + eps_th, hi - eps_th))
+
+        self.set_parameters([theta0])
+        return self.get_parameters()

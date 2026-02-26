@@ -48,6 +48,11 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
         theta = param[0]
         num = u * v
         denom = 1 - theta * (1 - u) * (1 - v)
@@ -75,7 +80,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
 
         # guard against endpoints (avoid division by zero when D→0 numerically)
-        eps = 1e-15
+        eps = 1e-12
         u = np.clip(u, eps, 1.0 - eps)
         v = np.clip(v, eps, 1.0 - eps)
 
@@ -238,9 +243,14 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta = param[0]
-        num = v * (1 - theta * (1 - v))
-        denom = (1 - theta * (1 - u) * (1 - v)) ** 2
-        return num / denom
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        D = 1.0 - theta * (1.0 - u) * (1.0 - v)
+        h = v * (1.0 - theta * (1.0 - v)) / (D ** 2)
+        h = np.clip(h, 0.0, 1.0)
+        return float(h) if np.ndim(h) == 0 else h
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """Compute ∂C(u,v)/∂v (via symmetry).
@@ -254,3 +264,63 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Conditional CDF value.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param=None) -> float:
+        """Blomqvist's beta for AMH: beta = theta / (4 - theta)."""
+        import numpy as np
+
+        if param is None:
+            param = self.get_parameters()
+        theta = float(param[0])
+
+        beta = theta / (4.0 - theta)
+        return float(beta)
+
+    def init_from_data(self, u, v):
+        """
+        Initialize theta from data using empirical Blomqvist beta (preferred for AMH).
+
+        Empirical beta:
+            beta_hat = 4 * C_n(1/2,1/2) - 1
+                    = 4 * mean( 1{u<=0.5, v<=0.5} ) - 1
+
+        AMH inversion:
+            beta(theta) = theta / (4 - theta)
+            theta(beta) = 4*beta / (1 + beta)
+        """
+
+        u = np.asarray(u, dtype=float).ravel()
+        v = np.asarray(v, dtype=float).ravel()
+
+        mask = np.isfinite(u) & np.isfinite(v)
+        u = u[mask]
+        v = v[mask]
+        if u.size < 20:
+            return self.get_parameters()
+
+        eps_uv = 1e-12
+        u = np.clip(u, eps_uv, 1.0 - eps_uv)
+        v = np.clip(v, eps_uv, 1.0 - eps_uv)
+
+        # empirical C(1/2, 1/2)
+        c_hat = float(np.mean((u <= 0.5) & (v <= 0.5)))
+        beta_emp = 4.0 * c_hat - 1.0
+        if not np.isfinite(beta_emp):
+            return self.get_parameters()
+
+        # AMH theoretical beta range for theta in (-1, 1): beta in (-1/5, 1/3)
+        beta_lo = -1.0 / 5.0
+        beta_hi = 1.0 / 3.0
+        eps_b = 1e-6
+        beta_emp = float(np.clip(beta_emp, beta_lo + eps_b, beta_hi - eps_b))
+
+        # invert beta -> theta
+        theta0 = 4.0 * beta_emp / (1.0 + beta_emp)
+
+        # exclusive bounds safety
+        low, high = self.get_bounds()[0]  # expected (-1, 1)
+        eps_th = 1e-6
+        theta0 = float(np.clip(theta0, low + eps_th, high - eps_th))
+
+        self.set_parameters([theta0])
+        return self.get_parameters()

@@ -32,7 +32,7 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Joe Copula"
         self.type = "joe"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters(np.array([2.0]),[(1.01, 30.0)] , ["theta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0]),[(1.0, 30.0)] , ["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -49,6 +49,10 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             theta = float(self.get_parameters()[0])
         else:
             theta = float(param[0])
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
 
         ubar = 1.0 - u
         vbar = 1.0 - v
@@ -73,6 +77,11 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         else:
             theta = float(param[0])
             # shorthand
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
         ubar = 1.0 - u
         vbar = 1.0 - v
         a = ubar ** theta
@@ -114,6 +123,7 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             raise ValueError("Joe copula requires θ ≥ 1.")
         if abs(theta - 1.0) < 1e-12:              # independence limit
             return rng.random((n, 2))
+
 
         # Step 1: draw U ~ Unif(0,1) and W ~ Unif(0,1)
         U = rng.random(n)
@@ -176,7 +186,7 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             return 0.0
 
         # removable singularity at theta = 2
-        if abs(theta - 2.0) < 1e-10:
+        if abs(theta - 2.0) < 1e-5:
             return 1.0 - polygamma(1, 2.0)  # trigamma(2)
 
         return 1.0 + 2.0 * (digamma(2.0) - digamma(2.0 / theta + 1.0)) / (2.0 - theta)
@@ -247,6 +257,10 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             theta = float(self.get_parameters()[0])
         else:
             theta = float(param[0])
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
 
         A = (1 - u) ** theta
         B = (1 - v) ** theta

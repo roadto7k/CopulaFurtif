@@ -8,7 +8,7 @@ useful due to its simplicity and flexibility with a single parameter.
 Attributes:
     name (str): Human-readable name of the copula.
     type (str): Identifier for the copula type.
-    bounds_param (list of tuple): Bounds for the copula parameter [theta] ∈ (0.01, 100.0).
+    bounds_param (list of tuple): Bounds for the copula parameter [theta] ∈ (0.0, 100.0).
     parameters (np.ndarray): Copula parameter [theta].
     default_optim_method (str): Optimization method used during fitting.
 """
@@ -32,7 +32,7 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Plackett Copula"
         self.type = "plackett"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters(np.array([2.0]),  [(0.01, 100.0)],["theta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0]),  [(0.0, 100.0)],["delta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -46,6 +46,11 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: CDF value(s).
         """
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
+        if abs(theta - 1.0) < 1e-8:
+            return np.asarray(u) * np.asarray(v)
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
         a = theta - 1
         b = 1 + a * (u + v)
         c = np.sqrt(b ** 2 - 4 * theta * a * u * v)
@@ -63,6 +68,11 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: PDF value(s).
         """
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
+        if abs(theta - 1.0) < 1e-8:
+            return np.ones_like(np.asarray(u), dtype=float)
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
         num = theta * (1 + (theta - 1) * (u + v - 2 * u * v))
         denom = ((1 + (theta - 1) * (u + v)) ** 2 - 4 * theta * (theta - 1) * u * v) ** 1.5
         return num / denom
@@ -181,6 +191,13 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])
 
+        if abs(theta - 1.0) < 1e-8:
+            return np.asarray(v)
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
         delta = theta - 1.0
         A = 1.0 + delta * (u + v)
         sqrtD = np.sqrt(A ** 2 - 4.0 * theta * delta * u * v)
@@ -232,62 +249,115 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def init_from_data(self, u, v):
         """
-        Robust initialization of Plackett copula parameter theta from data.
+        Initialize theta from data.
 
-        Strategy
-        --------
-        - Compute empirical Kendall's tau (tau_emp).
-        - Compute empirical Blomqvist's beta (beta_emp).
-        - If |tau_emp| > 0.05, invert tau -> theta = (1+tau)/(1-tau).
-        - Else, invert beta -> theta = ((1+beta)/(1-beta))**2.
-        - Clip theta to parameter bounds.
+        Priority: empirical Blomqvist beta (closed-form inversion for Plackett).
+        Fallback: empirical Kendall tau + numerical inversion if needed.
 
-        Parameters
-        ----------
-        u, v : array-like
-            Pseudo-observations in (0,1).
+        Plackett (theta=δ):
+          - theta = 1 => independence
+          - 0 < theta < 1 => negative dependence
+          - theta > 1 => positive dependence
 
-        Returns
-        -------
-        float
-            Initial guess theta0 for MLE fitting.
+        Blomqvist beta for Plackett:
+          beta = (sqrt(theta) - 1) / (sqrt(theta) + 1)
+          theta = ((1 + beta) / (1 - beta))^2
         """
+        import numpy as np
+        from scipy.stats import kendalltau
+        from scipy.optimize import brentq
 
-        u, v = np.asarray(u), np.asarray(v)
-        # Empirical beta
-        concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-        beta_emp = float(np.clip(2.0 * concord - 1.0, -0.99, 0.99))
+        u = np.asarray(u, dtype=float).ravel()
+        v = np.asarray(v, dtype=float).ravel()
 
-        # beta -> theta (fermé)
-        theta0 = ((1.0 + beta_emp) / max(1e-6, (1.0 - beta_emp))) ** 2
+        # Filter finite and keep inside (0,1) open interval
+        mask = np.isfinite(u) & np.isfinite(v)
+        u = u[mask]
+        v = v[mask]
+        if u.size < 20:
+            return self.get_parameters()
 
-        # Optional refine with τ numeric (safe bracketing)
-        tau_emp = float(np.clip(kendalltau(u, v)[0], -0.999, 0.999))
+        eps_uv = 1e-12
+        u = np.clip(u, eps_uv, 1.0 - eps_uv)
+        v = np.clip(v, eps_uv, 1.0 - eps_uv)
+
         low, high = self.get_bounds()[0]
+        eps_th = 1e-6
 
-        def tau_of(theta):
-            return self.kendall_tau([theta], m=200)
+        # ---------------------------------------------------------------------
+        # 1) Preferred: Blomqvist beta (fast, robust, closed-form inversion)
+        # beta_hat = 4*C_n(1/2,1/2) - 1
+        # ---------------------------------------------------------------------
+        c_hat = float(np.mean((u <= 0.5) & (v <= 0.5)))
+        beta_emp = 4.0 * c_hat - 1.0
+
+        if np.isfinite(beta_emp):
+            # keep away from +/-1
+            beta_emp = float(np.clip(beta_emp, -0.999999, 0.999999))
+
+            # independence-ish => theta ~ 1
+            if abs(beta_emp) < 1e-3:
+                theta0 = float(np.clip(1.0, low + eps_th, high - eps_th))
+                self.set_parameters([theta0])
+                return self.get_parameters()
+
+            # closed-form inversion
+            theta0 = ((1.0 + beta_emp) / (1.0 - beta_emp)) ** 2
+            theta0 = float(np.clip(theta0, low + eps_th, high - eps_th))
+
+            # If inversion yields something sane, accept it
+            try:
+                self.set_parameters([theta0])
+                return self.get_parameters()
+            except Exception:
+                # fall through to tau-based init
+                pass
+
+        # ---------------------------------------------------------------------
+        # 2) Fallback: Kendall tau + numerical inversion (slower, but general)
+        # ---------------------------------------------------------------------
+        tau_emp, _ = kendalltau(u, v)
+        if not np.isfinite(tau_emp):
+            return self.get_parameters()
+
+        # near independence
+        if abs(tau_emp) < 1e-3:
+            theta0 = float(np.clip(1.0, low + eps_th, high - eps_th))
+            self.set_parameters([theta0])
+            return self.get_parameters()
+
+        def f(theta: float) -> float:
+            return float(self.kendall_tau(param=[theta]) - tau_emp)
 
         try:
-            if tau_emp > 1e-6:
-                a = max(1.0 + 1e-6, low)
-                b = high
-                fa = tau_of(a) - tau_emp
-                fb = tau_of(b) - tau_emp
-                if fa * fb < 0:
-                    theta0 = brentq(lambda t: tau_of(t) - tau_emp, a, b, maxiter=60)
-            elif tau_emp < -1e-6:
-                a = low
-                b = min(1.0 - 1e-6, high)
-                fa = tau_of(a) - tau_emp
-                fb = tau_of(b) - tau_emp
-                if fa * fb < 0:
-                    theta0 = brentq(lambda t: tau_of(t) - tau_emp, a, b, maxiter=60)
-            # sinon tau ~ 0 : on garde l'init via beta (propre près de l'indépendance)
-        except Exception:
-            # si la bracketing rate (dataset atypique), garder l'init beta
-            pass
+            if tau_emp > 0:
+                a = max(1.0 + eps_th, low + eps_th)
+                b = high - eps_th
+            else:
+                a = max(low + eps_th, eps_th)
+                b = min(1.0 - eps_th, high - eps_th)
 
-        theta0 = float(np.clip(theta0, low, high))
-        return np.array([theta0])
+            if not (a < b):
+                theta0 = float(np.clip(1.0, low + eps_th, high - eps_th))
+                self.set_parameters([theta0])
+                return self.get_parameters()
+
+            fa = f(a)
+            fb = f(b)
+
+            if not (np.isfinite(fa) and np.isfinite(fb)) or fa * fb > 0:
+                theta0 = float(np.clip(1.0 + (0.1 if tau_emp > 0 else -0.1),
+                                       low + eps_th, high - eps_th))
+                self.set_parameters([theta0])
+                return self.get_parameters()
+
+            theta0 = brentq(f, a, b, maxiter=200)
+            theta0 = float(np.clip(theta0, low + eps_th, high - eps_th))
+            self.set_parameters([theta0])
+            return self.get_parameters()
+
+        except Exception:
+            theta0 = float(np.clip(1.0, low + eps_th, high - eps_th))
+            self.set_parameters([theta0])
+            return self.get_parameters()
 

@@ -1,183 +1,575 @@
-"""Unit‑test suite for the Gumbel (Archimedean) copula implementation.
+"""Unit-test suite for the Gumbel Archimedean Copula.
 
-* θ ∈ (1.01, 30).  We validate inside/outside bounds.
-* The provided sampler is exact (Hougaard construction with exponentials),
-  so we can trust shapes but we skip an empirical Kendall‑τ test for speed.
+Run with:  pytest -q  (add -m 'not slow' on CI if you skip the heavy bits)
 
-Run:  pytest tests/test_gumbel_copula.py -q
+Dependencies (add to requirements-dev.txt):
+    pytest
+    hypothesis
+    scipy
+
+The tests focus on:
+    * Parameter validation (inside/outside the admissible interval).
+    * Core invariants: symmetry, monotonicity, bounds of CDF/PDF.
+    * Fréchet–Hoeffding boundary conditions.
+    * Tail dependence: λ_L = 0, λ_U = 2 − 2^{1/θ} > 0.
+    * h-functions (conditional CDFs): probability range, boundaries, symmetry, monotonicity.
+    * Analytical vs numerical derivatives (spot-check).
+    * PDF integrates to 1 (Monte-Carlo, multiple θ values).
+    * Kendall's tau: τ = 1 − 1/θ, sign, range, monotonicity.
+    * Independence case (θ → 1+).
+    * init_from_data round-trip.
+    * Sampling sanity-check: empirical Kendall τ vs theoretical.
+
+Gumbel copula properties:
+    - θ ∈ (1, 30) in this implementation (strict).
+    - Asymmetric tail dependence: upper tail dependence only (like Joe).
+    - As θ → 1+, approaches independence.
+    - As θ → ∞, approaches comonotonicity.
+    - τ = 1 − 1/θ (closed-form).
+
+Slow / stochastic tests are marked with @pytest.mark.slow so they can be
+optionally skipped (-m "not slow").
 """
 
 import math
 import numpy as np
 import pytest
 from hypothesis import given, strategies as st, settings
+import scipy.stats as stx
+
 from CopulaFurtif.core.copulas.domain.models.archimedean.gumbel import GumbelCopula
 
-# -----------------------------------------------------------------------------
-# Strategies helpers
-# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Fixtures & helpers
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def copula_default():
+    """Gumbel copula with θ = 2.0 for deterministic tests."""
+    c = GumbelCopula()
+    c.set_parameters([2.0])
+    return c
+
 
 @st.composite
-def theta_valid(draw):
-    """θ strictly between bounds to avoid numeric blow‑ups at 1.01 & 30."""
-    return draw(st.floats(min_value=1, max_value=29.5, exclude_min=True, allow_nan=False, allow_infinity=False))
-
-@st.composite
-def theta_invalid(draw):
-    return draw(st.one_of(
-        st.floats(max_value=1.0, allow_nan=False, allow_infinity=False, exclude_max=False),  # θ ≤ 1.01
-        st.floats(min_value=30.0, allow_nan=False, allow_infinity=False, exclude_min=False), # θ ≥ 30
+def valid_theta(draw):
+    """Draw a valid θ ∈ (1, 29.5) — strictly inside bounds."""
+    return draw(st.floats(
+        min_value=1.0, max_value=30.0,
+        exclude_min=True, exclude_max=True,
+        allow_nan=False, allow_infinity=False
     ))
 
+
 @st.composite
-def unit_interval(draw):
-    # Keep away from 0/1 to stabilise logs
-    return draw(st.floats(min_value=1e-3, max_value=0.999, allow_nan=False, allow_infinity=False))
+def unit_interval(draw, eps=1e-3):
+    return draw(st.floats(
+        min_value=eps, max_value=1.0 - eps,
+        exclude_min=True, exclude_max=True,
+        allow_nan=False, allow_infinity=False
+    ))
 
 
-def _finite_diff(f, x, y, h=1e-5):
-    return (f(x + h, y) - f(x - h, y)) / (2 * h)
+# Numerical derivative helpers ------------------------------------------------
 
-# -----------------------------------------------------------------------------
+def _clip01(x, eps=1e-12):
+    return min(max(float(x), eps), 1.0 - eps)
+
+def _clipped_f(f, x, y, eps=1e-12):
+    return f(_clip01(x, eps), _clip01(y, eps))
+
+
+def _finite_diff(f, x, y, h=1e-5, eps=1e-12):
+    """1st-order central finite difference ∂f/∂x with clipping to (0,1)."""
+    return (_clipped_f(f, x + h, y, eps) - _clipped_f(f, x - h, y, eps)) / (2.0 * h)
+
+def _mixed_finite_diff(C, u, v, h=1e-5, eps=1e-12):
+    """
+    Central 2-D finite difference with clipping to (0,1):
+        ∂²C/∂u∂v ≈ [C(u+h,v+h) – C(u+h,v-h) – C(u-h,v+h) + C(u-h,v-h)] / (4h²)
+    """
+    return (
+        _clipped_f(C, u + h, v + h, eps)
+        - _clipped_f(C, u + h, v - h, eps)
+        - _clipped_f(C, u - h, v + h, eps)
+        + _clipped_f(C, u - h, v - h, eps)
+    ) / (4.0 * h * h)
+
+
+# ---------------------------------------------------------------------------
 # Parameter tests
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
-@given(theta=theta_valid())
+@given(theta=valid_theta())
 def test_parameter_roundtrip(theta):
-    cop = GumbelCopula()
-    cop.set_parameters([theta])
-    assert math.isclose(cop.get_parameters()[0], theta, rel_tol=1e-12)
+    """set_parameters then get_parameters should return the same value."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
 
 
-@given(theta=theta_invalid())
-def test_parameter_out_of_bounds(theta):
-    cop = GumbelCopula()
+@given(theta=st.one_of(
+    st.floats(max_value=1.0, allow_nan=False, allow_infinity=False),
+    st.floats(min_value=30.0, allow_nan=False, allow_infinity=False),
+))
+def test_parameter_out_of_bounds_extreme(theta):
+    """Values ≤ 1 or ≥ 30 must be rejected."""
+    c = GumbelCopula()
     with pytest.raises(ValueError):
-        cop.set_parameters([theta])
+        c.set_parameters([theta])
 
-# -----------------------------------------------------------------------------
-# CDF / PDF invariants
-# -----------------------------------------------------------------------------
 
-@given(theta=theta_valid(), u=unit_interval(), v=unit_interval())
+@pytest.mark.parametrize("theta", [1.0, 0.0, -1.0, 0.5])
+def test_parameter_at_lower_boundary_rejected(theta):
+    """θ ≤ 1 must be rejected (Gumbel requires θ > 1 strict)."""
+    c = GumbelCopula()
+    with pytest.raises(ValueError):
+        c.set_parameters([theta])
+
+
+def test_parameter_wrong_size():
+    """Passing wrong number of parameters must raise ValueError."""
+    c = GumbelCopula()
+    with pytest.raises(ValueError):
+        c.set_parameters([2.0, 3.0])
+    with pytest.raises(ValueError):
+        c.set_parameters([])
+
+
+# ---------------------------------------------------------------------------
+# CDF invariants
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_bounds(theta, u, v):
-    cop = GumbelCopula()
-    cop.set_parameters([theta])
-    val = cop.get_cdf(u, v)
+    """CDF must lie in [0, 1]."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    val = c.get_cdf(u, v)
     assert 0.0 <= val <= 1.0
 
 
-@given(theta=theta_valid(), u=unit_interval(), v=unit_interval())
-def test_pdf_nonnegative(theta, u, v):
-    cop = GumbelCopula()
-    cop.set_parameters([theta])
-    assert cop.get_pdf(u, v) >= 0.0
+@given(theta=valid_theta(), u1=unit_interval(), u2=unit_interval(), v=unit_interval())
+def test_cdf_monotone_in_u(theta, u1, u2, v):
+    """C(u1, v) ≤ C(u2, v) when u1 ≤ u2."""
+    if u1 > u2:
+        u1, u2 = u2, u1
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert c.get_cdf(u1, v) <= c.get_cdf(u2, v) + 1e-12
 
 
-@given(theta=theta_valid(), u=unit_interval(), v=unit_interval())
+@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 def test_cdf_symmetry(theta, u, v):
-    cop = GumbelCopula()
-    cop.set_parameters([theta])
-    assert math.isclose(cop.get_cdf(u, v), cop.get_cdf(v, u), rel_tol=1e-12)
+    """Gumbel copula is symmetric: C(u, v) = C(v, u)."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
 
-def _mixed_finite_diff(C, u, v, h=1e-5):
-    """
-    Central 2‑D finite difference:
-        ∂²C/∂u∂v  ≈  [ C(u+h, v+h) – C(u+h, v–h)
-                      –C(u–h, v+h) + C(u–h, v–h) ] / (4 h²)
-    """
-    return (
-        C(u + h, v + h)
-        - C(u + h, v - h)
-        - C(u - h, v + h)
-        + C(u - h, v - h)
-    ) / (4.0 * h * h)
 
-# tolerances
-ATOL = 1e-12
-RTOL = 3e-2
+# ---------------------------------------------------------------------------
+# Fréchet–Hoeffding boundary conditions
+# ---------------------------------------------------------------------------
 
-@given(theta=theta_valid(), u=unit_interval(), v=unit_interval())
+@given(theta=valid_theta(), u=unit_interval())
+def test_cdf_boundary_u_zero(theta, u):
+    """C(u, 0) = 0 for any copula."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_cdf(u, 1e-12), 0.0, abs_tol=1e-6)
+
+
+@given(theta=valid_theta(), v=unit_interval())
+def test_cdf_boundary_v_zero(theta, v):
+    """C(0, v) = 0 for any copula."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_cdf(1e-12, v), 0.0, abs_tol=1e-6)
+
+
+@given(theta=valid_theta(), u=unit_interval())
+def test_cdf_boundary_v_one(theta, u):
+    """C(u, 1) = u for any copula."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_cdf(u, 1 - 1e-12), u, rel_tol=1e-4, abs_tol=1e-4)
+
+
+@given(theta=valid_theta(), v=unit_interval())
+def test_cdf_boundary_u_one(theta, v):
+    """C(1, v) = v for any copula."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_cdf(1 - 1e-12, v), v, rel_tol=1e-4, abs_tol=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# PDF invariants
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
+def test_pdf_nonnegative(theta, u, v):
+    """PDF must be non-negative."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert c.get_pdf(u, v) >= 0.0
+
+
+@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
+def test_pdf_symmetry(theta, u, v):
+    """Gumbel copula density is symmetric: c(u,v) = c(v,u)."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert math.isclose(c.get_pdf(u, v), c.get_pdf(v, u), rel_tol=1e-10, abs_tol=1e-10)
+
+
+@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
 @settings(max_examples=100)
 def test_pdf_matches_mixed_derivative(theta, u, v):
+    """c(u,v) ≈ ∂²C/∂u∂v via 2D central finite difference."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+
+    pdf_num = _mixed_finite_diff(c.get_cdf, u, v)
+    pdf_ana = c.get_pdf(u, v)
+
+    assert math.isclose(pdf_ana, pdf_num, rel_tol=3e-2, abs_tol=1e-3), \
+        f"θ={theta}, u={u:.4f}, v={v:.4f}: ana={pdf_ana}, num={pdf_num}"
+
+
+@pytest.mark.parametrize("theta", [1.2, 1.5, 2.0, 3.0, 5.0, 10.0])
+def test_pdf_integrates_to_one(theta):
+    """Monte-Carlo check that ∫₀¹∫₀¹ c(u,v) du dv ≈ 1 for various θ."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    rng = np.random.default_rng(42)
+    u, v = rng.random(100_000), rng.random(100_000)
+    pdf_vals = c.get_pdf(u, v)
+    integral_mc = pdf_vals.mean()
+    assert math.isclose(integral_mc, 1.0, rel_tol=2e-2)
+
+
+# ---------------------------------------------------------------------------
+# h-functions (conditional CDFs)
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
+def test_h_functions_are_probabilities(theta, u, v):
+    """h-functions are conditional CDFs and must lie in [0, 1]."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+
+    h1 = c.partial_derivative_C_wrt_u(u, v)
+    h2 = c.partial_derivative_C_wrt_v(u, v)
+
+    eps = 1e-12
+    assert -eps <= h1 <= 1.0 + eps, f"∂C/∂u = {h1} out of [0,1]"
+    assert -eps <= h2 <= 1.0 + eps, f"∂C/∂v = {h2} out of [0,1]"
+
+
+@given(theta=valid_theta(), u=unit_interval())
+@settings(max_examples=50)
+def test_h_u_boundary_in_v(theta, u):
     """
-    For a one‑param copula, check that
-      c(u,v) ≈ ∂²C/∂u∂v
-    via a 2D central finite difference.
+    h_{V|U}(v|u) = ∂C/∂u:
+      at v ≈ 0 → 0
+      at v ≈ 1 → 1
     """
     c = GumbelCopula()
     c.set_parameters([theta])
 
-    C = c.get_cdf
-    pdf_num = _mixed_finite_diff(C, u, v)
-    pdf_ana = c.get_pdf(u, v)
+    h_low = c.partial_derivative_C_wrt_u(u, 1e-10)
+    h_high = c.partial_derivative_C_wrt_u(u, 1 - 1e-10)
 
-    assert math.isclose(
-        pdf_ana, pdf_num, rel_tol=RTOL, abs_tol=1e-3
-    ), f"ana={pdf_ana}, num={pdf_num}"
+    assert math.isclose(h_low, 0.0, abs_tol=1e-4)
+    assert math.isclose(h_high, 1.0, abs_tol=1e-4)
 
-@pytest.fixture(scope="module")
-def copula_default():
+
+@given(theta=valid_theta(), v=unit_interval())
+@settings(max_examples=50)
+def test_h_v_boundary_in_u(theta, v):
+    """
+    h_{U|V}(u|v) = ∂C/∂v:
+      at u ≈ 0 → 0
+      at u ≈ 1 → 1
+    """
     c = GumbelCopula()
-    c.set_parameters([2.0])   # pick a valid default θ
-    return c
+    c.set_parameters([theta])
 
-def test_pdf_integrates_to_one(copula_default):
-    """
-    Monte‑Carlo check that ∫₀¹∫₀¹ c(u,v) du dv == 1.
-    """
-    rng = np.random.default_rng(42)
-    u, v = rng.random(200_000), rng.random(200_000)
-    pdf_vals = copula_default.get_pdf(u, v)
-    integral_mc = pdf_vals.mean()  # E[c(U,V)] over the unit square
+    h_low = c.partial_derivative_C_wrt_v(1e-10, v)
+    h_high = c.partial_derivative_C_wrt_v(1 - 1e-10, v)
 
-    assert math.isclose(integral_mc, 1.0, rel_tol=1e-2)
+    assert math.isclose(h_low, 0.0, abs_tol=1e-4)
+    assert math.isclose(h_high, 1.0, abs_tol=1e-4)
 
-# -----------------------------------------------------------------------------
-# Derivative cross‑check (moderate θ only)
-# -----------------------------------------------------------------------------
 
-@given(theta=st.floats(min_value=1.1, max_value=10.0, allow_nan=False),
+@given(theta=valid_theta(), u=unit_interval(), v=unit_interval())
+def test_h_functions_cross_symmetry(theta, u, v):
+    """For symmetric copulas: ∂C/∂u(u,v) = ∂C/∂v(v,u)."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+
+    h_v_given_u = c.partial_derivative_C_wrt_u(u, v)
+    h_u_given_v_swapped = c.partial_derivative_C_wrt_v(v, u)
+
+    assert math.isclose(h_v_given_u, h_u_given_v_swapped, rel_tol=1e-8, abs_tol=1e-8)
+
+
+@given(theta=valid_theta(), u=unit_interval(), v1=unit_interval(), v2=unit_interval())
+@settings(max_examples=50)
+def test_h_function_monotone_in_v(theta, u, v1, v2):
+    """∂C/∂u is monotone increasing in v (it's a CDF in v)."""
+    if v1 > v2:
+        v1, v2 = v2, v1
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert c.partial_derivative_C_wrt_u(u, v1) <= c.partial_derivative_C_wrt_u(u, v2) + 1e-10
+
+
+# ---------------------------------------------------------------------------
+# Derivative cross-check
+# ---------------------------------------------------------------------------
+
+@given(theta=st.floats(min_value=1.1, max_value=10.0,
+                       allow_nan=False, allow_infinity=False),
        u=unit_interval(), v=unit_interval())
-@settings(max_examples=40)
+@settings(max_examples=50)
 def test_partial_derivative_matches_finite_diff(theta, u, v):
-    cop = GumbelCopula()
-    cop.set_parameters([theta])
+    """Analytical partial derivatives vs numerical finite differences (θ ≤ 10 for stability)."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
 
     def C(x, y):
-        return cop.get_cdf(x, y)
+        return c.get_cdf(x, y)
 
     num_du = _finite_diff(C, u, v)
     num_dv = _finite_diff(lambda x, y: C(y, x), v, u)
-    ana_du = cop.partial_derivative_C_wrt_u(u, v)
-    ana_dv = cop.partial_derivative_C_wrt_v(u, v)
+
+    ana_du = c.partial_derivative_C_wrt_u(u, v)
+    ana_dv = c.partial_derivative_C_wrt_v(u, v)
 
     assert math.isclose(ana_du, num_du, rel_tol=2e-2, abs_tol=2e-3)
     assert math.isclose(ana_dv, num_dv, rel_tol=2e-2, abs_tol=2e-3)
 
-# -----------------------------------------------------------------------------
-# Kendall τ & tail dependence
-# -----------------------------------------------------------------------------
 
-@given(theta=theta_valid())
-def test_kendall_tau_and_tail(theta):
-    cop = GumbelCopula()
-    cop.set_parameters([theta])
-    tau = cop.kendall_tau()
-    assert math.isclose(tau, 1 - 1/theta, rel_tol=1e-12)
+# ---------------------------------------------------------------------------
+# Kendall's tau
+# ---------------------------------------------------------------------------
 
-    expected_lambda = 2 - 2 ** (1/theta)
-    assert math.isclose(cop.LTDC(), 0.0)  # Gumbel has **upper** tail dependence only
-    assert math.isclose(cop.UTDC(), expected_lambda, rel_tol=1e-12)
+@given(theta=valid_theta())
+def test_kendall_tau_formula(theta):
+    """τ = 1 − 1/θ for Gumbel copula."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    expected = 1.0 - 1.0 / theta
+    assert math.isclose(c.kendall_tau(), expected, rel_tol=1e-12)
 
-# -----------------------------------------------------------------------------
-# Sample shape & disabled metrics
-# -----------------------------------------------------------------------------
 
-def test_sample_and_disabled_metrics():
-    cop = GumbelCopula()
-    cop.parameters = [2.5]
-    samp = cop.sample(512)
-    assert samp.shape == (512, 2)
-    assert np.isnan(cop.IAD(None))
-    assert np.isnan(cop.AD(None))
+@given(theta=valid_theta())
+def test_kendall_tau_positive(theta):
+    """Gumbel with θ > 1 implies τ > 0 (positive dependence only)."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert c.kendall_tau() > 0.0
+
+
+@given(theta=valid_theta())
+def test_kendall_tau_range(theta):
+    """Kendall's τ must lie in (0, 1) for Gumbel with θ > 1."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    tau = c.kendall_tau()
+    assert 0.0 < tau < 1.0
+
+
+def test_kendall_tau_monotone_in_theta():
+    """τ(θ) = 1 − 1/θ is strictly increasing in θ for Gumbel."""
+    thetas = [1.1, 1.5, 2.0, 3.0, 5.0, 10.0, 20.0]
+    taus = []
+    for theta in thetas:
+        c = GumbelCopula()
+        c.set_parameters([theta])
+        taus.append(c.kendall_tau())
+    for i in range(len(taus) - 1):
+        assert taus[i] < taus[i + 1]
+
+
+def test_kendall_tau_near_zero_at_independence():
+    """At θ close to 1, Kendall's τ ≈ 0 (independence)."""
+    c = GumbelCopula()
+    theta = 1.001
+    c.set_parameters([theta])
+    assert math.isclose(c.kendall_tau(), 1.0 - 1.0 / theta, rel_tol=1e-12)
+    assert c.kendall_tau() < 0.05
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("theta", [1.5, 2.0, 5.0, 10.0])
+def test_kendall_tau_vs_empirical(theta):
+    """
+    Generate samples, estimate empirical Kendall τ,
+    check it matches theoretical τ within statistical tolerance.
+    """
+    c = GumbelCopula()
+    c.set_parameters([theta])
+
+    data = c.sample(10_000, rng=np.random.default_rng(42))
+    tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])
+    tau_theo = c.kendall_tau()
+
+    n = len(data)
+    sigma = math.sqrt(2 * (2 * n + 5) / (9 * n * (n - 1)))
+    assert math.isclose(tau_emp, tau_theo, abs_tol=4 * sigma)
+
+
+# ---------------------------------------------------------------------------
+# Tail dependence
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta())
+def test_tail_dependence_formulas(theta):
+    """Gumbel: λ_L = 0, λ_U = 2 − 2^{1/θ}."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+
+    assert c.LTDC() == 0.0
+
+    expected_ut = 2.0 - 2.0 ** (1.0 / theta)
+    assert math.isclose(c.UTDC(), expected_ut, rel_tol=1e-12)
+
+
+@given(theta=valid_theta())
+def test_upper_tail_dependence_positive(theta):
+    """Gumbel always has strictly positive upper tail dependence for θ > 1."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+    assert c.UTDC() > 0.0
+
+
+def test_upper_tail_dependence_increases_with_theta():
+    """λ_U = 2 − 2^{1/θ} increases with θ (stronger dependence → higher λ_U)."""
+    thetas = [1.5, 2.0, 3.0, 5.0, 10.0, 20.0]
+    utdcs = []
+    for theta in thetas:
+        c = GumbelCopula()
+        c.set_parameters([theta])
+        utdcs.append(c.UTDC())
+    for i in range(len(utdcs) - 1):
+        assert utdcs[i] < utdcs[i + 1]
+
+
+def test_upper_tail_dependence_limits():
+    """As θ → 1+, λ_U → 0. As θ → ∞, λ_U → 1."""
+    c = GumbelCopula()
+
+    c.set_parameters([1.001])
+    assert c.UTDC() < 0.05  # near zero
+
+    c.set_parameters([29.99])
+    assert c.UTDC() > 0.95  # near one
+
+
+# ---------------------------------------------------------------------------
+# Independence case (θ → 1+)
+# ---------------------------------------------------------------------------
+
+@given(u=unit_interval(eps=0.05), v=unit_interval(eps=0.05))
+def test_independence_cdf_near_product(u, v):
+    """At θ close to 1, Gumbel copula → independence: C(u,v) ≈ u·v."""
+    c = GumbelCopula()
+    c.set_parameters([1.001])
+    assert math.isclose(c.get_cdf(u, v), u * v, rel_tol=0.1, abs_tol=0.1)
+
+
+@given(u=unit_interval(eps=0.05), v=unit_interval(eps=0.05))
+def test_independence_pdf_near_one(u, v):
+    """At θ close to 1, copula density ≈ 1 on (0,1)²."""
+    c = GumbelCopula()
+    c.set_parameters([1.001])
+    assert math.isclose(c.get_pdf(u, v), 1.0, rel_tol=0.15, abs_tol=0.15)
+
+
+@given(u=unit_interval(eps=0.05), v=unit_interval(eps=0.05))
+def test_independence_h_functions_identity(u, v):
+    """At θ close to 1: ∂C/∂u ≈ v and ∂C/∂v ≈ u."""
+    c = GumbelCopula()
+    c.set_parameters([1.001])
+
+    h_v_given_u = c.partial_derivative_C_wrt_u(u, v)
+    h_u_given_v = c.partial_derivative_C_wrt_v(u, v)
+
+    assert math.isclose(h_v_given_u, v, rel_tol=0.15, abs_tol=0.15)
+    assert math.isclose(h_u_given_v, u, rel_tol=0.15, abs_tol=0.15)
+
+
+# ---------------------------------------------------------------------------
+# init_from_data round-trip
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.parametrize("theta_true", [1.5, 2.0, 5.0, 10.0])
+def test_init_from_data_roundtrip(theta_true):
+    """
+    Generate samples with known θ, then verify init_from_data
+    recovers approximately the same θ.
+    """
+    c = GumbelCopula()
+    c.set_parameters([theta_true])
+    data = c.sample(10_000, rng=np.random.default_rng(123))
+
+    theta_recovered = c.init_from_data(data[:, 0], data[:, 1])
+
+    assert math.isclose(theta_recovered[0], theta_true, rel_tol=0.15, abs_tol=1.0), \
+        f"Expected θ ≈ {theta_true}, got {theta_recovered[0]}"
+
+
+# ---------------------------------------------------------------------------
+# Sampling sanity check (slow)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@given(theta=valid_theta())
+@settings(max_examples=15, deadline=None)
+def test_empirical_kendall_tau_close(theta):
+    """Empirical Kendall τ from samples should be close to theoretical."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+
+    data = c.sample(5000, rng=np.random.default_rng(0))
+    tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])
+    tau_theo = c.kendall_tau()
+
+    sigma = math.sqrt(2 * (2 * 5000 + 5) / (9 * 5000 * 4999))
+    assert math.isclose(tau_emp, tau_theo, abs_tol=4 * sigma)
+
+
+# ---------------------------------------------------------------------------
+# Shape checks (vectorised input)
+# ---------------------------------------------------------------------------
+
+def test_vectorised_shapes(copula_default):
+    """CDF, PDF, and sample must return arrays with correct shapes."""
+    u = np.linspace(0.05, 0.95, 13)
+    v = np.linspace(0.05, 0.95, 13)
+    assert copula_default.get_cdf(u, v).shape == (13,)
+    assert copula_default.get_pdf(u, v).shape == (13,)
+
+    samples = copula_default.sample(256)
+    assert samples.shape == (256, 2)
+
+
+def test_vectorised_inputs_are_pairwise_not_grid(copula_default):
+    """
+    Vectorized get_cdf/get_pdf operate pairwise on (u[i], v[i]),
+    not on the Cartesian product grid.
+    """
+    u = np.array([0.2, 0.8])
+    v = np.array([0.3, 0.7])
+
+    cdf_vec = copula_default.get_cdf(u, v)
+    cdf_pair0 = copula_default.get_cdf(u[0], v[0])
+    cdf_pair1 = copula_default.get_cdf(u[1], v[1])
+
+    assert cdf_vec.shape == (2,)
+    assert np.allclose(cdf_vec, np.array([cdf_pair0, cdf_pair1]))

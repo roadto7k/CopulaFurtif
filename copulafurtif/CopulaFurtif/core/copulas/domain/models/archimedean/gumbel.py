@@ -8,7 +8,7 @@ for positively dependent data where strong upper tail correlation is expected.
 Attributes:
     name (str): Human-readable name of the copula.
     type (str): Identifier of the copula type.
-    bounds_param (list of tuple): Parameter bounds for theta ∈ (1.01, 30.0).
+    bounds_param (list of tuple): Parameter bounds for theta ∈ (1.0, 30.0).
     parameters (np.ndarray): Copula parameter [theta].
     default_optim_method (str): Optimization method used during fitting.
 """
@@ -30,7 +30,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Gumbel Copula"
         self.type = "gumbel"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters(np.array([2.0]), [(1, 30)], ["theta"]))
+        self.init_parameters(CopulaParameters(np.array([2.0]), [(1.0, 30.0)], ["theta"]))
 
     def get_cdf(self, u, v, param=None):
         """Compute the copula CDF C(u, v).
@@ -322,14 +322,9 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if tau_emp > 0.05:
             theta0 = 1.0 / max(1e-6, (1.0 - tau_emp))
         else:
-            # invert beta numerically
-            def beta_theta(th):
-                if th <= 1.0:
-                    return -beta_emp  # invalid
-                return self.blomqvist_beta([th])
 
             try:
-                sol = root_scalar(lambda th: beta_theta(th) - beta_emp,
+                sol = root_scalar(lambda th: self.blomqvist_beta([th]) - beta_emp,
                                   bracket=(1.01, 30.0), method="brentq")
                 theta0 = sol.root if sol.converged else 2.0
             except Exception:
@@ -337,6 +332,6 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # --- 4) clip to bounds
         low, high = self.get_bounds()[0]
-        theta0 = float(np.clip(theta0, low, high))
+        theta0 = float(np.clip(theta0, low + 1e-6, high - 1e-6))
         return np.array([theta0])
 

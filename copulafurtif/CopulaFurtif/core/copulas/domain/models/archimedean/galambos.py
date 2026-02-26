@@ -8,7 +8,7 @@ making it suitable for risk management and dependence modeling in extremes.
 Attributes:
     name (str): Human-readable name of the copula.
     type (str): Identifier for the copula type.
-    bounds_param (list of tuple): Bounds for the copula parameter [theta] ∈ (0.01, 10.0).
+    bounds_param (list of tuple): Bounds for the copula parameter [theta] ∈ (0.001, 50.0).
     parameters (np.ndarray): Copula parameter [theta].
     default_optim_method (str): Default optimization method used during fitting.
 """
@@ -19,7 +19,40 @@ from scipy.optimize import root_scalar
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from scipy.integrate import quad
 from numpy.random import default_rng
+
+_EPS_W = 1e-10  # integration cut-off away from 0 and 1
+
+
+def _pickands_B_galambos(w: float, delta: float) -> float:
+    """Pickands dependence function B(w) for Galambos EV copula."""
+    w = float(np.clip(w, 1e-15, 1.0 - 1e-15))
+    S = (w ** (-delta)) + ((1.0 - w) ** (-delta))
+    T = S ** (-1.0 / delta)
+    return 1.0 - T
+
+
+def _pickands_Bprime_galambos(w: float, delta: float) -> float:
+    """Derivative B'(w) for Galambos EV copula."""
+    w = float(np.clip(w, 1e-15, 1.0 - 1e-15))
+    S = (w ** (-delta)) + ((1.0 - w) ** (-delta))
+    Sprime = delta * (((1.0 - w) ** (-delta - 1.0)) - (w ** (-delta - 1.0)))
+    # B'(w) = (1/delta) * S^(-1/delta - 1) * S'(w)
+    return (1.0 / delta) * (S ** (-1.0 / delta - 1.0)) * Sprime
+
+
+def _kendall_tau_ev_via_8_11(delta: float, eps: float = _EPS_W) -> float:
+    """Kendall tau for EV copulas via Eq. (8.11, Harry Joe) using B and B'."""
+    def integrand(w: float) -> float:
+        B = _pickands_B_galambos(w, delta)
+        Bp = _pickands_Bprime_galambos(w, delta)
+        num = (2.0 * w - 1.0) * Bp * B + w * (1.0 - w) * (Bp ** 2)
+        den = B ** 2
+        return num / den
+
+    val, _ = quad(integrand, eps, 1.0 - eps, limit=300)
+    return float(val)
 
 
 class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -31,7 +64,7 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "Galambos Copula"
         self.type = "galambos"
         self.default_optim_method = "SLSQP"
-        self.init_parameters(CopulaParameters([1.5], [(1e-4, 50.0)], ["delta"]))
+        self.init_parameters(CopulaParameters([1.5], [(0.001, 50.0)], ["delta"]))
 
     # ---------- helpers ----------
     @staticmethod
@@ -171,7 +204,7 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             mid = 0.5 * (lo + hi)
             cdf_mid = self.partial_derivative_C_wrt_u(u, mid, [δ])
 
-            greater = cdf_mid > p  # still above target → need larger v
+            greater = cdf_mid > p  # above target → need smaller v (move left)
             hi[greater] = mid[greater]
 
             smaller = ~greater  # below target → elevate lower bound
@@ -185,22 +218,14 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return np.column_stack((u, v))
 
-    def kendall_tau(self, param=None, method="mc", n=200000, rng=None):
-        """
-        Monte Carlo Kendall's tau for Galambos (no simple closed form).
-        """
-        from scipy.stats import kendalltau
+    def kendall_tau(self, param=None) -> float:
+        """Kendall's tau computed via EV formula (8.11) using Pickands B(w)."""
         if param is None:
-            d = float(self.get_parameters()[0])
-        else:
-            d = float(param[0])
-
-        if rng is None:
-            rng = default_rng()
-
-        uv = self.sample(n, param=[d], rng=rng)
-        tau, _ = kendalltau(uv[:, 0], uv[:, 1])
-        return float(tau)
+            param = self.get_parameters()
+        delta = float(param[0])
+        if delta <= 0.0:
+            return 0.0
+        return _kendall_tau_ev_via_8_11(delta)
 
 
     def LTDC(self, param=None):
@@ -294,7 +319,7 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Formula
         -------
-        β(delta) = (4/delta) * log( (2*exp(-delta/2) - 2*exp(-delta)) / (1 - exp(-delta)) ) - 1
+        β(delta) = 2^(2^(-1/δ)) - 1
 
         Reference
         ---------
@@ -378,5 +403,5 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # 4) clip to bounds
         low, high = self.get_bounds()[0]
-        delta0 = float(np.clip(delta0, low, high))
+        delta0 = float(np.clip(delta0, low + 1e-6, high - 1e-6))
         return np.array([delta0], dtype=float)
