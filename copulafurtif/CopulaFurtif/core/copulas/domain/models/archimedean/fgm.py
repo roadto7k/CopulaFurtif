@@ -240,8 +240,9 @@ class FGMCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # Empirical C(0.5, 0.5) ~ proportion of (u<=0.5, v<=0.5)
         c_hat = np.mean((u <= 0.5) & (v <= 0.5))
-        beta_emp = 4.0 * c_hat - 1.0  # in [-1, 1]
-        theta0 = 4.0 * beta_emp  # in [-4, 4] but true FGM theta in [-1,1]
+        beta_emp = 4.0 * c_hat - 1.0
+        beta_emp = float(np.clip(beta_emp, -0.25, 0.25))
+        theta0 = 4.0 * beta_emp  # donc theta0 ∈ [-1, 1]  # in [-4, 4] but true FGM theta in [-1,1]
 
         lo, hi = self.get_bounds()[0]
         eps_th = 1e-6

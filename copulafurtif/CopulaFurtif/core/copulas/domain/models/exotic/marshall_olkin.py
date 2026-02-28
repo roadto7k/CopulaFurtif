@@ -1,160 +1,265 @@
+"""
+Bivariate Marshall–Olkin copula (Joe, Sec. 4.14.1).
+
+Stochastic representation (Exp(1) shocks), with 0 ≤ pi1, pi2 ≤ 1:
+    X = min{ Z1/(1-pi1), Z12/pi1 }
+    Y = min{ Z2/(1-pi2), Z12/pi2 }
+and with unit-mean exponential margins, the (survival) copula CDF is (eq. 4.36):
+
+    C(u, v; pi1, pi2) = min{ u^pi1, v^pi2 } * u^(1-pi1) * v^(1-pi2)
+                      = { u * v^(1-pi2),   if u^pi1 ≤ v^pi2
+                        { v * u^(1-pi1),   if u^pi1 > v^pi2
+
+This copula has a singular component (mass on the curve u^pi1 = v^pi2).
+Therefore a classical Lebesgue density does not exist everywhere; `get_pdf`
+returns ONLY the absolutely-continuous part (a.e.), ignoring the singular mass.
+
+Conditional copulas (eq. just after 4.36):
+    C_{2|1}(v|u) = ∂C/∂u =
+        { v^(1-pi2),                    if u^pi1 ≤ v^pi2
+        { (1-pi1) * v * u^(-pi1),       if u^pi1 > v^pi2
+
+    C_{1|2}(u|v) = ∂C/∂v =
+        { (1-pi2) * u * v^(-pi2),       if u^pi1 ≤ v^pi2
+        { u^(1-pi1),                    if u^pi1 > v^pi2
+"""
+
+from __future__ import annotations
+
 import numpy as np
-from scipy.stats import expon
+from numpy.random import default_rng
+from scipy.stats import kendalltau
 
-from Service.Copulas.base import BaseCopula
+from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
+from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
 
 
-class MarshallOlkinCopula(BaseCopula):
-    """
-    Marshall–Olkin shock‐model copula.
-
-    C(u,v) = min( u^(1−α)·v,  u·v^(1−β) ),
-    α, β ∈ (0,1).
-
-    Attributes
-    ----------
-    family : str
-        Identifier for the copula family. Here, "marshall-olkin".
-    name : str
-        Human-readable name for output/logging.
-    bounds_param : list of tuple
-        Bounds for the copula parameters α, β ∈ (0,1).
-    parameters : np.ndarray
-        Initial guess for the copula parameters [α, β].
-    default_optim_method : str
-        Default optimizer to use.
-    """
+class MarshallOlkinCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
+    """Bivariate Marshall–Olkin copula (Joe, Sec. 4.14.1)."""
 
     def __init__(self):
         super().__init__()
-        self.type = "marshall-olkin"
         self.name = "Marshall–Olkin Copula"
-        self.bounds_param = [(0.0, 1.0), (0.0, 1.0)]
-        self.parameters = np.array([0.5, 0.5])  # [α, β]
-        self.default_optim_method = "SLSQP"
+        self.type = "marshall-olkin"
+        self.default_optim_method = "Powell"
 
-    def get_cdf(self, u, v, param):
+        # Book parameters: 0 ≤ pi1, pi2 ≤ 1.
+        # In CopulaFurtif, bounds are *exclusive* (lo < val < hi), so we use (0,1) open interval
+        # for numerical stability and to avoid degenerate limits (independence/comonotone).
+        # Book parameters: 0 ≤ pi1, pi2 ≤ 1 (your archi handles open bounds if needed)
+        self.init_parameters(
+            CopulaParameters(
+                values=np.array([0.5, 0.5], dtype=float),
+                bounds=[(0.0, 1.0), (0.0, 1.0)],
+                names=["pi1", "pi2"],
+            )
+        )
+
+    # ---------------------------------------------------------------------
+    # Core API
+    # ---------------------------------------------------------------------
+    def get_cdf(self, u, v, param=None):
+        """Copula CDF C(u, v; pi1, pi2), eq. (4.36)."""
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+
+        # IMPORTANT: allow exact boundaries 0 and 1 (CDF must satisfy C(u,0)=0, C(u,1)=u, etc.)
+        u = np.clip(np.asarray(u, dtype=float), 0.0, 1.0)
+        v = np.clip(np.asarray(v, dtype=float), 0.0, 1.0)
+
+        # region split: u^pi1 ≤ v^pi2
+        cond = (u ** pi1) <= (v ** pi2)
+
+        c_cond = u * (v ** (1.0 - pi2))
+        c_else = v * (u ** (1.0 - pi1))
+        return np.where(cond, c_cond, c_else)
+
+    def get_pdf(self, u, v, param=None):
         """
-        Copula C(u,v) = min{ u^(1−α) v,  u v^(1−β) }.
-        α, β in (0,1). :contentReference[oaicite:0]{index=0}
+        Absolutely-continuous density part (singular mass ignored), a.e.
+
+        For u^pi1 < v^pi2  (i.e., cond True with strict inequality):
+            C = u v^(1-pi2)  => c(u,v) = ∂^2C/∂u∂v = (1-pi2) v^(-pi2)
+        For u^pi1 > v^pi2:
+            C = v u^(1-pi1)  => c(u,v) = (1-pi1) u^(-pi1)
+
+        On the boundary u^pi1 = v^pi2 the copula has a singular component; we return 0 there.
         """
-        α, β = param
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        # region where u^(1−α) v ≤ u v^(1−β)  ⇔  v ≤ u^(α/β)
-        cond = v <= u**(α/β)
-        c1 = u**(1 - α) * v
-        c2 = u * v**(1 - β)
-        return np.where(cond, c1, c2)
+        u = np.clip(np.asarray(u, dtype=float), eps, 1.0 - eps)
+        v = np.clip(np.asarray(v, dtype=float), eps, 1.0 - eps)
 
-    def get_pdf(self, u, v, param):
+        a = u ** pi1
+        b = v ** pi2
+
+        left = (1.0 - pi2) * (v ** (-pi2))   # region a < b
+        right = (1.0 - pi1) * (u ** (-pi1))  # region a > b
+
+        return np.where(a < b, left, np.where(a > b, right, 0.0))
+
+    def sample(self, n: int, param=None, rng=None) -> np.ndarray:
         """
-        Density wrt Lebesgue (ignoring singular part):
-          c(u,v) = (1−α) u^(−α)    if v < u^(α/β),
-                 = (1−β) v^(−β)    if v > u^(α/β).
+        Sample from the Marshall–Olkin copula using the common-shock Exp(1) representation
+        (Joe, Sec. 4.14.1):
+
+            X = min{ Z1/(1-pi1),  Z12/pi1 }
+            Y = min{ Z2/(1-pi2),  Z12/pi2 }
+
+        With Exp(1) margins, U = exp(-X), V = exp(-Y) are uniform(0,1) and follow the copula.
         """
-        α, β = param
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+
+        if rng is None:
+            rng = default_rng()
+
+        n = int(n)
+        # independent Exp(1)
+        z1 = rng.exponential(scale=1.0, size=n)
+        z2 = rng.exponential(scale=1.0, size=n)
+        z12 = rng.exponential(scale=1.0, size=n)
+
+        # bounds are exclusive, so pi1,pi2 in (0,1); still guard against numerical issues:
         eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        cond = v < u**(α/β)
-        d1 = (1 - α) * u**(-α)
-        d2 = (1 - β) * v**(-β)
-        return np.where(cond, d1, d2)
+        pi1 = float(np.clip(pi1, eps, 1.0 - eps))
+        pi2 = float(np.clip(pi2, eps, 1.0 - eps))
 
-    def kendall_tau(self, param):
-        """
-        Kendall's τ = α·β / (α + β − α·β). :contentReference[oaicite:1]{index=1}
-        """
-        α, β = param
-        return (α * β) / (α + β - α * β)
+        x = np.minimum(z1 / (1.0 - pi1), z12 / pi1)
+        y = np.minimum(z2 / (1.0 - pi2), z12 / pi2)
 
-    def partial_derivative_C_wrt_u(self, u, v, param):
-        """
-        ∂C/∂u:
-          = (1−α) u^(−α) v    if v < u^(α/β),
-          = v^(1−β)           otherwise.
-        """
-        α, β = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        cond = v < u**(α/β)
-        p1 = (1 - α) * u**(-α) * v
-        p2 = v**(1 - β)
-        return np.where(cond, p1, p2)
+        u = np.exp(-x)
+        v = np.exp(-y)
 
-    def partial_derivative_C_wrt_v(self, u, v, param):
-        """
-        ∂C/∂v:
-          = u^(1−α)           if v < u^(α/β),
-          = (1−β) u v^(−β)    otherwise.
-        """
-        α, β = param
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
-        cond = v < u**(α/β)
-        q1 = u**(1 - α)
-        q2 = (1 - β) * u * v**(-β)
-        return np.where(cond, q1, q2)
+        # ensure open interval for downstream logs/tests
+        u = np.clip(u, 1e-12, 1.0 - 1e-12)
+        v = np.clip(v, 1e-12, 1.0 - 1e-12)
+        return np.column_stack([u, v])
 
-    def conditional_cdf_v_given_u(self, u, v, param):
+    # ---------------------------------------------------------------------
+    # Dependence measures
+    # ---------------------------------------------------------------------
+    def kendall_tau(self, param=None):
         """
-        P(V ≤ v | U = u) = ∂C/∂u(u,v).
+        Kendall's tau:
+            τ = (pi1*pi2) / (pi1 + pi2 − pi1*pi2)
         """
-        return self.partial_derivative_C_wrt_u(u, v, param)
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+        denom = pi1 + pi2 - pi1 * pi2
+        return 0.0 if denom <= 0 else (pi1 * pi2) / denom
 
-    def conditional_cdf_u_given_v(self, u, v, param):
+    def blomqvist_beta(self, param=None) -> float:
         """
-        P(U ≤ u | V = v) = ∂C/∂v(u,v).
+        Blomqvist's beta (Joe, Sec. 4.14.1):
+            β = 2^{min(pi1, pi2)} - 1
         """
-        return self.partial_derivative_C_wrt_v(u, v, param)
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+        return float(2.0 ** (min(pi1, pi2)) - 1.0)
 
-    def sample(self, n, param):
-        """
-        Simulate via the MO shock model:
-          E0 ~ Exp(1), E1 ~ Exp((1−α)/α), E2 ~ Exp((1−β)/β)
-          X = min(E0, E1),  Y = min(E0, E2)
-          U = 1 − exp(−X/α),  V = 1 − exp(−Y/β)
-        """
-        α, β = param
-        # rates for E1, E2 to match marginal uniforms
-        λ1 = (1 - α) / α
-        λ2 = (1 - β) / β
-        E0 = expon.rvs(scale=1.0, size=n)
-        E1 = expon.rvs(scale=1/λ1, size=n)
-        E2 = expon.rvs(scale=1/λ2, size=n)
-        X = np.minimum(E0, E1)
-        Y = np.minimum(E0, E2)
-        U = 1 - np.exp(-X / α)
-        V = 1 - np.exp(-Y / β)
-        return np.column_stack((U, V))
-
-    def LTDC(self, param):
-        """
-        Lower‐tail dependence λ_L = 0.
-        """
+    def LTDC(self, param=None):
+        """Lower tail dependence λ_L = 0 (for this MO copula)."""
         return 0.0
 
-    def UTDC(self, param):
+    def UTDC(self, param=None):
         """
-        Upper‐tail dependence λ_U = min(α, β). :contentReference[oaicite:2]{index=2}
-        """
-        α, β = param
-        return min(α, β)
+        Upper tail dependence coefficient.
 
+        For this Marshall–Olkin common-shock copula, a standard convention is:
+            λ_U = min(pi1, pi2)
+        """
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+        return float(min(pi1, pi2))
+    # ---------------------------------------------------------------------
+    # Conditional distributions (partials of C)
+    # ---------------------------------------------------------------------
+    def partial_derivative_C_wrt_u(self, u, v, param=None):
+        """
+        ∂C/∂u = C_{2|1}(v|u), eq. after (4.36).
+
+        If u^pi1 ≤ v^pi2:  ∂C/∂u = v^(1-pi2)
+        If u^pi1 >  v^pi2: ∂C/∂u = (1-pi1) v u^(-pi1)
+        """
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+
+        eps = 1e-12
+        u = np.clip(np.asarray(u, dtype=float), eps, 1.0 - eps)
+        v = np.clip(np.asarray(v, dtype=float), eps, 1.0 - eps)
+
+        cond = (u ** pi1) <= (v ** pi2)
+        p_cond = v ** (1.0 - pi2)
+        p_else = (1.0 - pi1) * v * (u ** (-pi1))
+        return np.where(cond, p_cond, p_else)
+
+    def partial_derivative_C_wrt_v(self, u, v, param=None):
+        """
+        ∂C/∂v = C_{1|2}(u|v), eq. after (4.36).
+
+        If u^pi1 ≤ v^pi2:  ∂C/∂v = (1-pi2) u v^(-pi2)
+        If u^pi1 >  v^pi2: ∂C/∂v = u^(1-pi1)
+        """
+        if param is None:
+            param = self.get_parameters()
+        pi1, pi2 = float(param[0]), float(param[1])
+
+        eps = 1e-12
+        u = np.clip(np.asarray(u, dtype=float), eps, 1.0 - eps)
+        v = np.clip(np.asarray(v, dtype=float), eps, 1.0 - eps)
+
+        cond = (u ** pi1) <= (v ** pi2)
+        q_cond = (1.0 - pi2) * u * (v ** (-pi2))
+        q_else = u ** (1.0 - pi1)
+        return np.where(cond, q_cond, q_else)
+
+    def conditional_cdf_v_given_u(self, u, v, param=None):
+        """P(V ≤ v | U = u) = ∂C/∂u(u,v), a.e."""
+        return self.partial_derivative_C_wrt_u(u, v, param)
+
+    def conditional_cdf_u_given_v(self, u, v, param=None):
+        """P(U ≤ u | V = v) = ∂C/∂v(u,v), a.e."""
+        return self.partial_derivative_C_wrt_v(u, v, param)
+
+    # ---------------------------------------------------------------------
+    # Initialization from data
+    # ---------------------------------------------------------------------
+    def init_from_data(self, u, v):
+        """
+        Conservative init from empirical Kendall's tau.
+
+        Uses symmetric guess pi1=pi2=a by inverting:
+            τ = a/(2-a)  =>  a = 2τ/(1+τ)
+        """
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
+
+        tau_emp, _ = kendalltau(u, v)
+        if not np.isfinite(tau_emp):
+            tau_emp = 0.0
+        tau_emp = float(np.clip(tau_emp, 0.0, 0.999))
+
+        a = (2.0 * tau_emp) / (1.0 + tau_emp) if tau_emp > 1e-12 else 0.05
+        a = float(np.clip(a, 1e-3, 1.0 - 1e-3))
+        return np.array([a, a], dtype=float)
+
+    # ---------------------------------------------------------------------
+    # Diagnostics not implemented (match Frank behavior)
+    # ---------------------------------------------------------------------
     def IAD(self, data):
-        """
-        Integrated Anderson–Darling not implemented for Marshall–Olkin.
-        """
         print(f"[INFO] IAD not implemented for {self.name}.")
         return np.nan
 
     def AD(self, data):
-        """
-        Anderson–Darling not implemented for Marshall–Olkin.
-        """
         print(f"[INFO] AD not implemented for {self.name}.")
         return np.nan

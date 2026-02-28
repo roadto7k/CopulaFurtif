@@ -12,6 +12,8 @@ class CopulaType(Enum):
     GALAMBOS = "galambos"
     GUMBEL = "gumbel"
     PLACKETT = "plackett"
+    HUSLER_REISS = "husler-reiss"
+    MARSHALL_OLKIN = "marshall-olkin"
     TAWN = "tawn"
     TAWNT1 = "tawnT1"
     TAWNT2 = "tawnT2"

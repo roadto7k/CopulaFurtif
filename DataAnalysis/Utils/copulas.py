@@ -57,12 +57,20 @@ class CopulaSelectionConfig:
     candidates: Sequence[Tuple[str, CopulaType]] = (
         ("Gaussian", CopulaType.GAUSSIAN),
         ("Student-t", CopulaType.STUDENT),
+
         ("Clayton", CopulaType.CLAYTON),
         ("Gumbel", CopulaType.GUMBEL),
         ("Frank", CopulaType.FRANK),
-        ("Galambos", CopulaType.GALAMBOS),
         ("Joe", CopulaType.JOE),
         ("Plackett", CopulaType.PLACKETT),
+        ("AMH", CopulaType.AMH),
+        ("FGM", CopulaType.FGM),
+
+        ("Galambos", CopulaType.GALAMBOS),
+        ("Husler-Reiss", CopulaType.HUSLER_REISS),
+        ("Marshall-Olkin", CopulaType.MARSHALL_OLKIN),
+
+        # ("Bernstein", CopulaType.BERNSTEIN),
     )
 
     # Selection controls
