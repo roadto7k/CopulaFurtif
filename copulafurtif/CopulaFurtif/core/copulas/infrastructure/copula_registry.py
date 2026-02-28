@@ -26,6 +26,8 @@ from CopulaFurtif.core.copulas.domain.models.archimedean.BB9 import BB9Copula
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB10 import BB10Copula
 
 from CopulaFurtif.core.copulas.domain.copula_type import CopulaType
+from CopulaFurtif.core.copulas.domain.models.exotic.husle_reiss import HuslerReissCopula
+from CopulaFurtif.core.copulas.domain.models.exotic.marshall_olkin import MarshallOlkinCopula
 
 CopulaFactory.register(CopulaType.GAUSSIAN, GaussianCopula)
 CopulaFactory.register(CopulaType.STUDENT, StudentCopula)
@@ -51,3 +53,5 @@ CopulaFactory.register(CopulaType.BB7, BB7Copula)
 CopulaFactory.register(CopulaType.BB8, BB8Copula)
 CopulaFactory.register(CopulaType.BB9, BB9Copula)
 CopulaFactory.register(CopulaType.BB10, BB10Copula)
+CopulaFactory.register(CopulaType.HUSLER_REISS, HuslerReissCopula)
+CopulaFactory.register(CopulaType.MARSHALL_OLKIN, MarshallOlkinCopula)
