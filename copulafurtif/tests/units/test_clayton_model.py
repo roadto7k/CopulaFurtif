@@ -456,6 +456,29 @@ def test_lower_tail_dependence_limits():
     assert c.LTDC() > 0.95  # near one
 
 
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta())
+@settings(max_examples=100, deadline=None)
+def test_blomqvist_beta_matches_closed_form(theta):
+    """Clayton: β(θ) = 4(2^{θ+1}-1)^{-1/θ} - 1."""
+    c = ClaytonCopula()
+    c.set_parameters([theta])
+
+    beta = float(c.blomqvist_beta())
+
+    # closed-form
+    th = float(theta)
+    beta_cf = 4.0 * ( (2.0 ** (th + 1.0) - 1.0) ** (-1.0 / th) ) - 1.0
+
+    assert math.isfinite(beta)
+    assert -1.0 <= beta <= 1.0
+    assert math.isclose(beta, beta_cf, rel_tol=1e-12, abs_tol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # Independence case (θ → 0+)
 # ---------------------------------------------------------------------------

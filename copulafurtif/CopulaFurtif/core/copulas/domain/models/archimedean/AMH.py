@@ -120,6 +120,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if rng is None:
             rng = default_rng()
 
+
         if param is None:
             theta = float(self.get_parameters()[0])
         else:
@@ -137,6 +138,9 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         # 1) U ~ Unif(0,1),  Z ~ Unif(0,1)
         U = rng.random(n)
         Z = rng.random(n)
+
+        eps = 1e-15
+        np.clip(U, eps, 1.0 - eps, out=U)
 
         a = theta
         k = 1.0 - U
@@ -274,6 +278,7 @@ class AMHCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         theta = float(param[0])
 
         beta = theta / (4.0 - theta)
+        beta = min(1.0, max(-1.0, beta))
         return float(beta)
 
     def init_from_data(self, u, v):

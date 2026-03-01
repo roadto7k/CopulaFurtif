@@ -470,6 +470,25 @@ def test_upper_tail_dependence_limits():
     assert c.UTDC() > 0.95  # near one
 
 
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta())
+def test_blomqvist_beta_matches_closed_form(theta):
+    """Gumbel closed-form: β(θ) = 2^{2 - 2^{1/θ}} - 1."""
+    c = GumbelCopula()
+    c.set_parameters([theta])
+
+    beta = float(c.blomqvist_beta())
+    beta_cf = 2.0 ** (2.0 - 2.0 ** (1.0 / float(theta))) - 1.0
+
+    assert math.isfinite(beta)
+    assert -1.0 <= beta <= 1.0
+    assert math.isclose(beta, beta_cf, rel_tol=1e-12, abs_tol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # Independence case (θ → 1+)
 # ---------------------------------------------------------------------------

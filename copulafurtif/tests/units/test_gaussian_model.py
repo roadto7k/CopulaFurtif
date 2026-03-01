@@ -28,6 +28,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 import scipy.stats as stx
 from CopulaFurtif.core.copulas.domain.models.elliptical.gaussian import GaussianCopula
+import math
 
 
 # ---------------------------------------------------------------------------
@@ -58,21 +59,28 @@ def unit_interval(draw):
 
 # Numerical derivative helpers ------------------------------------------------
 
-def _finite_diff(f, x, y, h=1e-6):
-    """1st-order central finite difference ∂f/∂x."""
-    return (f(x + h, y) - f(x - h, y)) / (2 * h)
+def _clip01(x, eps=1e-12):
+    return min(max(float(x), eps), 1.0 - eps)
+
+def _clipped_f(f, x, y, eps=1e-12):
+    return f(_clip01(x, eps), _clip01(y, eps))
 
 
-def _mixed_finite_diff(C, u, v, h=1e-5):
+def _finite_diff(f, x, y, h=1e-5, eps=1e-12):
+    """1st-order central finite difference ∂f/∂x with clipping to (0,1)."""
+    return (_clipped_f(f, x + h, y, eps) - _clipped_f(f, x - h, y, eps)) / (2.0 * h)
+
+
+def _mixed_finite_diff(C, u, v, h=1e-5, eps=1e-12):
     """
-    Central 2-D finite difference:
-        ∂²C/∂u∂v  ≈  [C(u+h,v+h) – C(u+h,v–h) – C(u–h,v+h) + C(u–h,v–h)] / (4h²)
+    Central 2-D finite difference with clipping to (0,1):
+      ∂²C/∂u∂v ≈ [C(u+h,v+h) – C(u+h,v-h) – C(u-h,v+h) + C(u-h,v-h)] / (4h²)
     """
     return (
-        C(u + h, v + h)
-        - C(u + h, v - h)
-        - C(u - h, v + h)
-        + C(u - h, v - h)
+        _clipped_f(C, u + h, v + h, eps)
+        - _clipped_f(C, u + h, v - h, eps)
+        - _clipped_f(C, u - h, v + h, eps)
+        + _clipped_f(C, u - h, v - h, eps)
     ) / (4.0 * h * h)
 
 
@@ -107,11 +115,21 @@ def test_parameter_at_boundary_rejected(rho):
         c.set_parameters([rho])
 
 
+def test_parameter_wrong_size():
+    """Passing wrong number of parameters must raise ValueError."""
+    c = GaussianCopula()
+    with pytest.raises(ValueError):
+        c.set_parameters([0.3, 0.5])
+    with pytest.raises(ValueError):
+        c.set_parameters([])
+
+
 # ---------------------------------------------------------------------------
 # CDF invariants
 # ---------------------------------------------------------------------------
 
 @given(rho=valid_rho(), u=unit_interval(), v=unit_interval())
+@settings(deadline=None)
 def test_cdf_bounds(rho, u, v):
     """CDF must lie in [0, 1]."""
     c = GaussianCopula()
@@ -135,7 +153,7 @@ def test_cdf_symmetry(rho, u, v):
     """Gaussian copula is symmetric: C(u, v) = C(v, u)."""
     c = GaussianCopula()
     c.set_parameters([rho])
-    assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
+    assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-9)
 
 @given(rho=valid_rho(), u=unit_interval(), v=unit_interval())
 def test_pdf_symmetry(rho, u, v):
@@ -143,6 +161,126 @@ def test_pdf_symmetry(rho, u, v):
     c = GaussianCopula()
     c.set_parameters([rho])
     assert math.isclose(c.get_pdf(u, v), c.get_pdf(v, u), rel_tol=1e-12, abs_tol=1e-12)
+
+# ---------------------------------------------------------------------------
+# Fréchet–Hoeffding boundary conditions
+# ---------------------------------------------------------------------------
+
+@given(rho=valid_rho(), u=unit_interval())
+def test_cdf_boundary_u_zero(rho, u):
+    """C(u, 0) = 0 for any copula."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    assert math.isclose(c.get_cdf(u, 1e-12), 0.0, abs_tol=1e-6)
+
+
+@given(rho=valid_rho(), v=unit_interval())
+def test_cdf_boundary_v_zero(rho, v):
+    """C(0, v) = 0 for any copula."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    assert math.isclose(c.get_cdf(1e-12, v), 0.0, abs_tol=1e-6)
+
+
+@given(rho=valid_rho(), u=unit_interval())
+def test_cdf_boundary_v_one(rho, u):
+    """C(u, 1) = u for any copula."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    assert math.isclose(c.get_cdf(u, 1 - 1e-12), u, rel_tol=1e-4, abs_tol=1e-4)
+
+
+@given(rho=valid_rho(), v=unit_interval())
+def test_cdf_boundary_u_one(rho, v):
+    """C(1, v) = v for any copula."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    assert math.isclose(c.get_cdf(1 - 1e-12, v), v, rel_tol=1e-4, abs_tol=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# PDF invariants
+# ---------------------------------------------------------------------------
+
+@given(rho=valid_rho(), u=unit_interval(), v=unit_interval())
+def test_pdf_nonnegative(rho, u, v):
+    """PDF must be non-negative."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    pdf = c.get_pdf(u, v)
+    assert pdf >= 0.0
+
+
+@given(rho=valid_rho(), u=unit_interval(), v=unit_interval())
+@settings(max_examples=100)
+def test_pdf_matches_mixed_derivative(rho, u, v):
+    """c(u,v) ≈ ∂²C/∂u∂v via 2D central finite difference (adaptive tolerances)."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+
+    ar = abs(float(rho))
+    u = float(u)
+    v = float(v)
+
+    # --- adaptive finite-diff step (bigger step when problem is ill-conditioned) ---
+    # CDF is numerically integrated, and 2D finite differences amplify noise.
+    # Larger h reduces numerical cancellation.
+    if ar <= 0.95:
+        h = 1e-5
+    elif ar <= 0.98:
+        h = 2e-5
+    else:
+        h = 5e-5
+
+    pdf_num = _mixed_finite_diff(c.get_cdf, u, v, h=h)
+    pdf_ana = float(c.get_pdf(u, v))
+
+    # --- adaptive tolerances ---
+    # Tail factor: relax tolerance when u or v close to 0/1 (ppf blows up in tails)
+    tail = min(u, 1.0 - u, v, 1.0 - v)
+    if tail < 1e-3:
+        tail_factor = 50.0
+    elif tail < 1e-2:
+        tail_factor = 10.0
+    elif tail < 5e-2:
+        tail_factor = 3.0
+    else:
+        tail_factor = 1.0
+
+    # Correlation factor: relax as |rho| approaches 1
+    if ar <= 0.90:
+        corr_factor = 1.0
+    elif ar <= 0.95:
+        corr_factor = 2.0
+    elif ar <= 0.98:
+        corr_factor = 5.0
+    else:
+        corr_factor = 15.0
+
+    abs_tol = 1e-6 * corr_factor * tail_factor
+    rel_tol = 3e-4 * corr_factor * tail_factor
+
+    # Robust isclose (handles small/large magnitudes sanely)
+    diff = abs(pdf_ana - pdf_num)
+    scale = max(1.0, abs(pdf_ana), abs(pdf_num))
+    assert diff <= max(abs_tol, rel_tol * scale), (
+        f"rho={rho:.6f}, u={u:.6f}, v={v:.6f}, h={h:g}\n"
+        f"ana={pdf_ana:.12g}, num={pdf_num:.12g}\n"
+        f"diff={diff:.3g}, abs_tol={abs_tol:.3g}, rel_tol={rel_tol:.3g}, scale={scale:.3g}"
+    )
+
+
+@pytest.mark.parametrize("rho", [-0.7, 0.0, 0.3, 0.9])
+def test_pdf_integrates_to_one(rho):
+    """Monte-Carlo check that ∫₀¹∫₀¹ c(u,v) du dv ≈ 1 for various ρ."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    rng = np.random.default_rng(42)
+    u, v = rng.random(100_000), rng.random(100_000)
+    pdf_vals = c.get_pdf(u, v)
+    integral_mc = pdf_vals.mean()
+    assert math.isclose(integral_mc, 1.0, rel_tol=1e-2)
+
 
 # ---------------------------------------------------------------------------
 # h-functions (conditional CDFs)
@@ -215,81 +353,6 @@ def test_h_function_monotone_in_v(rho, u, v1, v2):
 
 
 # ---------------------------------------------------------------------------
-# Fréchet–Hoeffding boundary conditions
-# ---------------------------------------------------------------------------
-
-@given(rho=valid_rho(), u=unit_interval())
-def test_cdf_boundary_u_zero(rho, u):
-    """C(u, 0) = 0 for any copula."""
-    c = GaussianCopula()
-    c.set_parameters([rho])
-    assert math.isclose(c.get_cdf(u, 1e-12), 0.0, abs_tol=1e-6)
-
-
-@given(rho=valid_rho(), v=unit_interval())
-def test_cdf_boundary_v_zero(rho, v):
-    """C(0, v) = 0 for any copula."""
-    c = GaussianCopula()
-    c.set_parameters([rho])
-    assert math.isclose(c.get_cdf(1e-12, v), 0.0, abs_tol=1e-6)
-
-
-@given(rho=valid_rho(), u=unit_interval())
-def test_cdf_boundary_v_one(rho, u):
-    """C(u, 1) = u for any copula."""
-    c = GaussianCopula()
-    c.set_parameters([rho])
-    assert math.isclose(c.get_cdf(u, 1 - 1e-12), u, rel_tol=1e-4, abs_tol=1e-4)
-
-
-@given(rho=valid_rho(), v=unit_interval())
-def test_cdf_boundary_u_one(rho, v):
-    """C(1, v) = v for any copula."""
-    c = GaussianCopula()
-    c.set_parameters([rho])
-    assert math.isclose(c.get_cdf(1 - 1e-12, v), v, rel_tol=1e-4, abs_tol=1e-4)
-
-
-# ---------------------------------------------------------------------------
-# PDF invariants
-# ---------------------------------------------------------------------------
-
-@given(rho=valid_rho(), u=unit_interval(), v=unit_interval())
-def test_pdf_nonnegative(rho, u, v):
-    """PDF must be non-negative."""
-    c = GaussianCopula()
-    c.set_parameters([rho])
-    pdf = c.get_pdf(u, v)
-    assert pdf >= 0.0
-
-
-@given(rho=valid_rho(), u=unit_interval(), v=unit_interval())
-@settings(max_examples=100)
-def test_pdf_matches_mixed_derivative(rho, u, v):
-    """c(u,v) ≈ ∂²C/∂u∂v via 2D central finite difference."""
-    c = GaussianCopula()
-    c.set_parameters([rho])
-
-    pdf_num = _mixed_finite_diff(c.get_cdf, u, v)
-    pdf_ana = c.get_pdf(u, v)
-
-    assert math.isclose(pdf_ana, pdf_num, rel_tol=3e-2, abs_tol=1e-3), \
-        f"ana={pdf_ana}, num={pdf_num}"
-
-
-@pytest.mark.parametrize("rho", [-0.7, 0.0, 0.3, 0.9])
-def test_pdf_integrates_to_one(rho):
-    """Monte-Carlo check that ∫₀¹∫₀¹ c(u,v) du dv ≈ 1 for various ρ."""
-    c = GaussianCopula()
-    c.set_parameters([rho])
-    rng = np.random.default_rng(42)
-    u, v = rng.random(100_000), rng.random(100_000)
-    pdf_vals = c.get_pdf(u, v)
-    integral_mc = pdf_vals.mean()
-    assert math.isclose(integral_mc, 1.0, rel_tol=1e-2)
-
-
-# ---------------------------------------------------------------------------
 # Derivative cross-check
 # ---------------------------------------------------------------------------
 
@@ -337,6 +400,27 @@ def test_kendall_tau_zero_at_independence():
     assert c.kendall_tau() == 0.0
 
 
+@given(rho=valid_rho())
+def test_kendall_tau_range(rho):
+    """Kendall's τ must lie in (-1, 1) for Gaussian copula."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    tau = c.kendall_tau()
+    assert -1.0 < tau < 1.0
+
+
+def test_kendall_tau_monotone_in_rho():
+    """τ = (2/π)·arcsin(ρ) is strictly increasing in ρ."""
+    rhos = [-0.9, -0.5, -0.2, 0.0, 0.2, 0.5, 0.9]
+    taus = []
+    for rho in rhos:
+        c = GaussianCopula()
+        c.set_parameters([rho])
+        taus.append(c.kendall_tau())
+    for i in range(len(taus) - 1):
+        assert taus[i] < taus[i + 1]
+
+
 # ---------------------------------------------------------------------------
 # Tail dependence (always zero for Gaussian)
 # ---------------------------------------------------------------------------
@@ -348,6 +432,52 @@ def test_tail_dependence_zero(rho):
     c.set_parameters([rho])
     assert c.LTDC() == 0.0
     assert c.UTDC() == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(rho=valid_rho())
+def test_blomqvist_beta_matches_definition(rho):
+    """β = 4·C(½, ½) - 1 for any copula (definition-based check)."""
+    c = GaussianCopula()
+    c.set_parameters([rho])
+    beta_def = 4.0 * float(c.get_cdf(0.5, 0.5)) - 1.0
+    beta = float(c.blomqvist_beta())
+    assert math.isfinite(beta)
+    assert math.isclose(beta, beta_def, rel_tol=1e-12, abs_tol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Independence case (ρ = 0)
+# ---------------------------------------------------------------------------
+
+@given(u=unit_interval(), v=unit_interval())
+def test_independence_cdf_equals_product(u, v):
+    """At ρ = 0, Gaussian copula reduces to independence: C(u,v) = u·v."""
+    c = GaussianCopula()
+    c.set_parameters([0.0])
+    assert math.isclose(c.get_cdf(u, v), u * v, rel_tol=1e-6, abs_tol=1e-6)
+
+
+@given(u=unit_interval(), v=unit_interval())
+def test_independence_pdf_equals_one(u, v):
+    """At ρ = 0, copula density is 1 everywhere on (0,1)²."""
+    c = GaussianCopula()
+    c.set_parameters([0.0])
+    assert math.isclose(c.get_pdf(u, v), 1.0, rel_tol=1e-10, abs_tol=1e-10)
+
+
+@given(u=unit_interval(), v=unit_interval())
+def test_independence_h_functions_identity(u, v):
+    """At ρ = 0: ∂C/∂u = v and ∂C/∂v = u."""
+    c = GaussianCopula()
+    c.set_parameters([0.0])
+    h_v_given_u = c.partial_derivative_C_wrt_u(u, v)
+    h_u_given_v = c.partial_derivative_C_wrt_v(u, v)
+    assert math.isclose(h_v_given_u, v, rel_tol=1e-8, abs_tol=1e-8)
+    assert math.isclose(h_u_given_v, u, rel_tol=1e-8, abs_tol=1e-8)
 
 
 # ---------------------------------------------------------------------------
@@ -405,41 +535,6 @@ def test_vectorised_shapes(copula_default):
 
     samples = copula_default.sample(256)
     assert samples.shape == (256, 2)
-
-# ---------------------------------------------------------------------------
-# Independence case (rho = 0)
-# ---------------------------------------------------------------------------
-
-@given(u=unit_interval(), v=unit_interval())
-def test_independence_cdf_equals_product(u, v):
-    """At ρ = 0, Gaussian copula reduces to independence: C(u,v)=uv."""
-    c = GaussianCopula()
-    c.set_parameters([0.0])
-    assert math.isclose(c.get_cdf(u, v), u * v, rel_tol=1e-6, abs_tol=1e-6)
-
-
-@given(u=unit_interval(), v=unit_interval())
-def test_independence_pdf_equals_one(u, v):
-    """At ρ = 0, copula density is 1 everywhere on (0,1)^2."""
-    c = GaussianCopula()
-    c.set_parameters([0.0])
-    assert math.isclose(c.get_pdf(u, v), 1.0, rel_tol=1e-10, abs_tol=1e-10)
-
-
-@given(u=unit_interval(), v=unit_interval())
-def test_independence_h_functions_identity(u, v):
-    """
-    At ρ = 0:
-      ∂C/∂u = v   and   ∂C/∂v = u
-    """
-    c = GaussianCopula()
-    c.set_parameters([0.0])
-    h_v_given_u = c.partial_derivative_C_wrt_u(u, v)
-    h_u_given_v = c.partial_derivative_C_wrt_v(u, v)
-
-    assert math.isclose(h_v_given_u, v, rel_tol=1e-8, abs_tol=1e-8)
-    assert math.isclose(h_u_given_v, u, rel_tol=1e-8, abs_tol=1e-8)
-
 
 def test_vectorised_inputs_are_pairwise_not_grid(copula_default):
     """

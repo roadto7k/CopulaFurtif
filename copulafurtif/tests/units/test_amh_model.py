@@ -428,6 +428,22 @@ def test_tail_dependence_zero(theta):
     assert c.UTDC() == 0.0
 
 
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta())
+def test_blomqvist_beta_matches_definition(theta):
+    """β = 4·C(½, ½) - 1 for any copula (definition-based check)."""
+    c = AMHCopula()
+    c.set_parameters([theta])
+    beta_def = 4.0 * float(c.get_cdf(0.5, 0.5)) - 1.0
+    beta = float(c.blomqvist_beta())
+    assert math.isfinite(beta)
+    assert math.isclose(beta, beta_def, rel_tol=1e-12, abs_tol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # Independence case (θ = 0)
 # ---------------------------------------------------------------------------

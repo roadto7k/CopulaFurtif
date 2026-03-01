@@ -286,7 +286,7 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Compute Blomqvist's beta for the Joe copula.
 
         Formula:
-            beta(theta) = 3 - 4 * ( 2^(1/theta) - (1/4)^(1/theta) )
+           Joe closed-form: β(θ) = 3 - 4*(2^{1-θ} - 2^{-2θ})^{1/θ}
 
         Parameters
         ----------
@@ -298,13 +298,19 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         float
             Blomqvist's beta.
         """
+
         if param is None:
             param = self.get_parameters()
         theta = float(param[0])
+
         if theta <= 1.0:
-            # à θ→1, β→0, numerical protection
-            return 0.0 if abs(theta - 1.0) < 1e-8 else 3.0 - 2.0 * (2.0 - 2.0 ** (-theta)) ** (1.0 / theta)
-        return 3.0 - 2.0 * (2.0 - 2.0 ** (-theta)) ** (1.0 / theta)
+            return 0.0
+
+        term1 = 2.0 ** ((1.0 - theta) / theta)
+        term2 = (1.0 - 2.0 ** (-theta - 1.0)) ** (1.0 / theta)
+        beta = 3.0 - 4.0 * (term1 * term2)
+
+        return float(np.clip(beta, -1.0, 1.0))
 
     def init_from_data(self, u, v):
         """

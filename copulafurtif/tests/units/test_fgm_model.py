@@ -467,6 +467,19 @@ def test_kendall_tau_vs_empirical(theta):
 
 
 # ---------------------------------------------------------------------------
+# Tail dependence (always zero for FGM)
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta())
+def test_tail_dependence_zero(theta):
+    """FGM copula has no tail dependence for any θ."""
+    c = FGMCopula()
+    c.set_parameters([theta])
+    assert c.LTDC() == 0.0
+    assert c.UTDC() == 0.0
+
+
+# ---------------------------------------------------------------------------
 # Blomqvist beta
 # ---------------------------------------------------------------------------
 
@@ -490,19 +503,6 @@ def test_blomqvist_beta_range(theta):
     c.set_parameters([theta])
     beta = c.blomqvist_beta()
     assert -0.25 - 1e-10 < beta < 0.25 + 1e-10
-
-
-# ---------------------------------------------------------------------------
-# Tail dependence (always zero for FGM)
-# ---------------------------------------------------------------------------
-
-@given(theta=valid_theta())
-def test_tail_dependence_zero(theta):
-    """FGM copula has no tail dependence for any θ."""
-    c = FGMCopula()
-    c.set_parameters([theta])
-    assert c.LTDC() == 0.0
-    assert c.UTDC() == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -609,4 +609,3 @@ def test_vectorised_inputs_are_pairwise_not_grid(copula_default):
 
     assert cdf_vec.shape == (2,)
     assert np.allclose(cdf_vec, np.array([cdf_pair0, cdf_pair1]))
-

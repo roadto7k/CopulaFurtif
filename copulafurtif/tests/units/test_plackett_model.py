@@ -420,6 +420,42 @@ def test_tail_dependence_zero(theta):
     assert c.UTDC() == 0.0
 
 
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta())
+def test_blomqvist_beta_matches_closed_form(theta):
+    """Plackett closed-form: β(θ) = (sqrt(θ) - 1)/(sqrt(θ) + 1)."""
+    c = PlackettCopula()
+    c.set_parameters([theta])
+
+    beta = float(c.blomqvist_beta())
+    th = float(theta)
+    beta_cf = (math.sqrt(th) - 1.0) / (math.sqrt(th) + 1.0)
+
+    assert math.isfinite(beta)
+    assert -1.0 <= beta <= 1.0
+    assert math.isclose(beta, beta_cf, rel_tol=1e-12, abs_tol=1e-12)
+
+@given(theta=valid_theta())
+@settings(max_examples=30, deadline=None)
+def test_blomqvist_beta_consistent_with_definition(theta):
+    """
+    Optional open check: β ≈ 4*C(1/2,1/2)-1.
+    Uses looser tolerance because CDF has sqrt-cancellation near θ≈1.
+    """
+    c = PlackettCopula()
+    c.set_parameters([theta])
+
+    beta = float(c.blomqvist_beta())
+    beta_def = 4.0 * float(c.get_cdf(0.5, 0.5)) - 1.0
+
+    assert math.isfinite(beta_def)
+    assert math.isclose(beta, beta_def, rel_tol=1e-6, abs_tol=1e-6)
+
+
 # ---------------------------------------------------------------------------
 # Independence case (θ = 1)
 # ---------------------------------------------------------------------------

@@ -269,38 +269,32 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def blomqvist_beta(self, param=None):
+    def blomqvist_beta(self, param=None) -> float:
         """
-        Compute Blomqvist's beta (theoretical) for the Frank copula.
+        Blomqvist's beta for Frank (closed form):
+            β(θ) = 4*C(1/2,1/2) - 1
+                 = -(4/θ) * log( 2a/(1+a) ) - 1,  where a = exp(-θ/2)
 
-        Notes
-        -----
-        Defined as:
-            β(θ) = (4/θ) * log( (2*exp(-θ/2) - 2*exp(-θ)) / (1 - exp(-θ)) ) - 1
-
-        Reference
-        ---------
-        - Nelsen (2006), "An Introduction to Copulas", Springer.
-        - Genest (1987).
-
-        Parameters
-        ----------
-        param : np.ndarray, optional
-            Copula parameter [theta]. If None, uses the current parameters.
-
-        Returns
-        -------
-        float
-            Theoretical Blomqvist's beta.
+        Limit: β(0) = 0 (independence).
         """
         if param is None:
             param = self.get_parameters()
         theta = float(param[0])
-        if abs(theta) < 1e-8:
+
+        # independence limit
+        if abs(theta) < 1e-12:
             return 0.0
-        a = np.exp(-theta / 2.0)
-        C = -(1.0 / theta) * np.log(2.0 * a / (1.0 + a))
-        return 4.0 * C - 1.0
+
+        a = np.exp(-0.5 * theta)  # exp(-θ/2)
+        ratio = (2.0 * a) / (1.0 + a)  # 2a/(1+a) in (0,1) for theta>0
+        beta = -(4.0 / theta) * np.log(ratio) - 1.0
+
+        # clamp for tiny numerical noise
+        if beta > 1.0:
+            beta = 1.0
+        elif beta < -1.0:
+            beta = -1.0
+        return float(beta)
 
     def init_from_data(self, u, v):
         """

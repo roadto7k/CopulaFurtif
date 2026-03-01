@@ -133,6 +133,8 @@ def test_parameter_wrong_size():
     c = FrankCopula()
     with pytest.raises(ValueError):
         c.set_parameters([1.0, 2.0])
+    with pytest.raises(ValueError):
+        c.set_parameters([])
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +418,33 @@ def test_tail_dependence_zero(theta):
     assert c.UTDC() == 0.0
 
 
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(theta=safe_theta())
+@settings(max_examples=100, deadline=None)
+def test_blomqvist_beta_matches_closed_form(theta):
+    c = FrankCopula()
+    c.set_parameters([theta])
+
+    beta = float(c.blomqvist_beta())
+
+    th = float(theta)
+    a = math.exp(-0.5 * th)
+    beta_cf = -(4.0 / th) * math.log((2.0 * a) / (1.0 + a)) - 1.0
+
+    assert math.isfinite(beta)
+    assert -1.0 <= beta <= 1.0
+    assert math.isclose(beta, beta_cf, rel_tol=1e-12, abs_tol=1e-12)
+
+def test_blomqvist_beta_independence_limit():
+    c = FrankCopula()
+    c.set_parameters([0.0])
+    assert c.blomqvist_beta() == 0.0
+
+
 # ---------------------------------------------------------------------------
 # Independence case (θ → 0)
 # ---------------------------------------------------------------------------
@@ -515,4 +544,3 @@ def test_vectorised_inputs_are_pairwise_not_grid(copula_default):
     ])
     assert h_vec.shape == (2,)
     assert np.allclose(h_vec, h_pair)
-

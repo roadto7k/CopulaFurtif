@@ -289,35 +289,25 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
 
-    def blomqvist_beta(self, param=None):
+    def blomqvist_beta(self, param=None) -> float:
         """
-        Compute Blomqvist's beta (theoretical) for the Clayton copula.
-
-        Notes
-        -----
-        Blomqvist's beta is a robust measure of concordance, defined as:
-
-            β(θ) = 4 C(0.5, 0.5; θ) - 1
-
-        where C is the copula CDF. For the Clayton copula, this coincides
-        with Kendall's tau:
-
-            β(θ) = θ / (θ + 2)
-
-        Parameters
-        ----------
-        param : np.ndarray, optional
-            Copula parameter [theta]. If None, uses the current parameters.
-
-        Returns
-        -------
-        float
-            Theoretical value of Blomqvist's beta.
+        Blomqvist's beta for Clayton (closed form):
+            β(θ) = 4(2^{θ+1}-1)^{-1/θ} - 1
         """
         if param is None:
             param = self.get_parameters()
-        theta = param[0]
-        return theta / (theta + 2)
+        theta = float(param[0])
+
+        # theta > 0 (strict)
+        base = 2.0 ** (theta + 1.0) - 1.0
+        beta = 4.0 * (base ** (-1.0 / theta)) - 1.0
+
+        # clamp for numerical noise
+        if beta > 1.0:
+            beta = 1.0
+        elif beta < -1.0:
+            beta = -1.0
+        return float(beta)
 
     def init_from_data(self, u, v):
         """

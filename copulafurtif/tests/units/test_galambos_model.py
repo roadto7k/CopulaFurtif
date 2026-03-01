@@ -456,6 +456,27 @@ def test_upper_tail_dependence_limits():
     assert c.UTDC() > 0.95  # near one
 
 
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(delta=valid_delta())
+def test_blomqvist_beta_matches_closed_form(delta):
+    """Galambos: β(δ) = 2^{2^{-1/δ}} - 1."""
+    c = GalambosCopula()
+    c.set_parameters([delta])
+
+    beta = float(c.blomqvist_beta())
+
+    d = float(delta)
+    beta_cf = 2.0 ** (2.0 ** (-1.0 / d)) - 1.0
+
+    assert math.isfinite(beta)
+    assert -1.0 <= beta <= 1.0
+    assert math.isclose(beta, beta_cf, rel_tol=1e-12, abs_tol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # Independence case (δ → 0+)
 # ---------------------------------------------------------------------------

@@ -453,6 +453,28 @@ def test_upper_tail_dependence_limits():
     assert c.UTDC() > 0.95  # near one
 
 
+
+# ---------------------------------------------------------------------------
+# Blomqvist beta
+# ---------------------------------------------------------------------------
+
+@given(theta=valid_theta())
+def test_blomqvist_beta_matches_closed_form(theta):
+    """Joe closed-form: β(θ) = 3 - 4*(2^{1-θ} - 2^{-2θ})^{1/θ}."""
+    c = JoeCopula()
+    c.set_parameters([theta])
+
+    beta = float(c.blomqvist_beta())
+
+    th = float(theta)
+    base = 2.0 ** (1.0 - th) - 2.0 ** (-2.0 * th)
+    beta_cf = 3.0 - 4.0 * (base ** (1.0 / th))
+
+    assert math.isfinite(beta)
+    assert -1.0 <= beta <= 1.0
+    assert math.isclose(beta, beta_cf, rel_tol=1e-12, abs_tol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # Independence case (θ → 1+)
 # ---------------------------------------------------------------------------

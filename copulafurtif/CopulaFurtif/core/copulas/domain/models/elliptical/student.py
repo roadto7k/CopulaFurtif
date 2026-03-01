@@ -43,71 +43,49 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.init_parameters(CopulaParameters(np.array([0.5, 4.0]),[(-1, 1), (2.01, 30.0)], ["rho", "nu"] ))
 
     def get_cdf(self, u, v, param=None):
-        """Compute copula CDF C(u,v) = P(U≤u, V≤v) for the t-copula.
-
-        Vectorized when possible via scipy.stats.multivariate_t.cdf.
-        Falls back to the Gauss–Laguerre mixture-of-normals representation if needed.
         """
+        Student-t copula CDF on the open square (0,1)^2:
+            C(u,v) = t_{ν,ρ}( t_ν^{-1}(u), t_ν^{-1}(v) )
+
+        Convention:
+          - Always clip u,v to (eps, 1-eps) (open interval), no explicit boundary handling.
+          - Pairwise vectorization only: u and v must have the same shape.
+        """
+
         if param is None:
             param = self.get_parameters()
-        rho, nu = param
-        rho = float(np.clip(rho, -0.999999, 0.999999))
-        nu = float(nu)
+        rho, nu = float(param[0]), float(param[1])
 
-        u_arr = np.asarray(u, dtype=float)
-        v_arr = np.asarray(v, dtype=float)
-        scalar = (u_arr.ndim == 0 and v_arr.ndim == 0)
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
 
-        # Boundary logic (vectorized)
-        out = np.zeros(np.broadcast(u_arr, v_arr).shape, dtype=float)
-        uu = np.broadcast_to(u_arr, out.shape).copy()
-        vv = np.broadcast_to(v_arr, out.shape).copy()
+        # pairwise vectorization contract
+        if u.ndim == 0 and v.ndim == 0:
+            is_scalar = True
+        else:
+            is_scalar = False
+            if u.shape != v.shape:
+                raise ValueError("Vectorized evaluation is pairwise: u and v must have the same shape.")
 
-        # Exact boundaries
-        mask0 = (uu <= 0.0) | (vv <= 0.0)
-        out[mask0] = 0.0
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
 
-        mask_u1 = (uu >= 1.0) & (~mask0)
-        out[mask_u1] = np.clip(vv[mask_u1], 0.0, 1.0)
+        if abs(rho) < 1e-12:
+            out = u * v
+            return float(out) if is_scalar else out
 
-        mask_v1 = (vv >= 1.0) & (~mask0) & (~mask_u1)
-        out[mask_v1] = np.clip(uu[mask_v1], 0.0, 1.0)
+        x = t.ppf(u, df=nu)
+        y = t.ppf(v, df=nu)
 
-        mask_main = (~mask0) & (~mask_u1) & (~mask_v1)
-        if np.any(mask_main):
-            eps = 1e-12
-            uc = np.clip(uu[mask_main], eps, 1.0 - eps)
-            vc = np.clip(vv[mask_main], eps, 1.0 - eps)
+        pts = np.column_stack([x.ravel(), y.ravel()])  # (n,2)
+        shape = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
 
-            x = t.ppf(uc, df=nu)
-            y = t.ppf(vc, df=nu)
-            pts = np.column_stack([x, y])
+        cdf_vals = multivariate_t.cdf(pts, loc=np.zeros(2), shape=shape, df=nu)
 
-            try:
-                shape = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
-                vals = multivariate_t.cdf(pts, loc=np.zeros(2), shape=shape, df=nu)
-                out[mask_main] = vals
-            except Exception:
-                # Fallback: your Gauss–Laguerre mixture-of-normals quadrature (scalar)
-                # Use the same internal logic as before, but per-point.
-                k = nu / 2.0
-                alpha = k - 1.0
-                z_nodes, w_weights = roots_genlaguerre(self.n_nodes, alpha)
-                cov = [[1.0, rho], [rho, 1.0]]
-                mvn = multivariate_normal(mean=[0.0, 0.0], cov=cov)
-
-                vals = []
-                for xi, yi in pts:
-                    total = 0.0
-                    for zi, wi in zip(z_nodes, w_weights):
-                        sx = xi * np.sqrt(2.0 * zi / nu)
-                        sy = yi * np.sqrt(2.0 * zi / nu)
-                        total += wi * mvn.cdf([sx, sy])
-                    vals.append(total / gamma(k))
-                out[mask_main] = np.array(vals, dtype=float)
-
-        out = np.clip(out, 0.0, 1.0)
-        return float(out) if scalar else out
+        if is_scalar:
+            return float(cdf_vals)
+        return np.asarray(cdf_vals, dtype=float).reshape(u.shape)
 
     def get_pdf(self, u, v, param=None):
         """Compute the joint PDF c(u,v) of the Student copula.
@@ -123,9 +101,18 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         rho, nu = param
+
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
+
+        if abs(rho) < 1e-12:
+            u = np.asarray(u, float);
+            v = np.asarray(v, float)
+            u, v = np.broadcast_arrays(u, v)
+            out = np.ones_like(u, dtype=float)
+            return float(out) if out.shape == () else out
+
         u_q = t.ppf(u, df=nu)
         v_q = t.ppf(v, df=nu)
         det = 1 - rho**2
@@ -256,6 +243,13 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         u = np.clip(u, eps, 1.0 - eps)
         v = np.clip(v, eps, 1.0 - eps)
 
+        if abs(rho) < 1e-12:
+            u = np.asarray(u, float)
+            v = np.asarray(v, float)
+            u, v = np.broadcast_arrays(u, v)
+            out = u
+            return float(out) if out.shape == () else out
+
         tx = t.ppf(u, df=nu)
         ty = t.ppf(v, df=nu)
 
@@ -271,82 +265,56 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """P(V ≤ v | U = u). Symmetry holds for the bivariate t-copula."""
         return self.conditional_cdf_u_given_v(v, u, param)
 
+    def blomqvist_beta(self, param=None) -> float:
+        """
+        Fast closed-form Blomqvist beta for elliptical copulas (Gaussian/Student):
+            β = (2/π) * arcsin(rho)
+        Independent of nu.
+        """
+        if param is None:
+            param = self.get_parameters()
+        rho, _nu = param
+        rho = float(np.clip(rho, -0.999999, 0.999999))
+        return float((2.0 / np.pi) * np.arcsin(rho))
+
     def init_from_data(self, u, v):
         """
         Robust initialization of Student-t copula parameters [rho, nu].
 
-        Strategy
-        --------
-        1) rho0 from empirical Kendall's tau:
-               tau_hat = kendalltau(u, v)
-               rho0 = sin(pi/2 * tau_hat)
-        2) nu0 from empirical upper-tail dependence:
-               lambda_U_hat = median over q in {0.90,0.92,0.94,0.96,0.98}
-                               of  P(U>q, V>q) / (1-q)
-           Invert the theoretical t-copula formula for nu with a brentq solver.
-           If it fails or tail is ~0, fall back to a small grid over nu.
-        3) Local refinement: among a few nu candidates around the current guess,
-           pick the one maximizing a fast pseudo log-likelihood with rho=rho0.
-
-        Args
-        ----
-        u, v : array-like
-            Pseudo-observations in (0,1).
-
-        Returns
-        -------
-        list
-            [rho0, nu0] suitable as starting values for MLE/IFM.
+        Same strategy as before, but faster:
+        - empirical tail dependence uses thresholds q directly (u,v are pseudo-obs ~ U(0,1))
+        - refinement uses log-density directly (no exp->log roundtrip)
         """
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
 
-        u = np.asarray(u); v = np.asarray(v)
-
-        # -------------------- 1) rho via Kendall tau (closed form) --------------------
+        # 1) rho via Kendall tau
         tau_hat, _ = kendalltau(u, v)
         tau_hat = float(np.clip(tau_hat, -0.999, 0.999))
         rho0 = float(np.sin(0.5 * np.pi * tau_hat))
 
-        # bounds
         (rho_lo, rho_hi), (nu_lo, nu_hi) = self.get_bounds()
         rho0 = float(np.clip(rho0, rho_lo + 1e-6, rho_hi - 1e-6))
 
-        # -------------------- 2) empirical tail dependence (upper) --------------------
-        def empirical_lambda_u(u, v, qs=(0.90, 0.92, 0.94, 0.96, 0.98)):
-            vals = []
-            for q in qs:
-                qu = np.quantile(u, q)
-                qv = np.quantile(v, q)
-                joint = np.mean((u > qu) & (v > qv))
-                denom = max(1e-9, 1.0 - q)
-                vals.append(joint / denom)
-            vals = np.array(vals, dtype=float)
-            vals = vals[np.isfinite(vals)]
-            if vals.size == 0:
-                return 0.0
-            vals.sort()
-            # light trimming if enough points
-            if vals.size >= 5:
-                k = max(1, vals.size // 10)
-                vals = vals[k:-k] if vals.size - 2 * k >= 1 else vals
-            return float(np.median(vals))
+        # 2) empirical upper-tail dependence (fast)
+        qs = np.array([0.90, 0.92, 0.94, 0.96, 0.98], dtype=float)
+        # since u,v are pseudo-observations, use q directly (no quantile calls)
+        joint = ((u[:, None] > qs) & (v[:, None] > qs)).mean(axis=0)
+        lam_vals = joint / np.maximum(1e-9, 1.0 - qs)
+        lam_vals = lam_vals[np.isfinite(lam_vals)]
+        lam_emp = float(np.clip(np.median(lam_vals) if lam_vals.size else 0.0, 0.0, 0.999))
 
-        lam_emp = empirical_lambda_u(u, v)
-        lam_emp = float(np.clip(lam_emp, 0.0, 0.999))
-
-        # If dependence is weak or rho0 ~ 0, lambda is near 0 anyway -> use large nu
         if abs(rho0) < 0.05 or lam_emp < 1e-3:
-            nu_guess = 20.0  # conservative heavy-tail but not extreme
+            nu_guess = 20.0
         else:
-            # invert lambda(nu; rho0) = lam_emp
             def lambda_of_nu(nu):
-                # guard denom 1+rho
                 den = max(1e-8, 1.0 + rho0)
                 arg = -np.sqrt((nu + 1.0) * (1.0 - rho0) / den)
                 return 2.0 * student_t.cdf(arg, df=nu + 1.0)
 
-            # robust bracketing
-            a, b = max(nu_lo + 1e-6, 2.01), min(nu_hi - 1e-6, 80.0)
-            # try brentq; if it doesn't straddle, we'll grid-search
+            a = max(nu_lo + 1e-6, 2.01)
+            b = nu_hi - 1e-6
+
             nu_guess = None
             try:
                 fa = lambda_of_nu(a) - lam_emp
@@ -357,38 +325,48 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
                 nu_guess = None
 
             if nu_guess is None:
-                # coarse grid fallback on |lambda - lam_emp|
-                grid = np.array([2.1, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0,
-                                 20.0, 30.0, 40.0, 60.0, 80.0], dtype=float)
+                grid = np.array([2.1, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0, 20.0, 25.0, 30.0], dtype=float)
                 grid = grid[(grid >= a) & (grid <= b)]
-                diffs = [abs(lambda_of_nu(g) - lam_emp) for g in grid]
-                nu_guess = float(grid[int(np.argmin(diffs))]) if len(diffs) else 10.0
+                vals = np.array([lambda_of_nu(g) for g in grid], dtype=float)
+                nu_guess = float(grid[int(np.argmin(np.abs(vals - lam_emp)))]) if grid.size else 10.0
 
-        # -------------------- 3) local pseudo-LL refinement around nu_guess ----------
-        def pseudo_loglik_nu(nu):
-            # fast sum log c(u,v) at fixed rho0, varying nu (no gradients)
+        # 3) local refinement around nu_guess using log-density directly
+        def log_copula_density(u_, v_, rho_, nu_):
+            eps = 1e-12
+            u_ = np.clip(u_, eps, 1.0 - eps)
+            v_ = np.clip(v_, eps, 1.0 - eps)
+
+            u_q = t.ppf(u_, df=nu_)
+            v_q = t.ppf(v_, df=nu_)
+
+            det = 1.0 - rho_ * rho_
+            det = max(det, 1e-12)
+
+            quad = (u_q * u_q - 2.0 * rho_ * u_q * v_q + v_q * v_q) / det
+
+            log_num = gammaln((nu_ + 2.0) / 2.0) + gammaln(nu_ / 2.0)
+            log_den = 2.0 * gammaln((nu_ + 1.0) / 2.0)
+            log_det = 0.5 * np.log(det)
+
+            log_prod = ((nu_ + 1.0) / 2.0) * (np.log1p(u_q * u_q / nu_) + np.log1p(v_q * v_q / nu_))
+            log_dent = ((nu_ + 2.0) / 2.0) * np.log1p(quad / nu_)
+
+            return (log_num - log_den - log_det + log_prod - log_dent)
+
+        def pseudo_loglik_nu(nu_):
             try:
-                c = self.get_pdf(u, v, param=[rho0, nu])
-                # avoid log(0)
-                c = np.maximum(c, 1e-300)
-                return float(np.sum(np.log(c)))
+                return float(np.sum(log_copula_density(u, v, rho0, float(nu_))))
             except Exception:
                 return -np.inf
 
-        # candidates around nu_guess (log-spaced +/- ~50%)
-        cand = np.unique(
-            np.clip(
-                nu_guess * np.array([0.67, 0.8, 1.0, 1.25, 1.5]),
-                nu_lo + 1e-6, nu_hi - 1e-6
-            )
-        )
-        # always include a few safe anchors
+        cand = np.unique(np.clip(nu_guess * np.array([0.67, 0.8, 1.0, 1.25, 1.5]),
+                                 nu_lo + 1e-6, nu_hi - 1e-6))
         anchors = np.array([4.0, 8.0, 12.0, 20.0], dtype=float)
         cand = np.unique(np.concatenate([cand, anchors]))
-        scores = [pseudo_loglik_nu(x) for x in cand]
-        nu0 = float(cand[int(np.argmax(scores))]) if len(scores) else float(nu_guess)
 
-        # final clip
+        scores = np.array([pseudo_loglik_nu(x) for x in cand], dtype=float)
+        nu0 = float(cand[int(np.argmax(scores))]) if cand.size else float(nu_guess)
         nu0 = float(np.clip(nu0, nu_lo + 1e-6, nu_hi - 1e-6))
+
         return np.array([rho0, nu0])
 

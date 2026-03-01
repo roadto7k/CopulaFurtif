@@ -41,37 +41,57 @@ class GaussianCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.default_optim_method = "Powell"
         self.init_parameters(CopulaParameters(np.array([0.8]), [(-1, 1)], ["rho"]))
 
-
-    def get_cdf(self, u, v, param: np.ndarray = None):
+    def get_cdf(self, u, v, param=None):
         """
-        Compute the Gaussian copula CDF C(u, v).
+        Gaussian copula CDF on the open square (0,1)^2:
+            C(u,v) = Φ_ρ(Φ^{-1}(u), Φ^{-1}(v))
 
-        Args:
-            u (float or array-like): Pseudo-observations in (0, 1).
-            v (float or array-like): Pseudo-observations in (0, 1).
-            param (np.ndarray, optional): Copula parameter [rho]. Defaults to self.parameters.
+        Conventions:
+          - Always clip u,v to (eps, 1-eps) (open interval).
+          - Pairwise vectorization only: u and v must have the same shape.
 
-        Returns:
-            float or np.ndarray: CDF values at (u, v).
+        Optimizations:
+          - If |rho| is tiny: return u*v (independence) to avoid heavy MVN CDF.
+          - Otherwise: one vectorized call to multivariate_normal.cdf on stacked points.
         """
+        import numpy as np
+        from scipy.stats import norm, multivariate_normal
+
         if param is None:
             param = self.get_parameters()
-        rho = param[0]
-        eps = 1e-12
-        u = np.clip(u, eps, 1 - eps)
-        v = np.clip(v, eps, 1 - eps)
+        rho = float(np.asarray(param, dtype=float).ravel()[0])
 
-        y1 = norm.ppf(u)
-        y2 = norm.ppf(v)
-        cov = [[1.0, rho], [rho, 1.0]]
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
 
-        if np.isscalar(y1) and np.isscalar(y2):
-            return multivariate_normal.cdf([y1, y2], mean=[0.0, 0.0], cov=cov)
+        # pairwise vectorization contract
+        if u.ndim == 0 and v.ndim == 0:
+            is_scalar = True
         else:
-            return np.array([
-                multivariate_normal.cdf([a, b], mean=[0.0, 0.0], cov=cov)
-                for a, b in zip(y1, y2)
-            ])
+            is_scalar = False
+            if u.shape != v.shape:
+                raise ValueError("Vectorized evaluation is pairwise: u and v must have the same shape.")
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        # fast-path independence
+        if abs(rho) < 1e-10:
+            out = u * v
+            return float(out) if is_scalar else out
+
+        x = norm.ppf(u)
+        y = norm.ppf(v)
+
+        pts = np.column_stack([x.ravel(), y.ravel()])  # (n,2) even for scalar -> (1,2)
+        cov = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
+
+        cdf_vals = multivariate_normal.cdf(pts, mean=np.zeros(2), cov=cov)
+
+        if is_scalar:
+            return float(cdf_vals)
+        return np.asarray(cdf_vals, dtype=float).reshape(u.shape)
 
     def get_pdf(self, u, v, param: np.ndarray = None):
         """
@@ -222,6 +242,15 @@ class GaussianCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             float or np.ndarray: Conditional CDF values.
         """
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def blomqvist_beta(self, param: np.ndarray = None) -> float:
+        """
+        Blomqvist's beta:
+            β = 4*C(1/2, 1/2) - 1
+        """
+        if param is None:
+            param = self.get_parameters()
+        return float(4.0 * self.get_cdf(0.5, 0.5, param=param) - 1.0)
 
     def init_from_data(self, u, v):
         """

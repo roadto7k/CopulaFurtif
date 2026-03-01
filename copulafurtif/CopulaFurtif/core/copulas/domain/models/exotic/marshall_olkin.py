@@ -157,13 +157,14 @@ class MarshallOlkinCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependen
 
     def blomqvist_beta(self, param=None) -> float:
         """
-        Blomqvist's beta (Joe, Sec. 4.14.1):
+        Closed-form Blomqvist beta for Marshall–Olkin:
             β = 2^{min(pi1, pi2)} - 1
         """
         if param is None:
             param = self.get_parameters()
         pi1, pi2 = float(param[0]), float(param[1])
-        return float(2.0 ** (min(pi1, pi2)) - 1.0)
+        beta = 2.0 ** (min(pi1, pi2)) - 1.0
+        return float(np.clip(beta, -1.0, 1.0))
 
     def LTDC(self, param=None):
         """Lower tail dependence λ_L = 0 (for this MO copula)."""
