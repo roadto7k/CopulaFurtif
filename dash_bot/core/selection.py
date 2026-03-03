@@ -11,16 +11,21 @@ def select_stationary_spreads(
     ref: str,
     candidates: List[str],
     adf_alpha: float,
-    use_kss: bool,
+    cointegration_test: str,   # "adf" | "kss" | "both"
     kss_crit: float,
     min_obs: int,
 ) -> Tuple[pd.DataFrame, Dict[str, pd.Series], Dict[str, float]]:
     """
     Calcule spreads S_i = P_ref - beta_i * P_i sur la fenêtre de formation,
-    filtre stationnarité (ADF, optionnel KSS), retourne:
+    filtre stationnarité selon la stratégie de cointegration choisie, retourne:
       - summary dataframe
       - spreads dict
       - betas dict
+
+    cointegration_test:
+      "adf"  → ADF uniquement (paper Strategy 1 — Engle-Granger test)
+      "kss"  → KSS uniquement (paper Strategy 2 — nonlinear stationarity)
+      "both" → ADF AND KSS   (strict conjunction, plus restrictif, hors paper)
     """
     rows = []
     spreads: Dict[str, pd.Series] = {}
@@ -43,12 +48,19 @@ def select_stationary_spreads(
             rows.append(dict(coin=coin, n=len(s), beta=betas[coin], adf_p=np.nan, kss=np.nan, accepted=False))
             continue
 
-        adf_stat, adf_p, _ = run_adf_test(s)
-        kss_stat, _ = kss_test(s) if use_kss else (np.nan, kss_crit)
+        run_adf = cointegration_test in ("adf", "both")
+        run_kss = cointegration_test in ("kss", "both")
 
-        accepted = bool(np.isfinite(adf_p) and adf_p < adf_alpha)
-        if use_kss:
-            accepted = accepted and bool(np.isfinite(kss_stat) and kss_stat < kss_crit)
+        adf_stat, adf_p, _ = run_adf_test(s) if run_adf else (np.nan, np.nan, None)
+        kss_stat, _         = kss_test(s)     if run_kss else (np.nan, kss_crit)
+
+        if cointegration_test == "adf":
+            accepted = bool(np.isfinite(adf_p) and adf_p < adf_alpha)
+        elif cointegration_test == "kss":
+            accepted = bool(np.isfinite(kss_stat) and kss_stat < kss_crit)
+        else:  # "both"
+            accepted = (bool(np.isfinite(adf_p) and adf_p < adf_alpha)
+                        and bool(np.isfinite(kss_stat) and kss_stat < kss_crit))
 
         rows.append(dict(
             coin=coin,
@@ -74,8 +86,8 @@ def rank_coins(
 ) -> pd.DataFrame:
     """
     Ranking par Kendall τ (comme dans l'article).
-    - kendall_prices: τ(P_ref, P_coin)
-    - kendall_spread_ref: τ(S_ref,coin, P_ref) (style ton dashboard existant)
+    - kendall_spread_ref: τ(S_ref,coin, P_ref) — paper Eq.39 (défaut)
+    - kendall_prices: τ(P_ref, P_coin) — sur les prix bruts (hors paper)
     """
     from scipy.stats import kendalltau
 

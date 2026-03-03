@@ -1,555 +1,501 @@
 import math
-from typing import Union
+from typing import Optional, Sequence
 
 import numpy as np
 from numpy.random import default_rng
-from scipy import integrate
-from numpy.polynomial.chebyshev import chebvander2d, chebval2d, chebder
-
-# ─────────── BB2 JAX implementation ─────────────────────
-import math
-import jax
-import jax.numpy as jnp
-import jax.scipy as jsp
-import jax.tree_util as jtu
-from functools import partial
-from jax.nn import softplus
-from jax import lax
-from jax.numpy import logaddexp
+from scipy.optimize import minimize
+from scipy.stats import kendalltau
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
-from CopulaFurtif.core.copulas.domain.models.archimedean.BB1 import BB1Copula
 
-# --- helpers ------------------------------------------------------------
-MAX_EXP = 700.0                       # e^700 ≈ 1e304, still finite
-_LOG_MAX = 700.0          # safe upper bound for exp() on 64-bit floats
-_LOG_SAFE = 30.0  # switch where "-1" is negligible
 
-def _safe_expm1(x):
-    # expm1(x) but capped so it never overflows
-    return jnp.where(x < _LOG_MAX, jnp.expm1(x), jnp.exp(_LOG_MAX))
+_MAX_EXP = 700.0
+_LOG_SAFE = 30.0  # above this, "-1" in (e^A+e^B-1) is negligible
 
-def _logsumexp_minus1_safe(a, b):
+
+def _safe_exp(x: np.ndarray) -> np.ndarray:
+    return np.exp(np.minimum(x, _MAX_EXP))
+
+def _logS_and_weights(A: np.ndarray, B: np.ndarray):
     """
-    Return log(e^a + e^b - 1) without ever evaluating a bad branch.
-    Assumes a,b >= 0 (true for BB2).
+    Return:
+      logS = log(exp(A) + exp(B) - 1)
+      w_u = exp(A)/S
+      w_v = exp(B)/S
+    computed stably without subtracting huge numbers.
     """
-    M = jnp.maximum(a, b)
-    m = jnp.minimum(a, b)
+    A = np.asarray(A, float)
+    B = np.asarray(B, float)
 
-    def big_branch(args):
-        M, m, a, b = args
-        # If M is finite: M + log1p(exp(m - M)); if M is inf → result is M
-        return jnp.where(jnp.isfinite(M),
-                         M + jnp.log1p(jnp.exp(m - M)),
-                         M)
+    M = np.maximum(A, B)
+    eA = np.exp(A - M)          # in (0,1]
+    eB = np.exp(B - M)          # in (0,1]
+    em = np.exp(-M)             # in (0,1], underflows to 0 when M is huge
 
-    def small_branch(args):
-        M, m, a, b = args
-        # Exact eval, safe when M is moderate
-        return jnp.log1p(jnp.expm1(a) + jnp.expm1(b))
+    denom = eA + eB - em        # = (exp(A)+exp(B)-1)/exp(M)
+    denom = np.maximum(denom, 1e-300)  # safety
 
-    return lax.cond(M > _LOG_SAFE, big_branch, small_branch, (M, m, a, b))
+    logS = M + np.log(denom)
+    w_u = eA / denom
+    w_v = eB / denom
+    return logS, w_u, w_v
 
-def _safe_exp(x):
-    """exp(x) but hard‑clipped to avoid overflow"""
-    return np.exp(np.minimum(x, MAX_EXP))
 
-def log1p_pos(a):
-    return jnp.log1p(a)
-
-def _logsumexp_minus1(a, b):
+def _logsumexp_minus1(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     """
-    log( e^a + e^b - 1 ) de façon stable
-    (les deux a,b ≥ 0 dans BB2 ⇒ pas de signe négatif).
+    Compute log( exp(A) + exp(B) - 1 ) stably, for A,B >= 0 (true here).
     """
-    m = jnp.maximum(a, b)
-    return m + jnp.log(jnp.exp(a - m) + jnp.exp(b - m) - jnp.exp(-m))
+    A = np.asarray(A, float)
+    B = np.asarray(B, float)
+    M = np.maximum(A, B)
+    m = np.minimum(A, B)
 
-def _log_expm1(x):
-    """log(expm1(x))  stable jusqu’à x≈1e4."""
-    return jnp.where(x < 1e-2, jnp.log(jnp.expm1(x)), x + jnp.log1p(-jnp.exp(-x)))
+    # When M is large, exp(M) dominates and "-1" is negligible:
+    # log(exp(A)+exp(B)-1) ≈ M + log1p(exp(m-M))
+    out = np.empty_like(M)
 
-def _logsumexp_two(a, b):
-    """log(e^a + e^b)  sans nan même si a ou b = ±inf"""
-    m = jnp.maximum(a, b)
-    return jnp.where(jnp.isfinite(m), m + jnp.log(jnp.exp(a - m) + jnp.exp(b - m)), m)
+    big = M > _LOG_SAFE
+    if np.any(big):
+        out[big] = M[big] + np.log1p(np.exp(m[big] - M[big]))
 
+    # When M is moderate, use log1p(expm1(A)+expm1(B)) exactly
+    if np.any(~big):
+        a = A[~big]
+        b = B[~big]
+        out[~big] = np.log1p(np.expm1(a) + np.expm1(b))
 
-@partial(jax.jit, static_argnums=(0, 4, 5))
-def _bisect_root(f, lo, hi, args, max_iter: int = 40, eps: float = 1e-12):
-    """Batched bisection root finder.
-    Solves f(x, *args) = 0 for x in (lo, hi).  `lo`,`hi` and the result
-    are arrays of the same length (vectorised).
-    """
-
-    def body(val):
-        lo, hi = val
-        mid = 0.5 * (lo + hi)
-        sign = jnp.sign(f(mid, *args))  # >0 ? move hi, else move lo
-        lo = jnp.where(sign > 0, lo, mid)
-        hi = jnp.where(sign > 0, mid, hi)
-        return lo, hi
-
-    lo, hi = jax.lax.fori_loop(
-        0, max_iter, lambda _, val: body(val), (lo, hi)
-    )
-    return 0.5 * (lo + hi)
+    return out
 
 
 class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
-    BB2 Copula (Survival version of BB1 Copula).
+    BB2 copula (Joe & Hu, 1996), bivariate, two parameters theta>0, delta>0.
 
-    This copula is the survival (180-degree rotated) version of BB1, used to
-    model upper tail dependence with two parameters.
+    Book formula (4.57):
+        C(u,v) = [ 1 + (1/delta) * log( exp(delta*(u^{-theta}-1)) + exp(delta*(v^{-theta}-1)) - 1 ) ]^{-1/theta}
 
-    Attributes:
-        name (str): Human-readable name of the copula.
-        type (str): Identifier for the copula family.
-        bounds_param (list of tuple): Bounds for copula parameters [theta, delta].
-        parameters (np.ndarray): Current copula parameters.
-        default_optim_method (str): Optimization method for parameter fitting.
+    Notes:
+      - Lower tail dependence coefficient is 1 (lower tail comonotonic).
+      - Upper tail dependence coefficient is 0 (upper tail order = 2).
     """
 
     def __init__(self):
-        """Initialize BB2 copula with default parameters."""
-        super().__init__(use_jax=True)                  # backend JAX
+        super().__init__(use_jax=False)
         self.name = "BB2 Copula"
         self.type = "bb2"
         self.default_optim_method = "Powell"
-        self.bounds_param = [(0.05, 10.0), (1.0, 10.0)]
-        self.init_parameters(CopulaParameters(np.array([2, 1.5]),self.bounds_param, ["theta", "delta"] ))
 
-    # ----- PyTree plumbing -----
-    def tree_flatten(self):
-        """
-        Flatten this BB2Copula instance into JAX‐traceable leaves and static auxiliary data.
+        # keep bounds exclusive in your framework
+        bounds = [(1e-6, 50.0), (1e-6, 50.0)]
+        self.init_parameters(CopulaParameters(np.array([2.0, 1.5]), bounds, ["theta", "delta"]))
 
-        The returned leaves are the copula parameters as a JAX array, and the auxiliary
-        data is the list of parameter bounds.
+    # ---------------------------------------------------------------------
+    # Core primitives (CDF, h-functions, PDF) on (0,1)^2 + exact boundaries
+    # ---------------------------------------------------------------------
 
-        Returns:
-            tuple:
-                children (tuple[jnp.ndarray]): A one‐element tuple containing the JAX array
-                    of copula parameters.
-                aux (tuple[list[tuple[float, float]]]): A one‐element tuple containing the
-                    parameter bounds.
-        """
-        params = jnp.asarray(self.get_parameters())  # leaf
-        return (params,), (self.get_bounds(),)
-
-    @classmethod
-    def tree_unflatten(cls, aux, children):
-        """
-        Reconstruct a BB2Copula instance from flattened leaves and auxiliary data.
-
-        Args:
-            aux (tuple[list[tuple[float, float]]]): A one‐element tuple containing the
-                parameter bounds.
-            children (tuple[jnp.ndarray]): A one‐element tuple containing the JAX array
-                of copula parameters.
-
-        Returns:
-            BB2Copula: A new instance whose parameters and bounds have been restored.
-        """
-        bounds, = aux
-        params, = children
-
-        obj = cls()
-        obj.set_bounds(bounds)  # setter -> CopulaParameters
-        obj.set_parameters(params)  # setter -> jnp array
-        return obj
-
-    # ----- Archimedean generator and safe inverse -----
     @staticmethod
-    def _phi_inv(u: jnp.ndarray, theta: float, delta: float) -> jnp.ndarray:
-        """
-        Compute the inverse Archimedean generator φ⁻¹(u) for the BB2 copula.
+    def _prep_uv(u, v):
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
+        u, v = np.broadcast_arrays(u, v)
+        return u, v
 
-        Implements φ⁻¹(u) = δ·(expm1(−θ·log(u))) in a numerically stable way, clipping
-        large exponents to avoid overflow.
-
-        Args:
-            u (jnp.ndarray): Values in the unit interval (0, 1).
-            theta (float): Copula parameter θ > 0.
-            delta (float): Copula parameter δ > 0.
-
-        Returns:
-            jnp.ndarray: The generator inverse values, φ⁻¹(u) ≥ 0.
-        """
-        # s = -θ log u  ≥ 0
-        s = -theta * jnp.log(u)
-
-        # pour s > 50, exp(s) >> 1 expm1(s) ≈ exp(s)
-        small = s < 50.0
-        expm1_s = jnp.where(small, jnp.expm1(s), jnp.exp(jnp.clip(s, None, _LOG_MAX)))
-
-        return delta * expm1_s
-
-    # @partial(jax.jit, static_argnums=0)
-    # def get_cdf(self, u, v, param=None):
-    #     """
-    #     Evaluate the BB2 copula cumulative distribution function C(u, v).
-    #
-    #     Computes
-    #
-    #         C(u,v;θ,δ) = [1 + δ⁻¹ · log(e^{w_u} + e^{w_v} − 1)]^{−1/θ}
-    #
-    #     where w_u = δ(u^{−θ}−1), w_v = δ(v^{−θ}−1), implemented fully in log‐space
-    #     for numerical stability.
-    #
-    #     Args:
-    #         u (array_like): First marginal values in (0, 1).
-    #         v (array_like): Second marginal values in (0, 1).
-    #         param (Optional[Sequence[float]]): Sequence [θ, δ] of copula parameters;
-    #             if None, uses this instance’s stored parameters.
-    #
-    #     Returns:
-    #         jnp.ndarray: The CDF values C(u, v), same shape as inputs.
-    #     """
-    #
-    #     if param is None:
-    #         theta, delta = self.get_parameters()
-    #     else:
-    #         theta, delta = param
-    #
-    #     eps = 1e-15
-    #     u = jnp.clip(self._to_backend(u), eps, 1 - eps)
-    #     v = jnp.clip(self._to_backend(v), eps, 1 - eps)
-    #
-    #     # 3) A = δ (u^{-θ} - 1), B = δ (v^{-θ} - 1)
-    #     gu = jnp.expm1(-theta * jnp.log(u))  # = u^{-θ} - 1
-    #     gv = jnp.expm1(-theta * jnp.log(v))  # = v^{-θ} - 1
-    #     A = delta * gu
-    #     B = delta * gv
-    #
-    #     # 4) logS = log( e^A + e^B - 1 )
-    #     logS = _logsumexp_minus1(A, B)
-    #
-    #     # 5) L1 = δ⁻¹·logS  →  logL1 = logS - log(delta)
-    #     logL1 = logS - jnp.log(delta)
-    #
-    #     # 6) log(1 + L1) stable
-    #     logA = softplus(logL1)
-    #
-    #     # 7) CDF
-    #     return jnp.exp(-logA / theta)
-
-
-
-    # @partial(jax.jit, static_argnums=0)
-    # def get_pdf(self, u, v, param=None):
-    #     """
-    #     Compute the BB2 copula density c(u, v).
-    #
-    #     This method accepts scalars or arrays; if arrays are provided,
-    #     standard NumPy broadcasting rules apply and the result has
-    #     the broadcasted shape.
-    #
-    #     Args:
-    #         u (array_like): First margin values in (0, 1).
-    #         v (array_like): Second margin values in (0, 1).
-    #         param (Sequence[float] or None): Optional [theta, delta].
-    #             If None, uses this instance’s stored parameters.
-    #
-    #     Returns:
-    #         jnp.ndarray: Copula density values with the same
-    #                      broadcasted shape as u and v.
-    #     """
-    #     # 1. Extract parameters ------------------------------------------------
-    #     if param is None:
-    #         theta, delta = self.get_parameters()
-    #     else:
-    #         theta, delta = param
-    #
-    #     eps = 1e-15
-    #     u = jnp.clip(self._to_backend(u), eps, 1 - eps)
-    #     v = jnp.clip(self._to_backend(v), eps, 1 - eps)
-    #
-    #     A = delta * (u ** (-theta) - 1.0)
-    #     B = delta * (v ** (-theta) - 1.0)
-    #
-    #     logS = _logsumexp_minus1(A, B)  # log E
-    #     T = 1.0 + logS / delta  # >0
-    #
-    #     # softmax-like stable weights
-    #     p_u = jnp.exp(A - logS)
-    #     p_v = jnp.exp(B - logS)
-    #
-    #     # powers that appear repeatedly
-    #     u_pow = u ** (-theta - 1.0)
-    #     v_pow = v ** (-theta - 1.0)
-    #
-    #     # assemble the density
-    #     prefactor = jnp.exp(-(1.0 / theta + 2.0) * jnp.log(T))  # T^{-1/θ-2}
-    #     bracket = (1.0 + theta) + theta * delta * T  # [...]
-    #     pdf = prefactor * p_u * p_v * u_pow * v_pow * bracket
-    #
-    #     return pdf
-
-    @partial(jax.jit, static_argnums=0)
-    def _compute_logA(self, u, v, theta, delta):
-        """Return logA = log(1 + δ^{-1}·(e^A + e^B − 1))."""
-        eps = 1e-15
-        u = jnp.clip(u, eps, 1 - eps)
-        v = jnp.clip(v, eps, 1 - eps)
-
-        su = -theta * jnp.log(u)
-        sv = -theta * jnp.log(v)
-        gu = _safe_expm1(su)  # u^{-θ} - 1
-        gv = _safe_expm1(sv)
-
-        A = delta * gu
-        B = delta * gv
-
-        logS = _logsumexp_minus1_safe(A, B)  # log(e^A + e^B - 1)
-        logL1 = logS - jnp.log(delta)  # log(δ^{-1} * S)
-        return jax.nn.softplus(logL1)
-
-    #############################################
-    #   PUBLIC API: CDF / log‑CDF / PDF / log‑PDF
-    #############################################
-
-    @partial(jax.jit, static_argnums=0)
-    def get_log_cdf(self, u, v, param=None):
-        theta, delta = param if param is not None else self.get_parameters()
-        logA = self._compute_logA(u, v, theta, delta)
-        return -logA / theta
-
-    @partial(jax.jit, static_argnums=0)
     def get_cdf(self, u, v, param=None):
-        return jnp.exp(self.get_log_cdf(u, v, param))
+        """
+        Compute the BB2 copula CDF C(u,v).
 
-    @partial(jax.jit, static_argnums=0)
-    def get_log_pdf(self, u, v, param=None):
-        theta, delta = param if param is not None else self.get_parameters()
+        BB2 (Joe & Hu, 1996) — book formula (4.57):
+            C(u,v) = [ 1 + (1/delta) * log( exp(delta*(u^{-theta}-1)) + exp(delta*(v^{-theta}-1)) - 1 ) ]^{-1/theta}
+
+        Conventions:
+          - Exact Fréchet boundaries are handled explicitly:
+              C(u,0)=0, C(0,v)=0, C(u,1)=u, C(1,v)=v
+          - In the interior (0,1)^2, inputs are clipped to (eps,1-eps) for numerical stability.
+          - Vectorization is pairwise via broadcasting.
+        """
+        if param is None:
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        u, v = self._prep_uv(u, v)
+        out = np.empty_like(u, dtype=float)
+
+        # exact Fréchet boundaries
+        out[(u <= 0.0) | (v <= 0.0)] = 0.0
+        out[u >= 1.0] = np.clip(v[u >= 1.0], 0.0, 1.0)
+        out[v >= 1.0] = np.clip(u[v >= 1.0], 0.0, 1.0)
+
+        mask = (u > 0.0) & (u < 1.0) & (v > 0.0) & (v < 1.0)
+        if not np.any(mask):
+            return float(out) if out.shape == () else out
 
         eps = 1e-15
-        u = jnp.clip(u, eps, 1 - eps)
-        v = jnp.clip(v, eps, 1 - eps)
+        um = np.clip(u[mask], eps, 1.0 - eps)
+        vm = np.clip(v[mask], eps, 1.0 - eps)
 
-        su = -theta * jnp.log(u)
-        sv = -theta * jnp.log(v)
-        gu = _safe_expm1(su)  # u^{-θ} - 1
-        gv = _safe_expm1(sv)
+        # A = delta*(u^{-theta}-1), B analogous
+        su = -theta * np.log(um)                 # >=0
+        sv = -theta * np.log(vm)
+        u_m_theta = _safe_exp(su)                # u^{-theta}
+        v_m_theta = _safe_exp(sv)
+        A = delta * (u_m_theta - 1.0)
+        B = delta * (v_m_theta - 1.0)
 
-        A = delta * gu
-        B = delta * gv
+        logS, _, _ = _logS_and_weights(A, B)
+        T = 1.0 + logS / delta
+        logT = np.log(T)
 
-        # logE = log(e^A + e^B - 1)
-        logE = _logsumexp_minus1_safe(A, B)
+        out[mask] = np.exp(-(1.0 / theta) * logT)  # T^{-1/theta}
 
-        # logT = log(1 + δ^{-1}·logE)
-        logT = jax.nn.softplus(logE - jnp.log(delta))
+        return float(out) if out.shape == () else out
 
-        # log(1 + θ + θδT) computed without inf-inf
-        base = jnp.log(theta) + jnp.log(delta) + logT
-        log_bracket = lax.cond(
-            base > 40.0,
-            lambda b: b + jnp.log1p((1.0 + theta) * jnp.exp(-b)),
-            lambda b: jnp.log1p(1.0 + theta + jnp.exp(b)),
-            base,
-        )
-
-        log_pow = (-theta - 1.0) * (jnp.log(u) + jnp.log(v))
-        log_q = (A + B) - 2.0 * logE
-
-        logpdf = -(1.0 / theta + 2.0) * logT + log_pow + log_bracket + log_q
-
-        # optional asymptotic guard for the extreme corner (u or v ~ 0)
-        s_max = jnp.maximum(su, sv)
-        logpdf = jnp.where(
-            s_max > 680.0,
-            # asymptotics: product weight vanishes, bracket ~ θδT, T ~ exp(s_max)/δ
-            -(1.0 / theta + 1.0) * s_max + log_pow + jnp.log(theta) + jnp.log(delta),
-            logpdf,
-        )
-
-        return jnp.nan_to_num(logpdf, neginf=-1e300, posinf=1e300)
-
-    @partial(jax.jit, static_argnums=0)
-    def get_pdf(self, u, v, param=None):
-        return jnp.exp(self.get_log_pdf(u, v, param))
-
-    @partial(jax.jit, static_argnums=(0, 2))
-    def kendall_tau(self, param=None, n_grid: int = 400):
-        """Return Kendall's tau computed numerically via the identity
-            τ = 4 ∬_{[0,1]²} C(u,v) · c(u,v) du dv − 1
-
-        The double integral is approximated on an ``n_grid × n_grid`` tensor
-        product grid (Riemann midpoint rule).  Works for scalars or arrays
-        thanks to JAX vectorisation; compiled with XLA for speed.
-
-        Args
-        ----
-        param : Sequence[float] | None
-            Copula parameters.  If *None*, uses the instance’s current values.
-        n_grid : int
-            Number of quadrature points per axis (default 400 ⇒ 1.6 e5 evals).
-
-        Returns
-        -------
-        float
-            Kendall’s τ estimate, high‑precision (error ~ O(n_grid⁻²)).
-        """
-        # ── parameters -------------------------------------------------------
-        if param is None:
-            theta, delta = self.get_parameters()
-        else:
-            theta, delta = param
-
-        eps = 1e-6  # keep away from log(0)
-        u = jnp.linspace(eps, 1.0 - eps, n_grid)
-        v = jnp.linspace(eps, 1.0 - eps, n_grid)
-        U, V = jnp.meshgrid(u, v, indexing="ij")  # shape (n, n)
-
-        # ── evaluation (vectorised, no Python loop) -------------------------
-        def _eval(f):  # helper for C & pdf
-            flat = jax.vmap(lambda uu, vv: f(uu, vv, (theta, delta)))(
-                U.ravel(), V.ravel()
-            )
-            return flat.reshape((n_grid, n_grid))
-
-        C_vals = _eval(self.get_cdf)
-        pdf_vals = _eval(self.get_pdf)
-
-        # ── midpoint rule ---------------------------------------------------
-        delta_uv = (1.0 - 2 * eps) / n_grid  # step in each dimension
-        integral = jnp.sum(C_vals * pdf_vals) * delta_uv ** 2
-
-        return 4.0 * integral - 1.0
-
-    @partial(jax.jit, static_argnums=(0, 1))
-    def sample(self, n: int, key=None, param=None,
-               eps: float = 1e-12, max_iter: int = 40):
-        """Draw `n` iid pairs (U,V) ~ BB2 using JAX.
-
-        Parameters
-        ----------
-        n        : int
-        key      : jax.random.PRNGKey
-        param    : None | (theta, delta)
-        eps      : float     (clipping to keep away from 0,1)
-        max_iter : int       (bisection depth ~ 2⁻ᵏ accuracy)
-        """
-        # parameters ----------------------------------------------------------
-        if param is None:
-            theta, delta = self.get_parameters()
-        else:
-            theta, delta = param
-        theta, delta = map(float, (theta, delta))
-
-        if key is None:
-            key = jax.random.PRNGKey(0)
-
-        # split RNG
-        key_u, key_p = jax.random.split(key)
-
-        # 1) U ~ Unif,   P ~ Unif
-        u = jax.random.uniform(key_u, (n,), minval=eps, maxval=1 - eps)
-        p = jax.random.uniform(key_p, (n,), minval=eps, maxval=1 - eps)
-
-        # 2) conditional CDF F_{V|U}(v)  (normalised ∂C/∂u)
-        def cond_cdf(v, u, theta, delta):
-            num = self.partial_derivative_C_wrt_u(u, v, (theta, delta))
-            den = self.partial_derivative_C_wrt_u(u, 1.0, (theta, delta))
-            return num / den
-
-        # root function  g(v) = F(v) - p  (want zero)
-        f_root = lambda v, u, p, theta, delta: cond_cdf(v, u, theta, delta) - p
-
-        # 3) batched bisection ------------------------------------------------
-        lo = jnp.full(n, eps)
-        hi = jnp.full(n, 1.0 - eps)
-        v = _bisect_root(f_root, lo, hi, (u, p, theta, delta),
-                         max_iter=max_iter, eps=eps)
-
-        # 4) pack & return
-        return jnp.stack((u, v), axis=1)
-
-    def LTDC(self, param=None):
-        """
-        Compute lower tail dependence coefficient.
-
-        Args:
-            param (np.ndarray, optional): Parameters [theta, delta].
-
-        Returns:
-            float: Lower tail dependence.
-        """
-        return 1.0
-
-    def UTDC(self, param=None):
-        """
-        Compute upper tail dependence coefficient.
-
-        Args:
-            param (np.ndarray, optional): Parameters [theta, delta].
-
-        Returns:
-            float: Upper tail dependence.
-        """
-        return 0.0
-
-    @partial(jax.jit, static_argnums=0)
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
-        Return ∂C/∂u for the BB2 copula (closed‑form, NaN‑free).
+        Compute h_{V|U=u}(v) = ∂C(u,v)/∂u.
 
-        Args
-        ----
-        u, v : array‑like in (0,1)
-        param: optional (theta, delta)
+        Interpretation:
+          For continuous copulas, ∂C/∂u is the conditional CDF of V given U=u.
+          We implement the closed-form derivative implied by the BB2 CDF.
 
-        Returns
-        -------
-        jnp.ndarray with the broadcasted shape of (u, v)
+        Boundary behavior:
+          - For v<=0: 0 ; for v>=1: 1 (consistent with a conditional CDF)
         """
-        theta, delta = param if param is not None else self.get_parameters()
+        if param is None:
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        u, v = self._prep_uv(u, v)
+        out = np.empty_like(u, dtype=float)
+
+        # boundary in v: h(u,0)=0 ; h(u,1)=1
+        out[v <= 0.0] = 0.0
+        out[v >= 1.0] = 1.0
+
+        # boundary in u: safe conventions (not usually queried in tests)
+        out[u <= 0.0] = 0.0
+        out[u >= 1.0] = 1.0
+
+        mask = (u > 0.0) & (u < 1.0) & (v > 0.0) & (v < 1.0)
+        if not np.any(mask):
+            return float(out) if out.shape == () else out
+
         eps = 1e-15
-        u = jnp.clip(u, eps, 1 - eps)
-        v = jnp.clip(v, eps, 1 - eps)
+        um = np.clip(u[mask], eps, 1.0 - eps)
+        vm = np.clip(v[mask], eps, 1.0 - eps)
 
-        su = -theta * jnp.log(u)
-        sv = -theta * jnp.log(v)
-        gu = _safe_expm1(su)
-        gv = _safe_expm1(sv)
+        su = -theta * np.log(um)
+        sv = -theta * np.log(vm)
+        u_m_theta = _safe_exp(su)
+        v_m_theta = _safe_exp(sv)
+        A = delta * (u_m_theta - 1.0)
+        B = delta * (v_m_theta - 1.0)
 
-        A = delta * gu
-        B = delta * gv
+        logS, w_u, _ = _logS_and_weights(A, B)
 
-        logE = _logsumexp_minus1_safe(A, B)
-        T = 1.0 + jnp.exp(logE - jnp.log(delta))
-        C = jnp.exp(-jnp.log(T) / theta)
+        T = 1.0 + logS / delta
+        C = np.exp(-(1.0 / theta) * np.log(T))
 
-        log_pu = A - logE  # log( e^A / (e^A + e^B - 1) )
-        p_u = jnp.exp(log_pu)
+        u_pow = um ** (-theta - 1.0)
+        out[mask] = (C * w_u * u_pow) / T
 
-        u_pow = u ** (-theta - 1.0)
-        dC_du = C * p_u * u_pow / T
-        return jnp.nan_to_num(dC_du, neginf=0.0, posinf=0.0)
-
+        return float(out) if out.shape == () else out
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
-        """Compute the partial derivative ∂C_BB2/∂v at (u, v).
-
-        By exchangeability of the Archimedean base copula, we can
-        reuse ∂C/∂u by swapping arguments:
-        ∂C_BB2/∂v(u,v) = ∂C_BB2/∂u(v,u).
-
-        Args:
-            u (float or np.ndarray): U-coordinates in [0, 1].
-            v (float or np.ndarray): V-coordinates in [0, 1].
-            param (Sequence[float], optional):
-                [theta, delta] copula parameters. If None, uses
-                the model’s current parameters.
-
-        Returns:
-            float or np.ndarray: The value(s) of ∂C/∂v at the given points.
-        """
+        # symmetry
         return self.partial_derivative_C_wrt_u(v, u, param)
+
+    def get_pdf(self, u, v, param=None):
+        """
+        Compute the formal mixed derivative c(u,v) = ∂²C/∂u∂v.
+
+        BB2 can generate extremely sharp lower-tail behavior; numerically,
+        this 'density' can become very large near (0,0). This method returns
+        the mixed derivative on the open square (0,1)^2 and returns 0 on the boundary.
+
+        Note:
+          In practice, tests based on Monte-Carlo integration of c(u,v) can be
+          unstable unless the sampling scheme resolves the extreme lower tail.
+        """
+        if param is None:
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        u, v = self._prep_uv(u, v)
+
+        # density only meaningful in the open square; return 0 on boundary
+        out = np.zeros_like(u, dtype=float)
+        mask = (u > 0.0) & (u < 1.0) & (v > 0.0) & (v < 1.0)
+        if not np.any(mask):
+            return float(out) if out.shape == () else out
+
+        eps = 1e-15
+        um = np.clip(u[mask], eps, 1.0 - eps)
+        vm = np.clip(v[mask], eps, 1.0 - eps)
+
+        su = -theta * np.log(um)
+        sv = -theta * np.log(vm)
+        u_m_theta = _safe_exp(su)
+        v_m_theta = _safe_exp(sv)
+
+        A = delta * (u_m_theta - 1.0)
+        B = delta * (v_m_theta - 1.0)
+
+        logS, w_u, w_v = _logS_and_weights(A, B)
+        # weights can be extremely close to 0 in extreme tails -> protect logs
+        w_u = np.maximum(w_u, 1e-300)
+        w_v = np.maximum(w_v, 1e-300)
+        log_w = np.log(w_u) + np.log(w_v)
+
+        T = 1.0 + logS / delta
+        logT = np.log(T)
+
+        # bracket = theta*delta*T + theta + 1, computed stably for both small/large base
+        base = theta * delta * T
+        log_bracket = np.where(
+            base > 50.0,
+            np.log(base) + np.log1p((theta + 1.0) / base),
+            np.log(theta + 1.0) + np.log1p(base / (theta + 1.0)),
+        )
+
+        log_pow = (-theta - 1.0) * (np.log(um) + np.log(vm))
+        logpdf = (-1.0 / theta - 2.0) * logT + log_pow + log_w + log_bracket
+
+        pdf = np.exp(logpdf)
+        pdf = np.nan_to_num(pdf, nan=0.0, posinf=0.0, neginf=0.0)
+        out[mask] = pdf
+        return float(out) if out.shape == () else out
+
+    # ---------------------------------------------------------------------
+    # Dependence measures
+    # ---------------------------------------------------------------------
+
+    def blomqvist_beta(self, param=None) -> float:
+        if param is None:
+            param = self.get_parameters()
+        return float(4.0 * self.get_cdf(0.5, 0.5, param=param) - 1.0)
+
+    def LTDC(self, param=None) -> float:
+        # From the book: lower tail dependence parameter is lambda_L = 1
+        return 1.0
+
+    def UTDC(self, param=None) -> float:
+        # Upper tail order is 2 => coefficient lambda_U = 0
+        return 0.0
+
+    def kendall_tau(self, param=None, n_quad: int = 120) -> float:
+        """
+        Kendall's tau for an Archimedean copula can be computed via:
+            tau = 1 + 4 * ∫_0^1 (phi(u)/phi'(u)) du
+
+        For BB2, the Archimedean generator is:
+            phi(u) = exp(delta*(u^{-theta}-1)) - 1
+
+        We evaluate the 1D integral with Gauss–Legendre quadrature (stable + fast),
+        and clip the final result to [-1,1] defensively.
+        """
+        if param is None:
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        # Gauss–Legendre on (0,1)
+        x, w = np.polynomial.legendre.leggauss(n_quad)
+        u = 0.5 * (x + 1.0)
+        w = 0.5 * w
+
+        eps = 1e-15
+        u = np.clip(u, eps, 1.0 - eps)
+
+        # g(u) = delta*(u^{-theta}-1)
+        g = delta * (np.exp(np.minimum(-theta * np.log(u), _MAX_EXP)) - 1.0)
+
+        # 1 - exp(-g) stable (for big g, exp(-g)->0)
+        emg = np.exp(-np.minimum(g, 745.0))
+        one_minus_emg = 1.0 - emg
+
+        # phi/phi' = - u^{theta+1} * (1 - exp(-g)) / (delta*theta)
+        ratio = - (u ** (theta + 1.0)) * one_minus_emg / (delta * theta)
+
+        integral = float(np.sum(w * ratio))
+        tau = 1.0 + 4.0 * integral
+        return float(np.clip(tau, -1.0, 1.0))
+
+    # ---------------------------------------------------------------------
+    # Fitting helpers
+    # ---------------------------------------------------------------------
+
+    def init_from_data(self, u, v):
+        """
+        Initialize (theta, delta) from data via Maximum Pseudo-Likelihood (MPL).
+
+        Why MPL for BB2?
+        ----------------
+        For BB2, moment-matching on (tau, beta) can be ill-conditioned: different
+        (theta, delta) pairs may yield similar (tau, beta) under sampling noise.
+        MPL is much more stable: we maximize the average log-density log c(u,v).
+
+        Practical approach
+        ------------------
+        1) Clip data into (0,1) to respect the open-interval convention.
+        2) Use a deterministic subsample (for speed + robustness).
+        3) Coarse grid search for a good starting point.
+        4) Refine using Nelder–Mead on log-parameters (ensures positivity).
+        """
+
+        u = np.asarray(u, float).ravel()
+        v = np.asarray(v, float).ravel()
+        mask = np.isfinite(u) & np.isfinite(v)
+        u, v = u[mask], v[mask]
+        if u.size < 200:
+            return self.get_parameters()
+
+        eps = 1e-12
+        u = np.clip(u, eps, 1.0 - eps)
+        v = np.clip(v, eps, 1.0 - eps)
+
+        # deterministic subsample for speed
+        rng = default_rng(0)
+        n_sub = min(3000, u.size)
+        idx = rng.choice(u.size, size=n_sub, replace=False)
+        uu = u[idx]
+        vv = v[idx]
+
+        (lo_th, hi_th), (lo_de, hi_de) = self.get_bounds()
+        # fallback caps if bounds are infinite
+        hi_th_cap = float(hi_th) if np.isfinite(hi_th) else 50.0
+        hi_de_cap = float(hi_de) if np.isfinite(hi_de) else 50.0
+
+        # ----- internal stable logpdf (pairwise) -----
+        def _logpdf_pairwise(u_, v_, th, de):
+            # mirrors get_pdf() but returns log-density directly
+            u_ = np.asarray(u_, float)
+            v_ = np.asarray(v_, float)
+            u_, v_ = np.broadcast_arrays(u_, v_)
+
+            su = -th * np.log(u_)
+            sv = -th * np.log(v_)
+
+            u_m_th = _safe_exp(su)
+            v_m_th = _safe_exp(sv)
+
+            A = de * (u_m_th - 1.0)
+            B = de * (v_m_th - 1.0)
+
+            logS, w_u, w_v = _logS_and_weights(A, B)
+            w_u = np.maximum(w_u, 1e-300)
+            w_v = np.maximum(w_v, 1e-300)
+
+            T = 1.0 + logS / de
+            logT = np.log(T)
+
+            base = th * de * T
+            log_bracket = np.where(
+                base > 50.0,
+                np.log(base) + np.log1p((th + 1.0) / base),
+                np.log(th + 1.0) + np.log1p(base / (th + 1.0)),
+            )
+
+            log_pow = (-th - 1.0) * (np.log(u_) + np.log(v_))
+            log_w = np.log(w_u) + np.log(w_v)
+
+            return (-1.0 / th - 2.0) * logT + log_pow + log_w + log_bracket
+
+        def _nll(th, de):
+            # negative mean log-likelihood (robust)
+            lp = _logpdf_pairwise(uu, vv, th, de)
+            m = -float(np.mean(lp))
+            if not np.isfinite(m):
+                return 1e99
+            return m
+
+        # ----- coarse grid search for a good start -----
+        th_min = max(float(lo_th) * 1.05, 0.2)
+        de_min = max(float(lo_de) * 1.05, 0.2)
+        th_max = min(hi_th_cap * 0.95, 10.0)
+        de_max = min(hi_de_cap * 0.95, 10.0)
+
+        thetas = np.geomspace(th_min, th_max, 10)
+        deltas = np.geomspace(de_min, de_max, 10)
+
+        best = None
+        best_val = float("inf")
+        for th0 in thetas:
+            for de0 in deltas:
+                val = _nll(float(th0), float(de0))
+                if val < best_val:
+                    best_val = val
+                    best = (float(th0), float(de0))
+
+        if best is None:
+            return self.get_parameters()
+
+        x0 = np.log(np.array(best, dtype=float))
+
+        # ----- refine with Nelder–Mead in log-space -----
+        def obj(x):
+            th = float(np.exp(x[0]))
+            de = float(np.exp(x[1]))
+            # enforce exclusive bounds with a soft penalty
+            if not (lo_th < th < hi_th_cap) or not (lo_de < de < hi_de_cap):
+                return 1e50
+            return _nll(th, de)
+
+        res = minimize(
+            obj, x0, method="Nelder-Mead",
+            options={"maxiter": 160, "xatol": 1e-4, "fatol": 1e-4, "disp": False}
+        )
+
+        th_hat = float(np.exp(res.x[0]))
+        de_hat = float(np.exp(res.x[1]))
+
+        # clamp strictly inside bounds
+        th_hat = float(np.clip(th_hat, lo_th + 1e-6, hi_th_cap - 1e-6))
+        de_hat = float(np.clip(de_hat, lo_de + 1e-6, hi_de_cap - 1e-6))
+
+        self.set_parameters([th_hat, de_hat])
+        return self.get_parameters()
+
+    # ---------------------------------------------------------------------
+    # Sampling via conditional inversion (bisection)
+    # ---------------------------------------------------------------------
+
+    def sample(self, n: int, rng=None, param=None):
+        if rng is None:
+            rng = default_rng(0)
+
+        if param is None:
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        eps = 1e-12
+        u = rng.uniform(eps, 1.0 - eps, size=n)
+        p = rng.uniform(eps, 1.0 - eps, size=n)
+
+        # For BB2 with this CDF, ∂C/∂u(u,1)=1, so F_{V|U=u}(v) = ∂C/∂u(u,v)
+        def F(vv):
+            return self.partial_derivative_C_wrt_u(u, vv, param=(theta, delta))
+
+        lo = np.full(n, eps)
+        hi = np.full(n, 1.0 - eps)
+
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            val = F(mid)
+            go_left = val > p
+            hi = np.where(go_left, mid, hi)
+            lo = np.where(go_left, lo, mid)
+
+        v = 0.5 * (lo + hi)
+        return np.column_stack([u, v])
+
+    # ---------------------------------------------------------------------
+    # GOF placeholders (as in your other models)
+    # ---------------------------------------------------------------------
 
     def IAD(self, data):
         print(f"[INFO] IAD is disabled for {self.name}.")
@@ -558,4 +504,3 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     def AD(self, data):
         print(f"[INFO] AD is disabled for {self.name}.")
         return np.nan
-

@@ -66,7 +66,7 @@ def register_callbacks(app):
         State("trading-weeks", "value"),
         State("step-weeks", "value"),
         State("adf-alpha", "value"),
-        State("use-kss", "value"),
+        State("coint-test", "value"),
         State("min-obs", "value"),
         State("min-coverage", "value"),
         State("rank-method", "value"),
@@ -89,6 +89,7 @@ def register_callbacks(app):
         State("use-trailing-stop", "value"),
         State("trailing-pct", "value"),
         State("trailing-activation", "value"),
+        State("force-week-end-close", "value"),
         prevent_initial_call=True,
     )
     def run_backtest(
@@ -104,7 +105,7 @@ def register_callbacks(app):
             trading_weeks,
             step_weeks,
             adf_alpha,
-            use_kss,
+            cointegration_test,
             min_obs,
             min_coverage,
             rank_method,
@@ -127,6 +128,7 @@ def register_callbacks(app):
             use_trailing_stop,
             trailing_pct,
             trailing_activation,
+            force_week_end_close,
     ):
         # ensure ref in universe
         if not symbols or ref_asset not in symbols:
@@ -163,7 +165,6 @@ def register_callbacks(app):
         # clean
         prices = clean_prices_basic(prices)
 
-        # params (tu dis que tu as remis les bons args dans ton core)
         p = BacktestParams(
             strategy=strategy,
             interval=interval,
@@ -175,7 +176,7 @@ def register_callbacks(app):
             trading_weeks=int(trading_weeks or 1),
             step_weeks=int(step_weeks or 1),
             adf_alpha=float(adf_alpha or 0.10),
-            use_kss=("kss" in (use_kss or [])),
+            cointegration_test=str(cointegration_test or "adf"),
             min_obs=int(min_obs or 200),
             min_coverage=float(min_coverage or 0.90),
             suppress_fit_logs=("suppress" in (suppress_logs or ["suppress"])),
@@ -198,10 +199,11 @@ def register_callbacks(app):
             use_trailing_stop=("trail" in (use_trailing_stop or [])),
             trailing_stop_pct=float(trailing_pct or 0.02),
             trailing_stop_activation=float(trailing_activation or 0.01),
+            force_week_end_close=("force_close" in (force_week_end_close or ["force_close"])),
         )
 
         if getattr(p, "strategy", None) != "reference_copula":
-            return dash.no_update, "⚠️ Pour l’instant, ce dashboard backteste uniquement 'reference_copula'."
+            return dash.no_update, "⚠️ Pour l'instant, ce dashboard backteste uniquement 'reference_copula'."
 
         try:
             res = backtest_reference_copula(prices, p)

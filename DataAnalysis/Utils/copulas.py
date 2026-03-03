@@ -70,6 +70,8 @@ class CopulaSelectionConfig:
         ("Husler-Reiss", CopulaType.HUSLER_REISS),
         ("Marshall-Olkin", CopulaType.MARSHALL_OLKIN),
 
+        ("BB1", CopulaType.BB1),
+
         # ("Bernstein", CopulaType.BERNSTEIN),
     )
 

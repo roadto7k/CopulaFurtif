@@ -15,6 +15,7 @@ from ..config import (
     STRATEGIES,
     RANK_METHODS,
     COPULA_PICK,
+    COINTEGRATION_TESTS,
 )
 
 # Copulas list (depuis core)
@@ -124,11 +125,17 @@ def build_layout():
                                             html.Label("ADF significance level (alpha)"),
                                             dbc.Input(id="adf-alpha", type="number", value=0.10, min=0.01, max=0.25, step=0.01),
 
-                                            dbc.Checklist(
-                                                options=[{"label": " Apply KSS filter (t-stat < -1.92)", "value": "kss"}],
-                                                value=[],
-                                                id="use-kss",
-                                                style={"marginTop": "6px"},
+                                            html.Label("Cointegration test strategy",
+                                                       style={"marginTop": "8px"}),
+                                            html.Div(
+                                                "ADF = paper Strategy 1  ·  KSS = paper Strategy 2",
+                                                className="tip-text",
+                                            ),
+                                            dcc.Dropdown(
+                                                id="coint-test",
+                                                options=[{"label": lbl, "value": v} for v, lbl in COINTEGRATION_TESTS],
+                                                value="adf",
+                                                clearable=False,
                                             ),
 
                                             html.Label("Min obs in formation (N_obs)"),
@@ -143,7 +150,7 @@ def build_layout():
                                             dcc.Dropdown(
                                                 id="rank-method",
                                                 options=[{"label": lbl, "value": v} for v, lbl in RANK_METHODS],
-                                                value="kendall_prices",
+                                                value="kendall_spread_ref",
                                                 clearable=False,
                                             ),
 
@@ -194,10 +201,13 @@ def build_layout():
                                             html.Hr(),
 
                                             html.Label("Capital & fees"),
-                                            html.Div("Cap per leg (USDT)", className="tip-text", style={"marginTop": "4px"}),
-                                            dbc.Input(id="cap-per-leg", type="number", value=20000, min=100, step=100),
+                                            html.Div(
+                                                "Cap per leg (USDT) — β-weighted: notional/leg = β·cap",
+                                                className="tip-text", style={"marginTop": "4px"}
+                                            ),
+                                            dbc.Input(id="cap-per-leg", type="number", value=200000, min=100, step=1000),
                                             html.Div("Initial equity (USDT)", className="tip-text", style={"marginTop": "4px"}),
-                                            dbc.Input(id="initial-equity", type="number", value=40000, min=100, step=100),
+                                            dbc.Input(id="initial-equity", type="number", value=200000, min=100, step=1000),
                                             html.Div("Fee rate (taker ~ 0.0004)", className="tip-text", style={"marginTop": "4px"}),
                                             dbc.Input(id="fee-rate", type="number", value=0.0004, min=0.0, max=0.01, step=0.0001),
 
@@ -251,6 +261,27 @@ def build_layout():
                                                 dbc.Col(dbc.Input(id="trailing-activation", type="number", value=0.01,
                                                                   min=0.005, max=0.10, step=0.005), width=6),
                                             ]),
+
+                                            html.Hr(),
+
+                                            html.Label("⬡ Position closing behaviour",
+                                                       style={"fontWeight": "bold"}),
+                                            dbc.Checklist(
+                                                options=[{
+                                                    "label": " Force close at week-end (paper behaviour)",
+                                                    "value": "force_close"
+                                                }],
+                                                value=["force_close"],
+                                                id="force-week-end-close",
+                                                style={"marginTop": "4px"},
+                                            ),
+                                            html.Div(
+                                                "Décoché : les positions ouvertes continuent "
+                                                "au-delà de la semaine — le copula d'origine "
+                                                "gère la sortie (multi-slot).",
+                                                className="tip-text",
+                                                style={"marginBottom": "8px"},
+                                            ),
 
                                             dbc.Button("▶  RUN BACKTEST", id="run-btn", className="tron-run-btn w-100"),
                                             html.Div(id="run-status", className="tron-status", style={"marginTop": "10px"}),
