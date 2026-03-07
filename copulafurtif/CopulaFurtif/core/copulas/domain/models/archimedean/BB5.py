@@ -42,8 +42,9 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.name = "BB5 Copula"
         self.type = "bb5"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters(np.array([2.0, 2.0]), [(1.0, np.inf), (1e-6, np.inf)], ["theta", "delta"]))
-        
+        self.init_parameters(
+            CopulaParameters(np.array([2.0, 2.0]), [(1.0, np.inf), (1e-6, np.inf)], ["theta", "delta"]))
+
     def get_cdf(self, u, v, param=None):
         """
         Evaluate the copula cumulative distribution function at (u, v).
@@ -167,19 +168,197 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         pdf = term1 + term2 + term3
         return np.clip(pdf, 0.0, None)
 
+    # ------------------------------------------------------------------
+    # Cached Gauss-Legendre nodes/weights for kendall_tau (32×32 grid)
+    # ------------------------------------------------------------------
+    _GL_N = 32
+    _xi_gl, _wi_gl = __import__(
+        'numpy.polynomial.legendre', fromlist=['leggauss']
+    ).leggauss(_GL_N)
+    _GL_HALF = 0.5 * (0.995 - 0.005)
+    _GL_MID = 0.5 * (0.995 + 0.005)
+    _GL_U = _GL_HALF * _xi_gl + _GL_MID
+    _GL_W = _GL_HALF * _wi_gl
+    _GL_UU, _GL_VV = np.meshgrid(_GL_U, _GL_U)
+    _GL_WU, _GL_WV = np.meshgrid(_GL_W, _GL_W)
+
     def kendall_tau(self, param=None):
         """
-        Placeholder for Kendall's tau.
-        Currently unimplemented; returns NaN.
-        """
-        return np.nan
+        Kendall's τ via 2-D Gauss-Legendre quadrature (32×32 grid).
 
-    def sample(self, n, random_state=None):
+        BB5 is an extreme-value copula (no closed-form τ expression).
+
+        Uses the concordance identity:
+            τ = 4 · ∫₀¹∫₀¹ C(u,v) · c(u,v) du dv − 1
+
+        Parameters
+        ----------
+        param : [theta, delta], optional
+
+        Returns
+        -------
+        float  in (0, 1)
         """
-        Placeholder sampler.
-        Not implemented for BB4Copula.
+        if param is None:
+            param = self.get_parameters()
+
+        n = self._GL_N
+        U = self._GL_UU.ravel()
+        V = self._GL_VV.ravel()
+
+        cdf_vals = self.get_cdf(U, V, param).reshape(n, n)
+        pdf_vals = self.get_pdf(U, V, param).reshape(n, n)
+
+        Q = float(np.sum(cdf_vals * pdf_vals * self._GL_WU * self._GL_WV))
+        return float(np.clip(4.0 * Q - 1.0, 0.0, 1.0 - 1e-15))
+
+    def sample(self, n, rng=None):
         """
-        raise NotImplementedError("Sampling not implemented for BB5Copula")
+        Draw n samples from the BB5 copula via conditional inversion.
+
+        For each u ~ Uniform(0,1), we solve h(v|u) = W for v, where:
+
+            h(v|u) = ∂C/∂u / (∂C/∂u evaluated at v→1) → simplified to
+            h(v|u) = C_{2|1}(v|u) = u^{-1} · C(u,v) · (dg/dw) · (dw/du) · (−1)
+
+        i.e. the already-implemented partial_derivative_C_wrt_u divided by
+        the marginal density of u (which equals 1 for uniform margins).
+
+        Parameters
+        ----------
+        n   : int – number of samples
+        rng : np.random.Generator, optional
+
+        Returns
+        -------
+        np.ndarray, shape (n, 2), columns ∈ (0,1)
+        """
+        from scipy.optimize import brentq
+
+        if rng is None:
+            rng = np.random.default_rng()
+
+        U = rng.uniform(1e-6, 1 - 1e-6, n)
+        W = rng.uniform(1e-6, 1 - 1e-6, n)
+        V = np.empty(n)
+
+        for i in range(n):
+            u_i = float(U[i])
+            w_i = float(W[i])
+
+            def obj(v_):
+                return float(self.partial_derivative_C_wrt_u(u_i, v_)) - w_i
+
+            # At v→0, h→0; at v→1, h→1 — bracket always valid
+            try:
+                v_sol = brentq(obj, 1e-8, 1 - 1e-8, xtol=1e-10, maxiter=100)
+            except ValueError:
+                # fallback: closest boundary
+                v_sol = 1e-6 if abs(obj(1e-8)) < abs(obj(1 - 1e-8)) else 1 - 1e-6
+            V[i] = v_sol
+
+        return np.column_stack([U, V])
+
+    def blomqvist_beta(self, param=None):
+        """
+        Blomqvist's β = 4·C(½,½) − 1.
+
+        For BB5, λ_U = 2 − (2 − 2^{−1/δ})^{1/θ} and
+        β = 2^{λ_U} − 1  (Joe 2014, p.200).
+
+        Parameters
+        ----------
+        param : [theta, delta], optional
+
+        Returns
+        -------
+        float
+        """
+        if param is None:
+            param = self.get_parameters()
+        # Use the exact closed-form from Joe p.200
+        lam_U = self.UTDC(param)
+        return float(2.0 ** lam_U - 1.0)
+
+    def init_from_data(self, u, v):
+        """
+        Moment-matching initialisation from pseudo-observations.
+
+        Strategy
+        --------
+        1. Estimate δ from empirical λ_U using tail quantile ratios.
+        2. For that δ₀, bracket and solve for θ via numerical kendall_tau.
+
+        Parameters
+        ----------
+        u, v : array-like  – pseudo-observations in (0,1)
+
+        Returns
+        -------
+        np.ndarray [theta0, delta0]
+        """
+        from scipy.optimize import brentq
+        from scipy.stats import kendalltau as sp_kendalltau
+
+        u = np.asarray(u, float)
+        v = np.asarray(v, float)
+
+        th_lo, de_lo = 1.0 + 1e-4, 1e-4
+
+        # ---- 1. Estimate δ from empirical λ_U ---------------------------------
+        qs = (0.90, 0.92, 0.94, 0.96, 0.98)
+        lam_vals = []
+        for q in qs:
+            uq, vq = np.quantile(u, q), np.quantile(v, q)
+            joint = np.mean((u > uq) & (v > vq))
+            lam_vals.append(joint / max(1.0 - q, 1e-9))
+        lam_U_emp = float(np.clip(np.median(lam_vals), 1e-6, 1.9999))
+
+        # Invert λ_U = 2 − (2 − 2^{-1/δ})^{1/θ} w.r.t. δ at θ=2 (prior)
+        # (2 − λ_U)^θ = 2 − 2^{-1/δ}  →  δ = −1/log₂(1 − (2−λ_U)^θ)
+        theta_prior = 2.0
+        rhs = float(np.clip((2.0 - lam_U_emp) ** theta_prior, 1e-9, 1 - 1e-9))
+        inner = 1.0 - rhs  # = 2^{-1/δ}
+        if inner > 0:
+            d_try = -1.0 / np.log2(inner)
+            delta0 = float(np.clip(d_try if np.isfinite(d_try) and d_try > 0 else 1.0,
+                                   de_lo, 300.0))
+        else:
+            delta0 = 1.0
+
+        # ---- 2. Estimate θ by grid search + Brentq on numerical τ(θ,δ₀) ------
+        tau_emp_val, _ = sp_kendalltau(u, v)
+        tau_emp_val = float(np.clip(tau_emp_val, 0.01, 0.99))
+
+        theta_grid = [1.05, 1.3, 1.7, 2.5, 4.0, 7.0, 15.0, 40.0]
+        theta_grid = [t for t in theta_grid if t > th_lo]
+
+        tau_grid = []
+        for th in theta_grid:
+            try:
+                tau_grid.append((th, self.kendall_tau([th, delta0])))
+            except Exception:
+                tau_grid.append((th, np.nan))
+
+        theta0 = theta_grid[0] if theta_grid else 2.0
+        for i in range(len(tau_grid) - 1):
+            th_lo_br, t_lo_br = tau_grid[i]
+            th_hi_br, t_hi_br = tau_grid[i + 1]
+            if np.isfinite(t_lo_br) and np.isfinite(t_hi_br):
+                if (t_lo_br - tau_emp_val) * (t_hi_br - tau_emp_val) <= 0:
+                    try:
+                        theta0 = brentq(
+                            lambda th: self.kendall_tau([th, delta0]) - tau_emp_val,
+                            th_lo_br, th_hi_br,
+                            xtol=1e-4, rtol=1e-4, maxiter=30,
+                        )
+                    except Exception:
+                        theta0 = 0.5 * (th_lo_br + th_hi_br)
+                    break
+
+        theta0 = float(np.clip(theta0, th_lo, 200.0))
+        delta0 = float(np.clip(delta0, de_lo, 300.0))
+        return np.array([theta0, delta0], dtype=float)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """

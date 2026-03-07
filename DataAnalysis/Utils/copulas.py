@@ -71,6 +71,11 @@ class CopulaSelectionConfig:
         ("Marshall-Olkin", CopulaType.MARSHALL_OLKIN),
 
         ("BB1", CopulaType.BB1),
+        ("BB2", CopulaType.BB2),
+        ("BB3", CopulaType.BB3),
+        ("BB4", CopulaType.BB4),
+        ("BB5", CopulaType.BB5),
+        ("BB6", CopulaType.BB6),
 
         # ("Bernstein", CopulaType.BERNSTEIN),
     )

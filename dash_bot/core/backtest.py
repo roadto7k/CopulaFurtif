@@ -466,7 +466,7 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
 
     monthly = pd.Series(dtype=float)
     if len(equity) > 10:
-        monthly = equity.resample("M").last().pct_change().dropna()
+        monthly = equity.resample("ME").last().pct_change().dropna()
 
     cop_freq = pd.DataFrame(columns=["copula", "count"])
     if not weekly_df.empty and "copula" in weekly_df.columns:

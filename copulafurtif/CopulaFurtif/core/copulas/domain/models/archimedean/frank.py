@@ -234,27 +234,36 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return np.nan
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
-        """Compute ∂C(u,v)/∂u.
+        """Compute ∂C(u,v)/∂u for the Frank copula."""
 
-        Args:
-            u (float or np.ndarray): First input in (0,1).
-            v (float or np.ndarray): Second input in (0,1).
-            param (np.ndarray, optional): Copula parameter [theta].
-
-        Returns:
-            float or np.ndarray: Partial derivative values.
-        """
         if param is None:
             param = self.get_parameters()
 
-        theta = param[0]
+        theta = float(param[0])
 
-        e_theta_u = np.exp(-theta * u)
-        e_theta_v = np.exp(-theta * v)
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
 
-        num = e_theta_u * (e_theta_v - 1)
-        denom = np.exp(-theta) - 1 + (e_theta_u - 1) * (e_theta_v - 1)
-        return num / denom
+        # Frank -> independence as theta -> 0
+        if np.abs(theta) < 1e-10:
+            res = v
+            return float(res) if np.ndim(res) == 0 else res
+
+        a = np.expm1(-theta * u)  # exp(-theta*u) - 1
+        b = np.expm1(-theta * v)  # exp(-theta*v) - 1
+        c = np.expm1(-theta)  # exp(-theta) - 1
+        eu = np.exp(-theta * u)
+
+        num = eu * b
+        denom = c + a * b
+
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            res = num / denom
+
+        # Théoriquement, la dérivée conditionnelle doit rester dans [0,1]
+        res = np.clip(res, 0.0, 1.0)
+
+        return float(res) if np.ndim(res) == 0 else res
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
         """Compute ∂C(u,v)/∂v via symmetry.

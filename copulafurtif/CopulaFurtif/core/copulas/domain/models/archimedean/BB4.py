@@ -23,9 +23,9 @@ Key properties
 
 import numpy as np
 from numpy.random import default_rng
-from scipy.special import beta as beta_fn
 from scipy.optimize import brentq
 from scipy.stats import kendalltau as sp_kendalltau
+
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
@@ -123,18 +123,18 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def get_pdf(self, u, v, param=None):
         """
-        Copula density c(u,v;θ,δ) = ∂²C/∂u∂v.
+        Copula density c(u,v;θ,δ) = ∂²C/∂u∂v, computed fully in log-space.
 
-        Formula (Joe 2014, §4.20, equation for c(u,v;θ,δ)):
-
-            Let x = (u^{-θ}-1)^{-δ},  y = (v^{-θ}-1)^{-δ}
-                a = x^{-1/δ} = u^{-θ}-1,  b = y^{-1/δ} = v^{-θ}-1
-                S = x+y = a^{-δ}+b^{-δ},  T = S^{-1/δ}
-                Z = 1 + a + b - T
+        Formula (Joe 2014, §4.20):
+            a = u^{-θ}-1,  b = v^{-θ}-1
+            S = a^{-δ}+b^{-δ},  T = S^{-1/δ},  Z = 1+a+b−T
 
             c = Z^{-1/θ-2} · a^{-δ-1} · b^{-δ-1} · (uv)^{-θ-1}
-              · [(θ+1)(a^{δ+1} - T/S)(b^{δ+1} - T/S)
-                + θ(1+δ)·Z·T/S²]
+              · [(θ+1)(a^{δ+1}−T/S)(b^{δ+1}−T/S) + θ(1+δ)·Z·T/S²]
+
+        Note: a^{δ+1} ≥ T/S always (since S ≥ a^{-δ}), so each bracket
+        factor is non-negative and can be computed safely in log-space via
+        log1p(-exp(log_ratio)) where log_ratio ≤ 0.
 
         Parameters
         ----------
@@ -147,31 +147,57 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         if param is None:
             param = self.get_parameters()
-        theta, delta = param
+        theta, delta = float(param[0]), float(param[1])
 
         eps = 1e-14
         u = np.clip(np.asarray(u, float), eps, 1.0 - eps)
         v = np.clip(np.asarray(v, float), eps, 1.0 - eps)
 
-        a = np.maximum(u ** (-theta) - 1.0, eps)
-        b = np.maximum(v ** (-theta) - 1.0, eps)
+        # --- log-space core quantities ---
+        log_a = np.log(np.maximum(u ** (-theta) - 1.0, eps))
+        log_b = np.log(np.maximum(v ** (-theta) - 1.0, eps))
 
-        # S = a^{-δ} + b^{-δ}  (= x + y in image notation)
-        S = a ** (-delta) + b ** (-delta)
-        T = S ** (-1.0 / delta)                # = (x+y)^{-1/δ}
-        Z = np.maximum(1.0 + a + b - T, eps)   # copula denominator
+        # log(S) = log(a^{-δ} + b^{-δ}) via logsumexp
+        log_S = self._logsumexp(-delta * log_a, -delta * log_b)
+        log_T = -log_S / delta                   # log(S^{-1/δ})
 
-        # two bracket terms (Joe 2014 eq. after (4.61))
-        term1 = (theta + 1.0) * (a ** (delta + 1.0) - T / S) * (b ** (delta + 1.0) - T / S)
-        term2 = theta * (1.0 + delta) * Z * T / (S * S)
+        # Z = 1 + a + b - T  (always > 0 for valid copula parameters)
+        Z = np.maximum(1.0 + np.exp(log_a) + np.exp(log_b) - np.exp(log_T), eps)
+        log_Z = np.log(Z)
 
-        pdf = (
-            Z ** (-1.0 / theta - 2.0)
-            * a ** (-delta - 1.0) * b ** (-delta - 1.0)
-            * u ** (-theta - 1.0) * v ** (-theta - 1.0)
-            * (term1 + term2)
+        # --- leading log-factor ---
+        # log( Z^{-1/θ-2} · a^{-δ-1} · b^{-δ-1} · u^{-θ-1} · v^{-θ-1} )
+        log_lead = (
+            (-1.0 / theta - 2.0) * log_Z
+            + (-delta - 1.0) * (log_a + log_b)
+            + (-theta - 1.0) * (np.log(u) + np.log(v))
         )
-        return np.maximum(pdf, 0.0)
+
+        # --- bracket term P1 = (θ+1)·f1·f2 ---
+        # f1 = a^{δ+1} - T/S = a^{δ+1} · (1 - exp(log_ratio_a))
+        # log_ratio_a = log(T/S) - log(a^{δ+1}) = -(1/δ+1)·log_S - (δ+1)·log_a ≤ 0
+        log_ratio_a = -(1.0 / delta + 1.0) * log_S - (delta + 1.0) * log_a
+        log_ratio_b = -(1.0 / delta + 1.0) * log_S - (delta + 1.0) * log_b
+        # clip to strictly < 0 to avoid log1p(-1) = -inf
+        log_ratio_a = np.minimum(log_ratio_a, -1e-12)
+        log_ratio_b = np.minimum(log_ratio_b, -1e-12)
+
+        log_f1 = (delta + 1.0) * log_a + np.log1p(-np.exp(log_ratio_a))
+        log_f2 = (delta + 1.0) * log_b + np.log1p(-np.exp(log_ratio_b))
+        log_P1 = np.log(theta + 1.0) + log_f1 + log_f2
+
+        # --- bracket term P2 = θ·(1+δ)·Z·T/S² ---
+        # log(T/S²) = log_T - 2·log_S = -(1/δ + 2)·log_S
+        log_P2 = (
+            np.log(theta * (1.0 + delta))
+            + log_Z
+            - (1.0 / delta + 2.0) * log_S
+        )
+
+        # --- combine and exponentiate ---
+        log_bracket = np.logaddexp(log_P1, log_P2)
+        log_pdf = log_lead + log_bracket
+        return np.maximum(np.exp(log_pdf), 0.0)
 
     # ------------------------------------------------------------------
     # Partial derivatives (h-functions)
@@ -268,12 +294,27 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     # Kendall's tau
     # ------------------------------------------------------------------
 
+    # Pre-computed 32-point Gauss-Legendre nodes/weights on [0.005, 0.995]
+    # (computed once at import time, reused by every kendall_tau call)
+    _GL_N = 32
+    _xi_gl, _wi_gl = __import__('numpy.polynomial.legendre', fromlist=['leggauss']).leggauss(_GL_N)
+    _GL_HALF = 0.5 * (0.995 - 0.005)
+    _GL_MID  = 0.5 * (0.995 + 0.005)
+    _GL_U    = _GL_HALF * _xi_gl + _GL_MID        # nodes on [0.005, 0.995]
+    _GL_W    = _GL_HALF * _wi_gl                   # scaled weights
+    # meshgrid (32×32 = 1024 points)
+    _GL_UU, _GL_VV = np.meshgrid(_GL_U, _GL_U)    # shape (32, 32)
+    _GL_WU, _GL_WV = np.meshgrid(_GL_W, _GL_W)
+
     def kendall_tau(self, param=None):
         """
-        Theoretical Kendall's tau.
-        τ = 1 - 2·B(1 + 1/θ, 1 + 1/δ)
+        Kendall's τ via 2D Gauss-Legendre quadrature (32×32 grid).
 
-        where B is the beta function.
+        BB4 is NOT Archimedean so the standard φ/φ' formula does not apply.
+        The formula τ = 1 − 2·B(1+1/θ, 1+1/δ) is INCORRECT for BB4.
+
+        General concordance identity:
+            τ = 4·∫₀¹∫₀¹ C(u,v)·c(u,v) du dv − 1
 
         Parameters
         ----------
@@ -281,12 +322,21 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         Returns
         -------
-        float
+        float  in (0, 1) for θ,δ > 0
         """
         if param is None:
             param = self.get_parameters()
-        theta, delta = float(param[0]), float(param[1])
-        return float(1.0 - 2.0 * beta_fn(1.0 + 1.0 / theta, 1.0 + 1.0 / delta))
+
+        n = self._GL_N
+        U = self._GL_UU.ravel()
+        V = self._GL_VV.ravel()
+
+        cdf_vals = self.get_cdf(U, V, param).reshape(n, n)
+        pdf_vals = self.get_pdf(U, V, param).reshape(n, n)
+
+        Q = float(np.sum(cdf_vals * pdf_vals * self._GL_WU * self._GL_WV))
+        # clip to [0, 1) — exact 1.0 can occur numerically for extreme params
+        return float(np.clip(4.0 * Q - 1.0, 0.0, 1.0 - 1e-15))
 
     # ------------------------------------------------------------------
     # Blomqvist beta
@@ -434,27 +484,40 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         delta0 = float(np.clip(delta0, de_lo, de_hi))
 
-        # ---- 3. Estimate θ from empirical Kendall τ given δ ---------------
+        # ---- 3. Estimate θ by grid search + Brentq on numerical τ(θ,δ₀) ----
         tau_emp_val, _ = sp_kendalltau(u, v)
-        tau_emp_val = float(np.clip(tau_emp_val, -0.99, 0.99))
+        tau_emp_val = float(np.clip(tau_emp_val, 0.01, 0.99))
 
-        theta0 = 1.0  # safe default
+        # Coarse grid to bracket the root (τ increases with θ)
+        theta_grid = [0.05, 0.1, 0.3, 0.5, 1.0, 2.0, 4.0, 8.0, 20.0, 50.0]
+        theta_grid = [t for t in theta_grid if th_lo < t < th_hi]
 
-        def tau_residual(th):
-            return 1.0 - 2.0 * beta_fn(1.0 + 1.0 / th, 1.0 + 1.0 / delta0) - tau_emp_val
+        tau_grid = []
+        for th in theta_grid:
+            try:
+                tau_grid.append((th, self.kendall_tau([th, delta0])))
+            except Exception:
+                tau_grid.append((th, np.nan))
 
-        try:
-            f_lo = tau_residual(th_lo + 1e-4)
-            f_hi = tau_residual(th_hi - 1e-4)
-            if f_lo * f_hi < 0:
-                theta0 = brentq(tau_residual, th_lo + 1e-4, th_hi - 1e-4,
-                                xtol=1e-6, rtol=1e-6, maxiter=200)
-        except (ValueError, RuntimeError):
-            # monotonic search: larger tau → smaller theta
-            for th_try in [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]:
-                if th_lo < th_try < th_hi:
-                    theta0 = th_try
+        # Find bracket where tau crosses tau_emp_val
+        theta0 = theta_grid[0] if theta_grid else 1.0
+        for i in range(len(tau_grid) - 1):
+            th_lo_br, t_lo_br = tau_grid[i]
+            th_hi_br, t_hi_br = tau_grid[i + 1]
+            if np.isfinite(t_lo_br) and np.isfinite(t_hi_br):
+                if (t_lo_br - tau_emp_val) * (t_hi_br - tau_emp_val) <= 0:
+                    try:
+                        theta0 = brentq(
+                            lambda th: self.kendall_tau([th, delta0]) - tau_emp_val,
+                            th_lo_br, th_hi_br,
+                            xtol=1e-4, rtol=1e-4, maxiter=30,
+                        )
+                    except Exception:
+                        theta0 = 0.5 * (th_lo_br + th_hi_br)
                     break
+                # track closest if no crossing found
+                if abs(t_lo_br - tau_emp_val) < abs(self.kendall_tau([theta0, delta0]) - tau_emp_val):
+                    theta0 = th_lo_br
 
         theta0 = float(np.clip(theta0, th_lo, th_hi))
         return np.array([theta0, delta0], dtype=float)
