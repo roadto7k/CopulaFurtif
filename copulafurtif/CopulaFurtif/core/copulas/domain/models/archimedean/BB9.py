@@ -144,19 +144,175 @@ class BB9Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         )
         return _safe_exp(log_pdf)
 
+    # ------------------------------------------------------------------
+    # Cached GL-64 nodes for kendall_tau (class-level, computed at import)
+    # ------------------------------------------------------------------
+    _GL_N_TAU = 64
+    _xi_tau, _wi_tau = __import__(
+        'numpy.polynomial.legendre', fromlist=['leggauss']
+    ).leggauss(_GL_N_TAU)
+    _GL_HALF_TAU = 0.5 * (1.0 - 2e-6)
+    _GL_MID_TAU  = 0.5 * (1.0 + 2e-6 - 1e-6)
+    _GL_T_TAU    = _GL_HALF_TAU * _xi_tau + _GL_MID_TAU
+    _GL_W_TAU    = _GL_HALF_TAU * _wi_tau
+
     def kendall_tau(self, param=None):
         """
-        Placeholder for Kendall's tau.
-        Currently unimplemented; returns NaN.
-        """
-        return np.nan
+        Kendall's τ via the Archimedean concordance formula.
 
-    def sample(self, n, random_state=None):
+        BB9 IS Archimedean (Joe 2014 §4.25.1) with generator:
+            φ(t) = (δ⁻¹ − log t)^ϑ − δ⁻ϑ     (maps (0,1] to [0,∞))
+            φ'(t) = −ϑ · (δ⁻¹ − log t)^{ϑ−1} / t   (< 0)
+
+        τ = 1 + 4·∫₀¹ φ(t)/φ'(t) dt
+
+        Evaluated on a vectorised 64-point Gauss-Legendre grid (~0.02ms).
+
+        Parameters
+        ----------
+        param : [theta, delta], optional
+
+        Returns
+        -------
+        float ∈ (0, 1)
         """
-        Placeholder sampler.
-        Not implemented for BB9Copula.
+        if param is None:
+            param = self.get_parameters()
+        theta, delta = float(param[0]), float(param[1])
+        delta_inv = 1.0 / delta
+
+        T = self._GL_T_TAU
+        W = self._GL_W_TAU
+
+        x_t    = delta_inv - _safe_log(T)              # δ⁻¹ − log t > 0
+        phi_t  = _safe_pow(x_t, theta) - delta_inv**theta
+        phi_p  = -theta * _safe_pow(x_t, theta - 1.0) / T   # < 0
+
+        result = float(np.dot(W, phi_t / phi_p))
+        return float(np.clip(1.0 + 4.0 * result, 0.0, 1.0 - 1e-15))
+
+    def blomqvist_beta(self, param=None):
         """
-        raise NotImplementedError("Sampling not implemented for BB9Copula")
+        Blomqvist's β = 4·C(½,½) − 1.
+
+        Parameters
+        ----------
+        param : [theta, delta], optional
+
+        Returns
+        -------
+        float
+        """
+        if param is None:
+            param = self.get_parameters()
+        return float(4.0 * self.get_cdf(0.5, 0.5, param) - 1.0)
+
+    def sample(self, n, rng=None):
+        """
+        Draw n samples from BB9 via conditional inversion.
+
+        For each u_i ~ U(0,1), draw w_i ~ U(0,1) and solve
+            ∂C/∂u(u_i, v) = w_i  for v  using Brentq.
+
+        Parameters
+        ----------
+        n   : int
+        rng : np.random.Generator, optional
+
+        Returns
+        -------
+        np.ndarray, shape (n, 2)
+        """
+        from scipy.optimize import brentq
+
+        if rng is None:
+            rng = np.random.default_rng()
+
+        U = rng.uniform(1e-6, 1 - 1e-6, n)
+        W_uni = rng.uniform(1e-6, 1 - 1e-6, n)
+        V = np.empty(n)
+
+        for i in range(n):
+            u_i = float(U[i])
+            w_i = float(W_uni[i])
+
+            def obj(v_):
+                return float(self.partial_derivative_C_wrt_u(u_i, v_)) - w_i
+
+            try:
+                V[i] = brentq(obj, 1e-8, 1 - 1e-8, xtol=1e-10, maxiter=100)
+            except ValueError:
+                V[i] = 1e-6 if abs(obj(1e-8)) < abs(obj(1 - 1e-8)) else 1 - 1e-6
+
+        return np.column_stack([U, V])
+
+    def init_from_data(self, u, v):
+        """
+        Moment-matching initialisation from pseudo-observations.
+
+        Strategy
+        --------
+        1. Estimate ϑ and δ jointly by grid search on empirical Kendall τ
+           (τ depends on both), using Blomqvist β̂ to pin δ first.
+
+        Parameters
+        ----------
+        u, v : array-like, pseudo-observations in (0, 1)
+
+        Returns
+        -------
+        np.ndarray [theta0, delta0]
+        """
+        from scipy.optimize import brentq
+        from scipy.stats import kendalltau as sp_kendalltau
+
+        u = np.asarray(u, float)
+        v = np.asarray(v, float)
+
+        # ---- 1. Estimate δ from Blomqvist β̂ (prior ϑ=2) ------------------
+        beta_emp = float(np.clip(4.0 * np.mean((u > 0.5) == (v > 0.5)) - 1.0, -0.99, 0.99))
+        delta0 = 1.0
+        best_err = np.inf
+        for de in np.linspace(0.1, 8.0, 25):
+            try:
+                beta_try = 4.0 * float(self.get_cdf(0.5, 0.5, [2.0, de])) - 1.0
+                err = abs(beta_try - beta_emp)
+                if err < best_err:
+                    best_err = err; delta0 = de
+            except Exception:
+                pass
+
+        # ---- 2. Estimate ϑ from τ̂ given δ₀ --------------------------------
+        tau_emp_val, _ = sp_kendalltau(u, v)
+        tau_emp_val = float(np.clip(tau_emp_val, 0.01, 0.99))
+
+        theta_grid = [1.1, 1.5, 2.0, 3.0, 5.0, 8.0, 15.0]
+        tau_grid = []
+        for th in theta_grid:
+            try:
+                tau_grid.append((th, self.kendall_tau([th, delta0])))
+            except Exception:
+                tau_grid.append((th, np.nan))
+
+        theta0 = theta_grid[0]
+        for i in range(len(tau_grid) - 1):
+            th_lo_br, t_lo_br = tau_grid[i]
+            th_hi_br, t_hi_br = tau_grid[i + 1]
+            if np.isfinite(t_lo_br) and np.isfinite(t_hi_br):
+                if (t_lo_br - tau_emp_val) * (t_hi_br - tau_emp_val) <= 0:
+                    try:
+                        theta0 = brentq(
+                            lambda th: self.kendall_tau([th, delta0]) - tau_emp_val,
+                            th_lo_br, th_hi_br,
+                            xtol=1e-4, rtol=1e-4, maxiter=30,
+                        )
+                    except Exception:
+                        theta0 = 0.5 * (th_lo_br + th_hi_br)
+                    break
+
+        theta0 = float(np.clip(theta0, 1.001, 200.0))
+        delta0 = float(np.clip(delta0, 1e-4, 300.0))
+        return np.array([theta0, delta0], dtype=float)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """Compute the partial derivative ∂C(u,v)/∂u of the BB9 copula.

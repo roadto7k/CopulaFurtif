@@ -200,6 +200,59 @@ def fig_copula_freq(cop_freq: pd.DataFrame) -> go.Figure:
                       xaxis_title="Copula", yaxis_title="# Weeks")
     return fig
 
+def compute_copula_stats(trades: pd.DataFrame) -> pd.DataFrame:
+    """Compute per-copula performance statistics from trades DataFrame."""
+    if trades is None or trades.empty or "copula" not in trades.columns:
+        return pd.DataFrame()
+
+    required = {"copula", "net_pnl"}
+    if not required.issubset(trades.columns):
+        return pd.DataFrame()
+
+    df = trades[trades["copula"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    def agg(g):
+        n        = len(g)
+        wins     = (g["net_pnl"] > 0).sum()
+        win_rate = wins / n if n > 0 else 0.0
+        avg_pnl  = g["net_pnl"].mean()
+        avg_win  = g.loc[g["net_pnl"] > 0, "net_pnl"].mean() if wins > 0 else 0.0
+        avg_loss = g.loc[g["net_pnl"] <= 0, "net_pnl"].mean() if (n - wins) > 0 else 0.0
+        total    = g["net_pnl"].sum()
+        best     = g["net_pnl"].max()
+        worst    = g["net_pnl"].min()
+        profit_factor = (
+            abs(g.loc[g["net_pnl"] > 0, "net_pnl"].sum()) /
+            abs(g.loc[g["net_pnl"] <= 0, "net_pnl"].sum())
+            if (g["net_pnl"] <= 0).any() and (g["net_pnl"] > 0).any()
+            else np.nan
+        )
+        avg_bars = g["bars"].mean() if "bars" in g.columns else np.nan
+        return pd.Series({
+            "Trades":        n,
+            "Win Rate":      f"{win_rate:.1%}",
+            "Avg PnL":       f"{avg_pnl:+.1f}",
+            "Avg Win":       f"{avg_win:+.1f}",
+            "Avg Loss":      f"{avg_loss:+.1f}",
+            "Total PnL":     f"{total:+.1f}",
+            "Best":          f"{best:+.1f}",
+            "Worst":         f"{worst:+.1f}",
+            "Profit Factor": f"{profit_factor:.2f}" if np.isfinite(profit_factor) else "—",
+            "Avg Bars":      f"{avg_bars:.0f}" if np.isfinite(avg_bars) else "—",
+        })
+
+    stats = df.groupby("copula").apply(agg).reset_index()
+    stats.rename(columns={"copula": "Copula"}, inplace=True)
+    # Sort by total PnL descending (parse back to float for sorting)
+    stats["_sort"] = df.groupby("copula")["net_pnl"].sum().reindex(
+        stats["Copula"]
+    ).values
+    stats = stats.sort_values("_sort", ascending=False).drop(columns=["_sort"])
+    return stats
+
+
 def fig_prices(prices, *, title: str = "Prices"):
     if prices is None:
         return fig_empty(title)

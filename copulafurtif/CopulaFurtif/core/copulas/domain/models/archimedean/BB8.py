@@ -10,270 +10,364 @@ _FLOAT_MIN_LOG = -745.0
 
 
 def _safe_log(x):
-    """Natural log with floor to avoid -inf."""
     return _np_log(np.clip(x, _FLOAT_MIN, None))
 
 
 def _safe_exp(log_x):
-    """Exp with clipping of exponent to float64 range."""
     return _np_exp(np.clip(log_x, _FLOAT_MIN_LOG, _FLOAT_MAX_LOG))
 
 
 def _safe_pow(base, exponent):
-    """Stable positive power via exp(exponent * log(base))."""
     return _safe_exp(exponent * _safe_log(base))
 
 
 class BB8Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
-    BB8 Copula (Durante et al.):
-      C(u,v) = [1 - (1-A)*(1-B)]^(1/theta),
-      where A = [1 - (1-u)^theta]^delta,
-            B = [1 - (1-v)^theta]^delta.
+    BB8 Copula (Joe 1993 / Joe 2014 §4.24.1).
 
-    Attributes:
-        name (str): Human-readable name of the copula.
-        type (str): Identifier for the copula family.
-        bounds_param (list of tuple): Bounds for copula parameters.
-        parameters (np.ndarray): Current copula parameters.
-        default_optim_method (str): Default method for optimization.
+    Two-parameter Archimedean copula based on a two-parameter LT family:
+
+        C(u,v; ϑ,δ) = δ⁻¹(1 − {1 − η⁻¹·x·y}^{1/ϑ})
+
+    where:
+        η  = 1 − (1−δ)^ϑ
+        x  = 1 − (1−δu)^ϑ
+        y  = 1 − (1−δv)^ϑ
+        ϑ ≥ 1,  0 < δ ≤ 1.
+
+    Properties:
+        • C⊥ as δ→0⁺ or ϑ→1⁺ (in appropriate limits).
+        • Frank family as ϑ→∞ with η held constant.
+        • No tail dependence for 0 < δ < 1 (λ_L = λ_U = 0).
+        • Concordance increases with both ϑ and δ.
+        • Archimedean generator: φ(t) = −log{[1−(1−δt)^ϑ]/η}.
     """
+
+    # ------------------------------------------------------------------
+    # Cached GL-64 nodes for kendall_tau (class-level, computed at import)
+    # ------------------------------------------------------------------
+    _GL_N_TAU = 64
+    _xi_tau, _wi_tau = __import__(
+        'numpy.polynomial.legendre', fromlist=['leggauss']
+    ).leggauss(_GL_N_TAU)
+    _GL_HALF_TAU = 0.5 * (1.0 - 2e-6)
+    _GL_MID_TAU  = 0.5 * (1.0 + 2e-6 - 1e-6)
+    _GL_T_TAU    = _GL_HALF_TAU * _xi_tau + _GL_MID_TAU   # shape (64,)
+    _GL_W_TAU    = _GL_HALF_TAU * _wi_tau
 
     def __init__(self):
         super().__init__()
-        self.name = "BB8 Copula (Durante)"
+        self.name = "BB8 Copula"
         self.type = "bb8"
         self.default_optim_method = "Powell"
-        self.init_parameters(CopulaParameters(np.array([2.0, 0.7]), [(1.0, np.inf), (1e-6, 1.0)], ["theta", "delta"]))
+        self.init_parameters(CopulaParameters(
+            np.array([2.0, 0.7]),
+            [(1.0, np.inf), (1e-8, 1.0)],
+            ["theta", "delta"],
+        ))
+
+    # ------------------------------------------------------------------
+    # Core intermediates (shared across methods)
+    # ------------------------------------------------------------------
 
     @staticmethod
-    def _transform(u, theta):
-        """Return X = 1-(1-u)^θ and log(1-u) (for reuse)."""
-        log_one_minus_u = _safe_log(1.0 - u)
-        pow_term = _safe_exp(theta * log_one_minus_u)  # (1-u)^θ
-        X = 1.0 - pow_term
-        return X, pow_term, log_one_minus_u
+    def _intermediates(u, v, theta, delta):
+        """
+        Return (η, x, y, w) for the BB8 copula.
+
+        η  = 1 − (1−δ)^ϑ
+        x  = 1 − (1−δu)^ϑ
+        y  = 1 − (1−δv)^ϑ
+        w  = 1 − η⁻¹·x·y   (clipped to [1e-300, 1])
+        """
+        eta = 1.0 - (1.0 - delta) ** theta
+        x = 1.0 - _safe_exp(theta * _safe_log(1.0 - delta * u))
+        y = 1.0 - _safe_exp(theta * _safe_log(1.0 - delta * v))
+        w = np.clip(1.0 - x * y / eta, 1e-300, 1.0)
+        return eta, x, y, w
 
     def get_cdf(self, u, v, param=None):
         """
-        Evaluate the BB8 copula cumulative distribution function at (u, v).
+        Evaluate C(u,v; ϑ,δ) = δ⁻¹(1 − {1 − η⁻¹·x·y}^{1/ϑ}).
 
         Args:
-            u (float or array-like): First uniform margin in (0,1).
-            v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
+            u, v (float or array-like): Uniform margins in (0,1).
+            param ([theta, delta], optional): Parameters. Default: self.get_parameters().
 
         Returns:
-            float or np.ndarray: CDF value C(u, v).
+            float or np.ndarray
         """
-
         if param is None:
             param = self.get_parameters()
-        theta, delta = param
-
+        theta, delta = float(param[0]), float(param[1])
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
-
-        # X = 1 - (1‑u)^θ   and   Y = 1 - (1‑v)^θ      (use log‑space for stability)
-        log_one_minus_u = _safe_log(1.0 - u)
-        log_one_minus_v = _safe_log(1.0 - v)
-        X = 1.0 - _safe_exp(theta * log_one_minus_u)
-        Y = 1.0 - _safe_exp(theta * log_one_minus_v)
-
-        # A, B
-        A = _safe_pow(X, delta)
-        B = _safe_pow(Y, delta)
-
-        # inner term ∈[0,1]
-        inner = 1.0 - (1.0 - A) * (1.0 - B)
-        inner = np.clip(inner, 0.0, 1.0)
-
-        # final CDF
-        return _safe_pow(inner, 1.0 / theta)
-
+        eta, x, y, w = self._intermediates(u, v, theta, delta)
+        return (1.0 - _safe_pow(w, 1.0 / theta)) / delta
 
     def get_pdf(self, u, v, param=None):
         """
-        Approximate the BB8 copula probability density function at (u, v) .
+        Copula density (Joe 2014, §4.24.1):
+
+            c(u,v) = η⁻¹δ · (1−η⁻¹xy)^{1/ϑ−2} · (ϑ − η⁻¹xy)
+                     · (1−δu)^{ϑ−1} · (1−δv)^{ϑ−1}
 
         Args:
-            u (float or array-like): First uniform margin in (0,1).
-            v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
+            u, v (float or array-like): Uniform margins in (0,1).
+            param ([theta, delta], optional): Parameters.
 
         Returns:
-            float or np.ndarray: Approximate PDF c(u, v).
+            float or np.ndarray (≥ 0)
         """
-
         if param is None:
             param = self.get_parameters()
-
-        theta, delta = param
+        theta, delta = float(param[0]), float(param[1])
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        log1mu = _safe_log(1.0 - u)
-        log1mv = _safe_log(1.0 - v)
-        log_X = _safe_log(1.0 - _safe_exp(theta * log1mu))
-        log_Y = _safe_log(1.0 - _safe_exp(theta * log1mv))
-        X = _safe_exp(log_X)
-        Y = _safe_exp(log_Y)
-        A = _safe_pow(X, delta)
-        B = _safe_pow(Y, delta)
-        Z = np.clip(A + B - A * B, _FLOAT_MIN, 1.0)
+        eta, x, y, w = self._intermediates(u, v, theta, delta)
+        xy_over_eta = x * y / eta
 
-        # d²C/(du dv)  = (1/θ)(1/θ-1) Z^{1/θ-2} (1-B)(1-A) δ² X^{δ-1}Y^{δ-1} θ² (1-u)^{θ-1}(1-v)^{θ-1}
+        # log-space for numerical stability
         log_pdf = (
-                _safe_log(delta) * 2
-                + 2.0 * _safe_log(theta)
-                + _safe_log(1.0 - A)
-                + _safe_log(1.0 - B)
-                + (1.0 / theta - 2.0) * _safe_log(Z)
-                + (delta - 1.0) * (log_X + log_Y)
-                + _safe_log(_safe_exp((theta - 1.0) * log1mu))
-                + _safe_log(_safe_exp((theta - 1.0) * log1mv))
-                + _safe_log(1.0 / theta)  # prefactor
-                + _safe_log(abs(1.0 / theta - 1.0))  # second derivative factor
+            -_safe_log(eta)
+            + _safe_log(delta)
+            + (1.0 / theta - 2.0) * _safe_log(w)
+            + _safe_log(np.clip(theta - xy_over_eta, 1e-300, None))
+            + (theta - 1.0) * _safe_log(1.0 - delta * u)
+            + (theta - 1.0) * _safe_log(1.0 - delta * v)
         )
-        pdf_val = _safe_exp(log_pdf)
-        return np.maximum(pdf_val, 0.0)
-
-    def kendall_tau(self, param=None):
-        """
-        Placeholder for Kendall's tau.
-        Currently unimplemented; returns NaN.
-        """
-        return np.nan
-
-    def sample(self, n, random_state=None):
-        """
-        Placeholder sampler.
-        Not implemented for BB8Copula.
-        """
-        raise NotImplementedError("Sampling not implemented for BB8Copula")
+        return np.maximum(_safe_exp(log_pdf), 0.0)
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
         """
-        Approximate the partial derivative ∂C(u,v)/∂u for the BB8 copula.
+        ∂C/∂u = η⁻¹ · y · (1−δu)^{ϑ−1} · (1−η⁻¹xy)^{1/ϑ−1}
 
         Args:
-            u (float or array-like): First margin in (0,1).
-            v (float or array-like): Second margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
+            u, v (float or array-like): Uniform margins in (0,1).
+            param ([theta, delta], optional): Parameters.
 
         Returns:
-            float or np.ndarray.
+            float or np.ndarray
         """
-
         if param is None:
             param = self.get_parameters()
-        theta, delta = param
+        theta, delta = float(param[0]), float(param[1])
         eps = 1e-12
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        # log‑helpers
-        log1mu = _safe_log(1.0 - u)
-        log1mv = _safe_log(1.0 - v)
-
-        # X, Y, A, B
-        log_X = _safe_log(1.0 - _safe_exp(theta * log1mu))  # log X
-        log_Y = _safe_log(1.0 - _safe_exp(theta * log1mv))
-        log_A = delta * log_X
-        log_B = delta * log_Y
-        A = _safe_exp(log_A)
-        B = _safe_exp(log_B)
-
-        # Z = 1-(1-A)(1-B) = A+B-AB
-        Z = A + B - A * B
-        Z = np.clip(Z, _FLOAT_MIN, 1.0)  # pour éviter 0
-        log_Z = _safe_log(Z)
-
-        # dX/du
-        dX_du = theta * _safe_exp((theta - 1.0) * log1mu)
-        # dA/du = δ X^{δ-1} dX/du  -> log(dA/du)
-        log_dA_du = _safe_log(delta) + (delta - 1.0) * log_X + _safe_log(dX_du)
-
-        # (1-B)
-        log_1mB = _safe_log(1.0 - B)
-
-        # log(C_u) = log(δ) - log(θ) + log(1-B) + (1/θ-1)log Z + (δ-1)log X + log dX/du - log X
-        log_Cu = (
-                _safe_log(delta)
-                - _safe_log(theta)
-                + log_1mB
-                + (1.0 / theta - 1.0) * log_Z
-                + (delta - 1.0) * log_X
-                + _safe_log(dX_du)
-        )
-        return _safe_exp(log_Cu)
+        eta, x, y, w = self._intermediates(u, v, theta, delta)
+        return (y / eta) * _safe_pow(1.0 - delta * u, theta - 1.0) * _safe_pow(w, 1.0 / theta - 1.0)
 
     def partial_derivative_C_wrt_v(self, u, v, param=None):
-        """
-        Approximate the partial derivative ∂C(u,v)/∂v for the BB8 copula.
-
-        Args:
-            u (float or array-like): First uniform margin in (0,1).
-            v (float or array-like): Second uniform margin in (0,1).
-            param (Sequence[float], optional): Copula parameters (θ, δ). Defaults to self.get_parameters().
-
-        Returns:
-            float or numpy.ndarray: Approximate ∂C/∂v at (u, v).
-        """
-
+        """∂C/∂v — by symmetry, equals ∂C/∂u with u and v swapped."""
         return self.partial_derivative_C_wrt_u(v, u, param)
 
+    # ------------------------------------------------------------------
+    # Kendall's tau
+    # ------------------------------------------------------------------
+
+    def kendall_tau(self, param=None):
+        """
+        Kendall's τ via the Archimedean concordance formula.
+
+        BB8 IS Archimedean with generator:
+            φ(t) = −log{[1−(1−δt)^ϑ]/η}   (maps [0,1] to [0,∞), φ(1)=0)
+            φ'(t) = −ϑδ(1−δt)^{ϑ−1} / [1−(1−δt)^ϑ]  < 0
+
+        τ = 1 + 4·∫₀¹ φ(t)/φ'(t) dt
+
+        Evaluated on a vectorised 64-point Gauss-Legendre grid (~0.03ms).
+
+        Parameters
+        ----------
+        param : [theta, delta], optional
+
+        Returns
+        -------
+        float ∈ (0, 1)
+        """
+        if param is None:
+            param = self.get_parameters()
+        theta, delta = float(param[0]), float(param[1])
+
+        T  = self._GL_T_TAU
+        W  = self._GL_W_TAU
+
+        eta = 1.0 - (1.0 - delta) ** theta
+        # φ(t) = −log([1−(1−δt)^ϑ] / η)
+        x_t   = 1.0 - _safe_pow(1.0 - delta * T, theta)
+        phi_t = -_safe_log(x_t / eta)                   # > 0 on (0,1)
+        # φ'(t) = −ϑδ(1−δt)^{ϑ−1}/[1−(1−δt)^ϑ]       (< 0)
+        phi_prime = -theta * delta * _safe_pow(1.0 - delta * T, theta - 1.0) / x_t
+
+        integrand = phi_t / phi_prime   # < 0
+
+        result = float(np.dot(W, integrand))
+        return float(np.clip(1.0 + 4.0 * result, 0.0, 1.0 - 1e-15))
+
+    # ------------------------------------------------------------------
+    # Blomqvist's beta
+    # ------------------------------------------------------------------
+
+    def blomqvist_beta(self, param=None):
+        """
+        Blomqvist's β = 4·C(½,½) − 1.
+
+        Parameters
+        ----------
+        param : [theta, delta], optional
+
+        Returns
+        -------
+        float
+        """
+        if param is None:
+            param = self.get_parameters()
+        return float(4.0 * self.get_cdf(0.5, 0.5, param) - 1.0)
+
+    # ------------------------------------------------------------------
+    # Sampling
+    # ------------------------------------------------------------------
+
+    def sample(self, n, rng=None):
+        """
+        Draw n samples via conditional inversion.
+
+        For each u_i ~ U(0,1), draw w_i ~ U(0,1) and solve
+            ∂C/∂u(u_i, v) = w_i  for v ∈ (0,1)
+        using Brent's method.
+
+        Parameters
+        ----------
+        n   : int
+        rng : np.random.Generator, optional
+
+        Returns
+        -------
+        np.ndarray, shape (n, 2)
+        """
+        from scipy.optimize import brentq
+
+        if rng is None:
+            rng = np.random.default_rng()
+
+        U = rng.uniform(1e-6, 1 - 1e-6, n)
+        W = rng.uniform(1e-6, 1 - 1e-6, n)
+        V = np.empty(n)
+
+        for i in range(n):
+            u_i = float(U[i])
+            w_i = float(W[i])
+
+            def obj(v_):
+                return float(self.partial_derivative_C_wrt_u(u_i, v_)) - w_i
+
+            try:
+                V[i] = brentq(obj, 1e-8, 1 - 1e-8, xtol=1e-10, maxiter=100)
+            except ValueError:
+                V[i] = 1e-6 if abs(obj(1e-8)) < abs(obj(1 - 1e-8)) else 1 - 1e-6
+
+        return np.column_stack([U, V])
+
+    # ------------------------------------------------------------------
+    # init_from_data
+    # ------------------------------------------------------------------
+
+    def init_from_data(self, u, v):
+        """
+        Moment-matching initialisation from pseudo-observations.
+
+        Strategy
+        --------
+        1. Estimate δ from empirical Blomqvist β̂ (grid search).
+        2. Estimate ϑ from empirical Kendall τ̂ via grid search + Brentq.
+
+        Parameters
+        ----------
+        u, v : array-like, pseudo-observations in (0, 1)
+
+        Returns
+        -------
+        np.ndarray [theta0, delta0]
+        """
+        from scipy.optimize import brentq
+        from scipy.stats import kendalltau as sp_kendalltau
+
+        u = np.asarray(u, float)
+        v = np.asarray(v, float)
+
+        # ---- 1. Estimate δ from Blomqvist β ---------------------------
+        beta_emp = float(np.clip(4.0 * np.mean((u > 0.5) == (v > 0.5)) - 1.0, -0.99, 0.99))
+        # Grid over δ at θ=2 (prior)
+        delta0 = 0.5  # safe default
+        best_err = np.inf
+        for de in np.linspace(0.05, 0.99, 20):
+            try:
+                beta_try = 4.0 * self.get_cdf(0.5, 0.5, [2.0, de]) - 1.0
+                err = abs(beta_try - beta_emp)
+                if err < best_err:
+                    best_err = err; delta0 = de
+            except Exception:
+                pass
+
+        # ---- 2. Estimate ϑ from τ̂ ------------------------------------
+        tau_emp_val, _ = sp_kendalltau(u, v)
+        tau_emp_val = float(np.clip(tau_emp_val, 0.01, 0.99))
+
+        theta_grid = [1.05, 1.3, 1.7, 2.5, 4.0, 7.0, 15.0]
+        tau_grid = []
+        for th in theta_grid:
+            try:
+                tau_grid.append((th, self.kendall_tau([th, delta0])))
+            except Exception:
+                tau_grid.append((th, np.nan))
+
+        theta0 = theta_grid[0]
+        for i in range(len(tau_grid) - 1):
+            th_lo_br, t_lo_br = tau_grid[i]
+            th_hi_br, t_hi_br = tau_grid[i + 1]
+            if np.isfinite(t_lo_br) and np.isfinite(t_hi_br):
+                if (t_lo_br - tau_emp_val) * (t_hi_br - tau_emp_val) <= 0:
+                    try:
+                        theta0 = brentq(
+                            lambda th: self.kendall_tau([th, delta0]) - tau_emp_val,
+                            th_lo_br, th_hi_br,
+                            xtol=1e-4, rtol=1e-4, maxiter=30,
+                        )
+                    except Exception:
+                        theta0 = 0.5 * (th_lo_br + th_hi_br)
+                    break
+
+        theta0 = float(np.clip(theta0, 1.001, 200.0))
+        delta0 = float(np.clip(delta0, 1e-4, 1.0 - 1e-8))
+        return np.array([theta0, delta0], dtype=float)
+
+    # ------------------------------------------------------------------
+    # Tail dependence
+    # ------------------------------------------------------------------
+
     def LTDC(self, param=None):
-        """
-        Compute the lower tail dependence coefficient (LTDC) for the BB8 copula.
-
-        Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
-
-        Returns:
-            float: LTDC value = lim_{u→0} C(u,u)/u.
-        """
-
+        """λ_L = 0 for 0 < δ < 1 (Joe 2014, §4.24.1)."""
         return 0.0
 
     def UTDC(self, param=None):
-        """
-        Compute the upper tail dependence coefficient (UTDC) for the BB8 copula.
-
-        Args:
-            param (Sequence[float], optional): Copula parameters (theta, delta). Defaults to self.get_parameters().
-
-        Returns:
-            float: UTDC value = lim_{u→1} [1 − 2u + C(u,u)]/(1−u).
-        """
+        """λ_U = 0 for 0 < δ < 1 (Joe 2014, §4.24.1)."""
         return 0.0
 
+    # ------------------------------------------------------------------
+    # Disabled statistics
+    # ------------------------------------------------------------------
+
     def IAD(self, data):
-        """
-        Return NaN for the Integrated Anderson-Darling (IAD) statistic for BB7.
-
-        Args:
-            data (Sequence[array-like, array-like]): Ignored pseudo-observations.
-
-        Returns:
-            float: Always returns numpy.nan.
-        """
-
+        """IAD disabled for BB8."""
         print(f"[INFO] IAD is disabled for {self.name}.")
         return np.nan
 
     def AD(self, data):
-        """
-        Return NaN for the Anderson-Darling (AD) statistic for BB7.
-
-        Args:
-            data (Sequence[array-like, array-like]): Ignored pseudo-observations.
-
-        Returns:
-            float: Always returns numpy.nan.
-        """
-
+        """AD disabled for BB8."""
         print(f"[INFO] AD is disabled for {self.name}.")
         return np.nan

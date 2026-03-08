@@ -1,245 +1,429 @@
 """
-Comprehensive unit-test suite for the bivariate **BB8** Archimedean Copula
+Comprehensive unit-test suite for the bivariate **BB8** copula.
 
-Structure, swagger, and paranoia all borrowed from the earlier Clayton
-test file — just flipped for the BB8 flavour.
+BB8 is an Archimedean copula (Joe 1993 / Joe 2014 §4.24.1):
 
-Run with:  pytest -q            # fast
-           pytest -q -m 'slow'  # includes the heavy sampling sanity check
+    C(u,v; ϑ,δ) = δ⁻¹(1 − {1 − η⁻¹·x·y}^{1/ϑ})
 
-Dev deps (requirements-dev.txt):
-    pytest
-    hypothesis
-    scipy       # only for the optional empirical Kendall τ check
+where:
+    η  = 1 − (1−δ)^ϑ
+    x  = 1 − (1−δu)^ϑ
+    y  = 1 − (1−δv)^ϑ
+    ϑ ≥ 1,  0 < δ ≤ 1.
 
-Checks implemented
-------------------
-• Parameter validation (inside/outside admissible rectangle).
-• Core invariants: symmetry, monotonicity, CDF/PDF bounds.
-• Tail-dependence formulas (λ_L < 1, λ_U > 0 for BB8).
-• Analytical vs. numerical partial derivatives.
-• Kendall τ closed-form vs. implementation.
-• Sampling sanity: empirical τ ≈ theoretical (marked slow).
-• IAD / AD disabled behaviour.
-• Vectorised broadcasting & shape guarantees.
+Properties (Joe 2014, §4.24.1):
+  • Archimedean generator: φ(t) = −log{[1−(1−δt)^ϑ]/η}.
+  • Frank family as ϑ→∞ with η held constant.
+  • No tail dependence for 0 < δ < 1: λ_L = λ_U = 0.
+  • Concordance increases with both ϑ and δ.
+
+Run with:
+    pytest -q                  # fast tests only
+    pytest -q -m slow          # includes heavy sampling / init checks
 """
 
 import math
 
 import numpy as np
 import pytest
-from hypothesis import given, settings, strategies as st, note, Verbosity
+from hypothesis import given, settings, note, HealthCheck
+from hypothesis import strategies as st
+from scipy.stats import kendalltau as sp_kendalltau
 
 from CopulaFurtif.core.copulas.domain.models.archimedean.BB8 import BB8Copula
-import scipy.stats as stx  # optional dependency
 
 
-# -----------------------------------------------------------------------------
-# Fixtures & helpers
-# -----------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Strategies & helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.fixture(scope="module")
-def copula_default():
-    """Default BB8 copula with (θ, δ) = (2.0, 1.5)."""
-    c = BB8Copula()
-    c.set_parameters([2.0, 0.5])
-    return c
-
-
-# Library bounds: θ ∈ (0, ∞), δ ∈ [1, ∞). We cap the upper end for Hypothesis.
 @st.composite
 def valid_theta(draw):
-    return draw(
-        st.floats(
-            min_value=1, max_value=10.0,
-            exclude_min=True, exclude_max=True,
-            allow_nan=False, allow_infinity=False,
-        )
-    )
+    """ϑ ∈ (1, 10) — strictly greater than 1."""
+    return draw(st.floats(min_value=1.0, max_value=10.0,
+                          exclude_min=True, allow_nan=False, allow_infinity=False))
 
 
 @st.composite
 def valid_delta(draw):
-    return draw(
-        st.floats(
-            min_value=1e-6, max_value=1,
-            exclude_min=True, exclude_max=True,
-            allow_nan=False, allow_infinity=False,
-        )
-    )
+    """δ ∈ (1e-6, 1) — strictly in (0,1)."""
+    return draw(st.floats(min_value=1e-6, max_value=1.0,
+                          exclude_min=True, exclude_max=True,
+                          allow_nan=False, allow_infinity=False))
+
+
+@st.composite
+def valid_theta_stable(draw):
+    """ϑ ∈ (1.05, 8) — avoids near-boundary numerics."""
+    return draw(st.floats(min_value=1.05, max_value=8.0,
+                          allow_nan=False, allow_infinity=False))
+
+
+@st.composite
+def valid_delta_stable(draw):
+    """δ ∈ (0.05, 0.95)."""
+    return draw(st.floats(min_value=0.05, max_value=0.95,
+                          allow_nan=False, allow_infinity=False))
 
 
 unit = st.floats(min_value=1e-3, max_value=0.999, allow_nan=False)
 
-# Numerical derivative helper --------------------------------------------------
-def _finite_diff(f, x, y, h=1e-6):
-    """Central finite difference approximation to ∂f/∂x."""
-    return (f(x + h, y) - f(x - h, y)) / (2 * h)
+
+def _cdf_fd(c, u, v, hu=1e-5, hv=1e-5):
+    return (c.get_cdf(u+hu, v+hv) - c.get_cdf(u+hu, v-hv)
+            - c.get_cdf(u-hu, v+hv) + c.get_cdf(u-hu, v-hv)) / (4*hu*hv)
 
 
-# -----------------------------------------------------------------------------
-# Parameter tests
-# -----------------------------------------------------------------------------
+def _partial_u_fd(c, u, v, h=1e-6):
+    return (c.get_cdf(u+h, v) - c.get_cdf(u-h, v)) / (2*h)
+
+
+def _partial_v_fd(c, u, v, h=1e-6):
+    return (c.get_cdf(u, v+h) - c.get_cdf(u, v-h)) / (2*h)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Parameter validation
+# ─────────────────────────────────────────────────────────────────────────────
 
 @given(theta=valid_theta(), delta=valid_delta())
 def test_parameter_roundtrip(theta, delta):
+    """set_parameters → get_parameters is lossless."""
     c = BB8Copula()
     c.set_parameters([theta, delta])
     assert math.isclose(c.get_parameters()[0], theta, rel_tol=1e-12)
     assert math.isclose(c.get_parameters()[1], delta, rel_tol=1e-12)
 
 
-@given(
-    theta=st.one_of(
-        st.floats(max_value=1e-6, allow_nan=False, allow_infinity=False),
-        st.floats(max_value=1e-6, allow_nan=False, allow_infinity=False, exclude_max=True),
-    ),
-    delta=valid_delta(),
-)
+@pytest.mark.parametrize("theta,delta", [
+    (1.0, 0.5),   # ϑ = 1 exactly (excluded)
+    (0.5, 0.5),   # ϑ < 1
+    (0.0, 0.5),   # ϑ = 0
+    (-1.0, 0.5),  # ϑ < 0
+])
 def test_theta_out_of_bounds(theta, delta):
+    """ϑ ≤ 1 must raise ValueError."""
     c = BB8Copula()
     with pytest.raises(ValueError):
         c.set_parameters([theta, delta])
 
 
-@given(
-    theta=valid_theta(),
-    delta=st.floats(max_value=1e-6, allow_nan=False, allow_infinity=False, exclude_max = True),
-)
+@pytest.mark.parametrize("theta,delta", [
+    (2.0, 0.0),    # δ = 0
+    (2.0, -0.5),   # δ < 0
+    (2.0, 1.0),    # δ = 1 (excluded by bounds)
+])
 def test_delta_out_of_bounds(theta, delta):
+    """δ ≤ 0 or δ ≥ 1 must raise ValueError."""
     c = BB8Copula()
     with pytest.raises(ValueError):
         c.set_parameters([theta, delta])
 
 
-# -----------------------------------------------------------------------------
-# CDF invariants
-# -----------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. CDF invariants
+# ─────────────────────────────────────────────────────────────────────────────
 
 @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
-def test_cdf_bounds(theta, delta, u, v):
-    c = BB8Copula()
-    c.set_parameters([theta, delta])
-    val = c.get_cdf(u, v)
-    assert 0.0 <= val <= 1.0
-
-
-@given(theta=valid_theta(), delta=valid_delta(),
-       u1=unit, u2=unit, v=unit)
-def test_cdf_monotone_in_u(theta, delta, u1, u2, v):
-    if u1 > u2:
-        u1, u2 = u2, u1
-    c = BB8Copula()
-    c.set_parameters([theta, delta])
-    assert c.get_cdf(u1, v) <= c.get_cdf(u2, v)
+def test_cdf_in_unit_interval(theta, delta, u, v):
+    """C(u,v) ∈ [0,1]."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert 0.0 <= float(c.get_cdf(u, v)) <= 1.0
 
 
 @given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
 def test_cdf_symmetry(theta, delta, u, v):
-    c = BB8Copula()
-    c.set_parameters([theta, delta])
-    assert math.isclose(c.get_cdf(u, v), c.get_cdf(v, u), rel_tol=1e-12)
+    """BB8 is exchangeable: C(u,v) = C(v,u)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert math.isclose(float(c.get_cdf(u, v)), float(c.get_cdf(v, u)), rel_tol=1e-10)
 
 
-# -----------------------------------------------------------------------------
-# PDF invariants
-# -----------------------------------------------------------------------------
+@given(theta=valid_theta(), delta=valid_delta(), u1=unit, u2=unit, v=unit)
+def test_cdf_monotone_in_u(theta, delta, u1, u2, v):
+    """C is non-decreasing in u."""
+    if u1 > u2: u1, u2 = u2, u1
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert float(c.get_cdf(u1, v)) <= float(c.get_cdf(u2, v)) + 1e-12
 
-@given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
+
+@pytest.mark.parametrize("theta,delta,eps", [(2.0,0.5,1e-3),(3.0,0.7,1e-3)])
+def test_cdf_boundary_v_zero(theta, delta, eps):
+    """C(u, 0) ≈ 0."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    for u in [0.2, 0.5, 0.9]:
+        assert float(c.get_cdf(u, eps)) < 5e-3
+
+
+@pytest.mark.parametrize("theta,delta,eps", [(2.0,0.5,1e-3),(3.0,0.7,1e-3)])
+def test_cdf_boundary_v_one(theta, delta, eps):
+    """C(u, 1) ≈ u."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    for u in [0.2, 0.5, 0.9]:
+        assert math.isclose(float(c.get_cdf(u, 1-eps)), u, abs_tol=5e-3)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Fréchet bounds
+# ─────────────────────────────────────────────────────────────────────────────
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
+@settings(max_examples=50, deadline=None)
+def test_frechet_lower_bound(theta, delta, u, v):
+    """C(u,v) ≥ max(u+v−1, 0)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert float(c.get_cdf(u, v)) >= max(u+v-1.0, 0.0) - 1e-10
+
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
+@settings(max_examples=50, deadline=None)
+def test_frechet_upper_bound(theta, delta, u, v):
+    """C(u,v) ≤ min(u,v)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert float(c.get_cdf(u, v)) <= min(u, v) + 1e-10
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. PDF invariants
+# ─────────────────────────────────────────────────────────────────────────────
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
 def test_pdf_nonnegative(theta, delta, u, v):
+    """c(u,v) ≥ 0."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert float(c.get_pdf(u, v)) >= 0.0
+
+
+@pytest.mark.parametrize("theta,delta,u,v,rtol", [
+    (2.0, 0.5, 0.5, 0.5, 1e-3),
+    (2.0, 0.5, 0.3, 0.6, 1e-3),
+    (2.0, 0.5, 0.2, 0.8, 1e-3),
+    (3.0, 0.7, 0.4, 0.4, 1e-3),
+])
+def test_pdf_matches_finite_diff(theta, delta, u, v, rtol):
+    """Analytical PDF matches mixed finite-difference of CDF."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    ana = float(c.get_pdf(u, v))
+    fd  = float(_cdf_fd(c, u, v))
+    assert math.isclose(ana, fd, rel_tol=rtol, abs_tol=1e-5)
+
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
+@settings(max_examples=60, deadline=None)
+def test_pdf_symmetry(theta, delta, u, v):
+    """c(u,v) = c(v,u)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert math.isclose(float(c.get_pdf(u, v)), float(c.get_pdf(v, u)), rel_tol=1e-8)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. H-functions (partial derivatives)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
+@settings(max_examples=60, deadline=None)
+def test_partial_u_matches_fd(theta, delta, u, v):
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert math.isclose(float(c.partial_derivative_C_wrt_u(u, v)),
+                        float(_partial_u_fd(c, u, v)), rel_tol=1e-2, abs_tol=1e-3)
+
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
+@settings(max_examples=60, deadline=None)
+def test_partial_v_matches_fd(theta, delta, u, v):
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert math.isclose(float(c.partial_derivative_C_wrt_v(u, v)),
+                        float(_partial_v_fd(c, u, v)), rel_tol=1e-2, abs_tol=1e-3)
+
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
+@settings(max_examples=40, deadline=None)
+def test_partial_u_in_unit_interval(theta, delta, u, v):
+    """∂C/∂u ∈ [0,1] (conditional CDF)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    val = float(c.partial_derivative_C_wrt_u(u, v))
+    assert -1e-6 <= val <= 1.0 + 1e-6
+
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable(), u=unit, v=unit)
+@settings(max_examples=40, deadline=None)
+def test_partial_symmetry(theta, delta, u, v):
+    """∂C/∂u(u,v) = ∂C/∂v(v,u) by exchangeability."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert math.isclose(float(c.partial_derivative_C_wrt_u(u, v)),
+                        float(c.partial_derivative_C_wrt_v(v, u)), rel_tol=1e-8)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Kendall's tau
+# ─────────────────────────────────────────────────────────────────────────────
+
+@given(theta=valid_theta_stable(), delta=valid_delta_stable())
+@settings(max_examples=20, deadline=None)
+def test_kendall_tau_in_unit_interval(theta, delta):
+    """τ ∈ (0,1) for valid BB8 params."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    tau = float(c.kendall_tau())
+    assert 0.0 < tau < 1.0
+
+
+@pytest.mark.parametrize("thetas,delta", [([1.2, 1.8, 3.0, 5.0, 8.0], 0.5)])
+def test_kendall_tau_increasing_in_theta(thetas, delta):
+    """τ increases as ϑ increases (concordance ↑ with ϑ)."""
     c = BB8Copula()
-    c.set_parameters([theta, delta])
-    assert c.get_pdf(u, v) >= 0.0
+    taus = [c.set_parameters([th, delta]) or c.kendall_tau() for th in thetas]
+    print(f"τ(ϑ) = {[f'{t:.4f}' for t in taus]}")
+    assert all(taus[i] < taus[i+1] for i in range(len(taus)-1))
 
 
-# -----------------------------------------------------------------------------
-# Derivative cross-check (analytical vs. finite diff)
-# -----------------------------------------------------------------------------
-@given(theta=valid_theta(), delta=valid_delta(), u=unit, v=unit)
-@settings(max_examples=100)
-def test_partial_derivative_matches_finite_diff(theta, delta, u, v):
+@pytest.mark.parametrize("theta,deltas", [(3.0, [0.1, 0.3, 0.5, 0.7, 0.9])])
+def test_kendall_tau_increasing_in_delta(theta, deltas):
+    """τ increases as δ increases (concordance ↑ with δ)."""
     c = BB8Copula()
-    c.set_parameters([theta, delta])
-
-    def C(x, y):
-        return c.get_cdf(x, y)
-
-    num_du = _finite_diff(C, u, v)
-    num_dv = _finite_diff(lambda x, y: C(y, x), v, u)
-
-    ana_du = c.partial_derivative_C_wrt_u(u, v)
-    ana_dv = c.partial_derivative_C_wrt_v(u, v)
-
-    assert math.isclose(ana_du, num_du, rel_tol=1e-2, abs_tol=1e-3)
-    assert math.isclose(ana_dv, num_dv, rel_tol=1e-2, abs_tol=1e-3)
+    taus = [c.set_parameters([theta, de]) or c.kendall_tau() for de in deltas]
+    print(f"τ(δ) = {[f'{t:.4f}' for t in taus]}")
+    assert all(taus[i] < taus[i+1] for i in range(len(taus)-1))
 
 
-# -----------------------------------------------------------------------------
-# Tail dependence
-# -----------------------------------------------------------------------------
-
-def safe_pow(base, exp):
-    exp_term = exp * math.log(base)
-    exp_term = min(max(exp_term, -745.0), 709.0)
-    return math.exp(exp_term)
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Tail dependence
+# ─────────────────────────────────────────────────────────────────────────────
 
 @given(theta=valid_theta(), delta=valid_delta())
-def test_tail_dependence(theta, delta):
-    c = BB8Copula()
-    c.set_parameters([theta, delta])
-
-    expected_lt = 0.0
-    expected_ut = 0.0
-
-    assert math.isclose(c.LTDC(), expected_lt, rel_tol=1e-12, abs_tol=0.0)
-    assert math.isclose(c.UTDC(), expected_ut, rel_tol=1e-12, abs_tol=0.0)
+def test_ltdc_is_zero(theta, delta):
+    """λ_L = 0 for 0 < δ < 1."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert c.LTDC() == 0.0
 
 
-# -----------------------------------------------------------------------------
-# Sampling sanity check (slow)
-# -----------------------------------------------------------------------------
-
-# @pytest.mark.slow
-# @given(theta=valid_theta(), delta=valid_delta())
-# @settings(max_examples=20, deadline=None, verbosity=Verbosity.verbose)
-# def test_empirical_kendall_tau_close(theta, delta):
-#
-#     c = BB8Copula()
-#     c.set_parameters([theta, delta])
-#
-#     data = c.sample(10000)
-#     tau_emp, _ = stx.kendalltau(data[:, 0], data[:, 1])
-#     tau_theo = c.kendall_tau()
-#
-#     # σ for τ̂ under H₀ (no ties), cf. Kendall 1949
-#     n = len(data)
-#     var_tau = (2 * (2 * n + 5)) / (9 * n * (n - 1)) * (1 - tau_theo ** 2) ** 2
-#     sigma = math.sqrt(var_tau)
-#
-#     note(f"θ={theta:.5f}, δ={delta:.5f}, τ_emp={tau_emp:.6f}, τ_theo={tau_theo:.6f}, tol={4 * sigma:.6f}")
-#
-#     assert abs(tau_emp - tau_theo) <= 4 * sigma
+@given(theta=valid_theta(), delta=valid_delta())
+def test_utdc_is_zero(theta, delta):
+    """λ_U = 0 for 0 < δ < 1."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    assert c.UTDC() == 0.0
 
 
-# -----------------------------------------------------------------------------
-# IAD / AD disabled behaviour
-# -----------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Blomqvist's beta
+# ─────────────────────────────────────────────────────────────────────────────
 
-def test_iad_ad_disabled(copula_default):
-    assert np.isnan(copula_default.IAD(None))
-    assert np.isnan(copula_default.AD(None))
+@given(theta=valid_theta_stable(), delta=valid_delta_stable())
+@settings(max_examples=30, deadline=None)
+def test_blomqvist_beta_formula(theta, delta):
+    """β = 4·C(½,½) − 1 matches blomqvist_beta()."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    beta_m  = float(c.blomqvist_beta())
+    beta_d  = float(4.0 * c.get_cdf(0.5, 0.5) - 1.0)
+    assert math.isclose(beta_m, beta_d, rel_tol=1e-10)
 
 
-# -----------------------------------------------------------------------------
-# Vectorised shape checks
-# -----------------------------------------------------------------------------
+@given(theta=valid_theta_stable(), delta=valid_delta_stable())
+@settings(max_examples=30, deadline=None)
+def test_blomqvist_beta_range(theta, delta):
+    """β ∈ (0,1) for BB8 (positively dependent)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    beta = float(c.blomqvist_beta())
+    assert 0.0 < beta < 1.0
 
-# def test_vectorised_shapes(copula_default):
-#     u = np.linspace(0.05, 0.95, 11)
-#     v = np.linspace(0.05, 0.95, 11)
-#
-#     assert copula_default.get_cdf(u, v).shape == (11,)
-#     assert copula_default.get_pdf(u, v).shape == (11,)
-#
-#     samples = copula_default.sample(256)
-#     assert samples.shape == (256, 2)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. IAD / AD disabled
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_iad_returns_nan():
+    c = BB8Copula(); c.set_parameters([2.0, 0.5])
+    assert np.isnan(c.IAD(None))
+
+
+def test_ad_returns_nan():
+    c = BB8Copula(); c.set_parameters([2.0, 0.5])
+    assert np.isnan(c.AD(None))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. init_from_data  (slow)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.slow
+@given(theta=valid_theta_stable(), delta=valid_delta_stable())
+@settings(max_examples=8, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+def test_init_from_data_reproduces_tau(theta, delta):
+    """
+    init_from_data on n=2000 samples reproduces τ within ±0.15.
+    BB8 has 2 params; τ alone under-identifies the system, so we only
+    check τ reproduction.
+    """
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    data = c.sample(2000, rng=np.random.default_rng(0))
+
+    c2 = BB8Copula()
+    p0 = c2.init_from_data(data[:, 0], data[:, 1])
+    assert np.all(np.isfinite(p0))
+    assert p0[0] > 1.0 and 0.0 < p0[1] < 1.0
+
+    c2.set_parameters(p0)
+    tau_fit  = c2.kendall_tau()
+    tau_true = c.kendall_tau()
+    note(f"ϑ={theta:.3f}, δ={delta:.3f}, τ_true={tau_true:.4f}, τ_fit={tau_fit:.4f}")
+    assert abs(tau_fit - tau_true) < 0.15
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. Sampling  (slow)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.slow
+@given(theta=valid_theta_stable(), delta=valid_delta_stable())
+@settings(max_examples=8, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+def test_sampling_shape(theta, delta):
+    """sample(n) returns (n,2) with values in (0,1)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    data = c.sample(200, rng=np.random.default_rng(42))
+    assert data.shape == (200, 2)
+    assert np.all(data > 0) and np.all(data < 1)
+
+
+@pytest.mark.slow
+@given(theta=valid_theta_stable(), delta=valid_delta_stable())
+@settings(max_examples=6, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+def test_sampling_empirical_tau_close(theta, delta):
+    """Empirical τ from n=4000 samples ≈ theoretical τ (tol 0.10)."""
+    c = BB8Copula(); c.set_parameters([theta, delta])
+    data = c.sample(4000, rng=np.random.default_rng(0))
+    tau_emp = float(sp_kendalltau(data[:, 0], data[:, 1]).correlation)
+    tau_th  = c.kendall_tau()
+    note(f"ϑ={theta:.3f}, δ={delta:.3f}, τ_emp={tau_emp:.4f}, τ_th={tau_th:.4f}")
+    assert math.isfinite(tau_emp)
+    assert abs(tau_emp - tau_th) < 0.10
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. Vectorisation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_vectorised_cdf_shape():
+    c = BB8Copula(); c.set_parameters([2.0, 0.5])
+    u = np.linspace(0.05, 0.95, 20); v = np.linspace(0.05, 0.95, 20)
+    out = c.get_cdf(u, v)
+    assert out.shape == (20,) and np.all(np.isfinite(out))
+
+
+def test_vectorised_pdf_shape():
+    c = BB8Copula(); c.set_parameters([2.0, 0.5])
+    u = np.linspace(0.05, 0.95, 20); v = np.linspace(0.05, 0.95, 20)
+    out = c.get_pdf(u, v)
+    assert out.shape == (20,) and np.all(np.isfinite(out)) and np.all(out >= 0.0)
+
+
+def test_vectorised_partial_shape():
+    c = BB8Copula(); c.set_parameters([2.0, 0.5])
+    u = np.linspace(0.05, 0.95, 15); v = np.linspace(0.05, 0.95, 15)
+    assert c.partial_derivative_C_wrt_u(u, v).shape == (15,)
+    assert c.partial_derivative_C_wrt_v(u, v).shape == (15,)
+
+
+def test_scalar_and_array_agree():
+    c = BB8Copula(); c.set_parameters([2.0, 0.5])
+    for u0, v0 in [(0.2, 0.7), (0.5, 0.5), (0.8, 0.3)]:
+        scalar = float(c.get_cdf(u0, v0))
+        array  = float(c.get_cdf(np.array([u0]), np.array([v0]))[0])
+        assert math.isclose(scalar, array, rel_tol=1e-12)

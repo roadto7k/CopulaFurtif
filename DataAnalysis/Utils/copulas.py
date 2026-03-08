@@ -76,6 +76,9 @@ class CopulaSelectionConfig:
         ("BB4", CopulaType.BB4),
         ("BB5", CopulaType.BB5),
         ("BB6", CopulaType.BB6),
+        ("BB7", CopulaType.BB7),
+        ("BB8", CopulaType.BB8),
+        ("BB9", CopulaType.BB9),
 
         # ("Bernstein", CopulaType.BERNSTEIN),
     )

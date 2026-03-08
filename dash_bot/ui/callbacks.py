@@ -9,7 +9,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table, Input, Output, State
 
 from .serialization import serialize_results, _deserialize_series
-from ..viz.figures import fig_equity, fig_drawdown, fig_monthly_heatmap, fig_copula_freq
+from ..viz.figures import fig_equity, fig_drawdown, fig_monthly_heatmap, fig_copula_freq, compute_copula_stats
 
 # data (tu dis OK)
 from ..data.sources import fetch_prices_cached, load_prices_csv
@@ -199,7 +199,7 @@ def register_callbacks(app):
             use_trailing_stop=("trail" in (use_trailing_stop or [])),
             trailing_stop_pct=float(trailing_pct or 0.02),
             trailing_stop_activation=float(trailing_activation or 0.01),
-            force_week_end_close=("force_close" in (force_week_end_close or ["force_close"])),
+            force_week_end_close=("force_close" in (force_week_end_close or [])),
         )
 
         if getattr(p, "strategy", None) != "reference_copula":
@@ -376,70 +376,134 @@ def register_callbacks(app):
             )
 
         if tab == "tab-copulas":
-            return dbc.Row(
+            cop_stats = compute_copula_stats(trades)
+            cop_stats_cols = (
+                [{"name": c, "id": c} for c in cop_stats.columns]
+                if not cop_stats.empty else []
+            )
+            # Conditional formatting: green for positive PnL cells, red for negative
+            pnl_cond = []
+            for col in ["Avg PnL", "Total PnL", "Best", "Worst", "Avg Win", "Avg Loss"]:
+                pnl_cond += [
+                    {
+                        "if": {"filter_query": f"{{{col}}} contains '+'", "column_id": col},
+                        "color": "#00ff88",
+                    },
+                    {
+                        "if": {"filter_query": f"{{{col}}} contains '-'", "column_id": col},
+                        "color": "#ff3355",
+                    },
+                ]
+
+            return dbc.Col(
                 [
-                    dbc.Col(dcc.Graph(figure=fig_copula_freq(copfreq), style={"height": "380px"},
-                                      config={"responsive": True}), width=6),
-                    dbc.Col(
-                        dbc.Card(
-                            dbc.CardBody(
-                                [
-                                    html.H4("⬡  System Diagnostics"),
-                                    html.Div(
+                    # Row 1 : frequency chart + diagnostics
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                dcc.Graph(
+                                    figure=fig_copula_freq(copfreq),
+                                    style={"height": "340px"},
+                                    config={"responsive": True},
+                                ),
+                                width=7,
+                            ),
+                            dbc.Col(
+                                dbc.Card(
+                                    dbc.CardBody(
                                         [
-                                            html.Div(
-                                                [
-                                                    html.Span("COPULA BACKEND: ", style={"color": "#5a7a90",
-                                                                                         "fontFamily": "Share Tech Mono",
-                                                                                         "fontSize": "0.75rem"}),
-                                                    html.Span(
-                                                        f"{'CopulaFurtif' if HAS_COPULAFURTIF else 'Not installed'}",
-                                                        style={"color": "#00f0ff", "fontFamily": "Share Tech Mono",
-                                                               "fontSize": "0.75rem"},
-                                                    ),
-                                                ],
-                                                style={"marginBottom": "8px"},
-                                            ),
-                                            html.Div(
-                                                [
-                                                    html.Span("CYCLES: ", style={"color": "#5a7a90",
-                                                                                 "fontFamily": "Share Tech Mono",
-                                                                                 "fontSize": "0.75rem"}),
-                                                    html.Span(f"{len(weekly)}",
-                                                              style={"color": "#ff2eed", "fontFamily": "Orbitron",
-                                                                     "fontSize": "0.85rem"}),
-                                                ],
-                                                style={"marginBottom": "8px"},
-                                            ),
-                                            html.Div(
-                                                [
-                                                    html.Span("TRADES: ", style={"color": "#5a7a90",
-                                                                                 "fontFamily": "Share Tech Mono",
-                                                                                 "fontSize": "0.75rem"}),
-                                                    html.Span(f"{len(trades)}",
-                                                              style={"color": "#00ff88", "fontFamily": "Orbitron",
-                                                                     "fontSize": "0.85rem"}),
-                                                ],
-                                                style={"marginBottom": "8px"},
-                                            ),
-                                            html.Div(
-                                                "Positions are force-closed at the end of each trading week.",
+                                            html.H5(
+                                                "⬡  SYSTEM INFO",
                                                 style={
-                                                    "color": "#5a7a90",
-                                                    "fontFamily": "Share Tech Mono",
-                                                    "fontSize": "0.7rem",
-                                                    "marginTop": "14px",
-                                                    "borderTop": "1px solid rgba(0,240,255,0.1)",
-                                                    "paddingTop": "10px",
+                                                    "fontFamily": "Orbitron",
+                                                    "color": "#00f0ff",
+                                                    "fontSize": "0.8rem",
+                                                    "letterSpacing": "2px",
+                                                    "marginBottom": "16px",
                                                 },
                                             ),
-                                        ],
-                                        style={"padding": "8px 0"},
+                                            html.Div(
+                                                [
+                                                    html.Span("BACKEND: ", style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
+                                                    html.Span(f"{'CopulaFurtif' if HAS_COPULAFURTIF else 'Not installed'}", style={"color": "#00f0ff", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
+                                                ],
+                                                style={"marginBottom": "10px"},
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span("CYCLES: ", style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
+                                                    html.Span(f"{len(weekly)}", style={"color": "#ff2eed", "fontFamily": "Orbitron", "fontSize": "0.85rem"}),
+                                                ],
+                                                style={"marginBottom": "10px"},
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span("TRADES: ", style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
+                                                    html.Span(f"{len(trades)}", style={"color": "#00ff88", "fontFamily": "Orbitron", "fontSize": "0.85rem"}),
+                                                ],
+                                                style={"marginBottom": "10px"},
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span("UNIQUE COPULAS: ", style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.75rem"}),
+                                                    html.Span(
+                                                        f"{len(cop_stats)}" if not cop_stats.empty else "0",
+                                                        style={"color": "#ffe01a", "fontFamily": "Orbitron", "fontSize": "0.85rem"},
+                                                    ),
+                                                ],
+                                                style={"marginBottom": "10px"},
+                                            ),
+                                        ]
                                     ),
-                                ]
-                            )
-                        ),
-                        width=6,
+                                    style={"backgroundColor": "#0a1628", "border": "1px solid rgba(0,240,255,0.1)"},
+                                ),
+                                width=5,
+                            ),
+                        ],
+                        className="mb-3",
+                    ),
+                    # Row 2 : per-copula stats table (full width)
+                    dbc.Row(
+                        dbc.Col(
+                            dbc.Card(
+                                dbc.CardBody(
+                                    [
+                                        html.H5(
+                                            "⬡  PERFORMANCE BY COPULA",
+                                            style={
+                                                "fontFamily": "Orbitron",
+                                                "color": "#00f0ff",
+                                                "fontSize": "0.8rem",
+                                                "letterSpacing": "2px",
+                                                "marginBottom": "12px",
+                                            },
+                                        ),
+                                        dash_table.DataTable(
+                                            data=cop_stats.to_dict("records") if not cop_stats.empty else [],
+                                            columns=cop_stats_cols,
+                                            page_size=20,
+                                            sort_action="native",
+                                            style_table={"overflowX": "auto"},
+                                            style_cell={
+                                                **tron_cell,
+                                                "textAlign": "center",
+                                                "minWidth": "70px",
+                                            },
+                                            style_cell_conditional=[
+                                                {"if": {"column_id": "Copula"}, "textAlign": "left", "fontWeight": "600", "color": "#ff2eed"},
+                                            ],
+                                            style_header=tron_header,
+                                            style_data_conditional=tron_data_cond + pnl_cond,
+                                        ) if not cop_stats.empty else html.Div(
+                                            "No trade data available for copula breakdown.",
+                                            style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "fontSize": "0.8rem", "padding": "12px"},
+                                        ),
+                                    ]
+                                ),
+                                style={"backgroundColor": "#0a1628", "border": "1px solid rgba(0,240,255,0.1)"},
+                            ),
+                            width=12,
+                        )
                     ),
                 ]
             )
