@@ -81,6 +81,9 @@ class CopulaSelectionConfig:
         ("BB9", CopulaType.BB9),
         ("BB10", CopulaType.BB10),
 
+        ("TAWN T1", CopulaType.TAWNT1),
+        ("TAWN T2", CopulaType.TAWNT2),
+
         # ("Bernstein", CopulaType.BERNSTEIN),
     )
 
