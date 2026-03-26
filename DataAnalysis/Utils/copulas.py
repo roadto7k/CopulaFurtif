@@ -42,11 +42,39 @@ import pandas as pd
 from CopulaFurtif.copulas import CopulaFactory, CopulaType
 from CopulaFurtif.copulas import CopulaFitter
 from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs as _pseudo_obs_pair
+from CopulaFurtif.core.copulas.adapters import RotatedCopula
 # -----------------------------------------------------------------------------
 # Defaults
 # -----------------------------------------------------------------------------
 
 HAS_COPULAFURTIF = True
+
+# Asymmetric families for which rotations are meaningful.
+# Symmetric families (Gaussian, Student-t, Frank, AMH, FGM, Plackett)
+# are invariant under rotation — skipped.
+_ASYMMETRIC_FOR_ROTATION = (
+    ("Clayton",  CopulaType.CLAYTON),
+    ("Gumbel",   CopulaType.GUMBEL),
+    ("Joe",      CopulaType.JOE),
+    ("BB1",      CopulaType.BB1),
+    ("BB2",      CopulaType.BB2),
+    ("BB3",      CopulaType.BB3),
+    ("BB4",      CopulaType.BB4),
+    ("BB5",      CopulaType.BB5),
+    ("BB6",      CopulaType.BB6),
+    ("BB7",      CopulaType.BB7),
+    ("BB8",      CopulaType.BB8),
+    ("TAWN T1",  CopulaType.TAWNT1),
+    ("TAWN T2",  CopulaType.TAWNT2),
+)
+
+# R0 is already covered by the base candidates list.
+# This generates 39 additional candidates (13 families × 3 rotations).
+_ROTATED_CANDIDATES = tuple(
+    (f"{name} R{rot}", ctype, rot)
+    for name, ctype in _ASYMMETRIC_FOR_ROTATION
+    for rot in (90, 180, 270)
+)
 
 
 @dataclass(frozen=True)
@@ -260,17 +288,16 @@ def fit_copulas(
     x: np.ndarray,
     y: np.ndarray,
     *,
-    selection: str = "score",  # {"score","aic"}
+    selection: str = "score",
     include_pit: bool = False,
     pit_m: int = 250,
     refine_topk: int = 0,
-    candidates: Optional[Sequence[Tuple[str, CopulaType]]] = None,
-    # weights
+    candidates: Optional[Sequence] = None,
+    include_rotations: bool = True,
     w_aic: float = 1.00,
     w_kt: float = 0.75,
     w_tail: float = 1.00,
     w_pit: float = 1.00,
-    # numerical
     eps_uv: float = 1e-10,
     eps_pdf: float = 1e-12,
 ) -> Tuple[pd.DataFrame, List[str]]:
@@ -300,16 +327,28 @@ def fit_copulas(
         )
 
     if candidates is None:
-        candidates = CopulaSelectionConfig().candidates
+        base_candidates = list(CopulaSelectionConfig().candidates)
+        rotated_candidates = list(_ROTATED_CANDIDATES) if include_rotations else []
+        all_candidates = base_candidates + rotated_candidates
+    else:
+        all_candidates = list(candidates)
 
     fitter = CopulaFitter()
 
     rows: List[Dict[str, Any]] = []
 
     # ---- Stage 1: tau init + diagnostics
-    for name, ctype in candidates:
+    for candidate in all_candidates:
+        # Support 2-tuples (name, ctype) and 3-tuples (name, ctype, rotation)
+        if len(candidate) == 3:
+            name, ctype, rotation = candidate
+        else:
+            name, ctype = candidate
+            rotation = 0
+
         try:
-            cop = CopulaFactory.create(ctype)
+            base_cop = CopulaFactory.create(ctype)
+            cop = RotatedCopula(base_cop, rotation) if rotation != 0 else base_cop
 
             # init params
             fitter.fit_tau((x, y), copula=cop)
@@ -347,6 +386,7 @@ def fit_copulas(
             row = {
                 "name": name,
                 "type": ctype,
+                "rotation": rotation,
                 "params": np.asarray(cop.get_parameters(), dtype=float),
                 "params_tuple": _flatten_params(cop.get_parameters()),
                 "loglik": ll,
@@ -433,9 +473,12 @@ def fit_copulas(
         refined_rows: Dict[str, Dict[str, Any]] = {}
 
         for nm in refine_names:
-            ctype = df.loc[df["name"] == nm, "type"].iloc[0]
+            row_data = df.loc[df["name"] == nm].iloc[0]
+            ctype = row_data["type"]
+            rot = int(row_data.get("rotation", 0))
             try:
-                cop = CopulaFactory.create(ctype)
+                base_cop = CopulaFactory.create(ctype)
+                cop = RotatedCopula(base_cop, rot) if rot != 0 else base_cop
                 fitter.fit_tau((x, y), copula=cop)
 
                 # quick CMLE refine

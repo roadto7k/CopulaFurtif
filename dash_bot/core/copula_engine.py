@@ -4,6 +4,7 @@ from typing import Any, Tuple, Optional, List
 import pandas as pd
 from CopulaFurtif.copulas import CopulaFactory, CopulaType
 from DataAnalysis.Utils.copulas import fit_copulas
+from CopulaFurtif.core.copulas.adapters import RotatedCopula
 
 HAS_COPULAFURTIF = True
 
@@ -42,13 +43,29 @@ def _copula_type_from_value(val: str):
             return ct
     return None
 
+def _parse_rotation_suffix(name: str) -> Tuple[str, int]:
+    """
+    Parse a copula name that may carry a rotation suffix.
+      "Clayton R90"  -> ("Clayton", 90)
+      "TAWN T1 R270" -> ("TAWN T1", 270)
+      "Gaussian"     -> ("Gaussian", 0)
+    """
+    for rot in (270, 180, 90):      # longest suffix first
+        suffix = f" R{rot}"
+        if name.strip().endswith(suffix):
+            base = name.strip()[: -len(suffix)].strip()
+            return base, rot
+    return name.strip(), 0
+
 def build_copula(name: str, params: Any):
     """
     Reconstruit un objet copula à partir du nom + params via CopulaFurtif.
+    Supporte les noms avec suffixe de rotation : "Clayton R90", "Gumbel R270", etc.
     """
     nm_raw = str(name)
-    nm = nm_raw.strip()
     p = _nudge_params(np.atleast_1d(params).astype(float))
+
+    base_name, rotation = _parse_rotation_suffix(nm_raw)
 
     def _set_params_furtif(cop, p):
         if hasattr(cop, "set_parameters"):
@@ -68,18 +85,21 @@ def build_copula(name: str, params: Any):
             return CopulaType.STUDENT
         if n in ("gaussian", "normal", "gauss"):
             return CopulaType.GAUSSIAN
-        ct = _copula_type_from_value(nm)
-        return ct
+        return _copula_type_from_value(nm)
 
     if not HAS_COPULAFURTIF or CopulaFactory is None:
-        raise RuntimeError("CopulaFurtif non disponible. Installe CopulaFurtif pour utiliser ce dashboard.")
+        raise RuntimeError("CopulaFurtif non disponible.")
 
-    ct = _to_copulatype(nm)
+    ct = _to_copulatype(base_name)
     if ct is None:
-        raise ValueError(f"CopulaType introuvable pour '{nm_raw}'")
-    cop = CopulaFactory.create(ct)
-    _set_params_furtif(cop, p)
-    return cop
+        raise ValueError(f"CopulaType introuvable pour '{base_name}' (nom original: '{nm_raw}')")
+
+    base_cop = CopulaFactory.create(ct)
+    _set_params_furtif(base_cop, p)
+
+    if rotation != 0:
+        return RotatedCopula(base_cop, rotation)
+    return base_cop
 
 def _call_cdf(cop, u: float, v: float) -> float:
     """

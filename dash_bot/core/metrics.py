@@ -21,7 +21,7 @@ def _annualization_factor(interval: str):
         return 365.0 / days
     return 365.0 * 24.0  # fallback
 
-def performance_metrics(equity, returns, interval: str = "D"):
+def performance_metrics(equity, interval: str = "D"):
     eq = pd.Series(equity).replace([np.inf, -np.inf], np.nan).dropna()
     if len(eq) < 3:
         return dict(

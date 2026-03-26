@@ -37,8 +37,9 @@ STRATEGIES = [
 
 # "kendall_spread_ref" is first = default (paper Eq.39)
 RANK_METHODS = [
-    ("kendall_spread_ref", "Kendall τ(Spread(ref,coin), Price(ref))  ← paper Eq.39"),
-    ("kendall_prices",     "Kendall τ(Price(ref), Price(coin))  [raw prices, off-paper]"),
+    ("kendall_spread_pair", "Kendall τ(Si, Sj) — best pair  ← paper Eq.33"),
+    ("kendall_spread_ref",  "Kendall τ(Spread(ref,coin), Price(ref))  ← paper Eq.39"),
+    ("kendall_prices",      "Kendall τ(Price(ref), Price(coin))  [raw prices, off-paper]"),
 ]
 
 COINTEGRATION_TESTS = [

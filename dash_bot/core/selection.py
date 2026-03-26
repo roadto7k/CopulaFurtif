@@ -84,19 +84,53 @@ def rank_coins(
     coins: List[str],
     method: str,
 ) -> pd.DataFrame:
-    """
-    Ranking par Kendall τ (comme dans l'article).
-    - kendall_spread_ref: τ(S_ref,coin, P_ref) — paper Eq.39 (défaut)
-    - kendall_prices: τ(P_ref, P_coin) — sur les prix bruts (hors paper)
-    """
     from scipy.stats import kendalltau
+    from itertools import combinations
 
     if ref not in prices.columns:
         return pd.DataFrame(columns=["coin", "tau", "abs_tau"])
 
     ref_series = prices[ref].dropna()
-    rows = []
 
+    # -------------------------------------------------------
+    # NOUVEAU : kendall_spread_pair — paper Eq.33
+    # τ(S_i, S_j) sur toutes les paires, retourne le top coin
+    # sous forme compatible avec le reste du code
+    # -------------------------------------------------------
+    if method == "kendall_spread_pair":
+        best_tau  = -np.inf
+        best_pair = None
+
+        for c1, c2 in combinations(coins, 2):
+            s1 = spreads.get(c1)
+            s2 = spreads.get(c2)
+            if s1 is None or s2 is None or s1.empty or s2.empty:
+                continue
+            idx = s1.index.intersection(s2.index)
+            if len(idx) < 30:
+                continue
+            try:
+                tau, _ = kendalltau(s1.loc[idx], s2.loc[idx])
+                if np.isfinite(tau) and abs(tau) > best_tau:
+                    best_tau  = abs(tau)
+                    best_pair = (c1, c2, float(tau))
+            except Exception:
+                continue
+
+        if best_pair is None:
+            return pd.DataFrame(columns=["coin", "tau", "abs_tau"])
+
+        # Retourne les 2 coins de la meilleure paire en premier
+        c1, c2, tau = best_pair
+        return pd.DataFrame([
+            dict(coin=c1, tau=tau,  abs_tau=abs(tau)),
+            dict(coin=c2, tau=tau,  abs_tau=abs(tau)),
+        ])
+
+    # -------------------------------------------------------
+    # Méthodes existantes
+    # -------------------------------------------------------
+    rows = []
     for c in coins:
         if c == ref or c not in prices.columns:
             continue

@@ -76,15 +76,17 @@ def build_layout():
                                             dcc.Dropdown(
                                                 id="interval",
                                                 options=[{"label": a, "value": b} for a, b in INTERVALS],
-                                                value="1h",
+                                                value="5m",
                                                 clearable=False,
                                             ),
 
                                             html.Label("Start / End"),
                                             dcc.DatePickerRange(
                                                 id="date-range",
-                                                start_date=(pd.Timestamp.today() - pd.Timedelta(days=365 * 2)).date(),
-                                                end_date=pd.Timestamp.today().date(),
+                                                # start_date=(pd.Timestamp.today() - pd.Timedelta(days=365 * 2)).date(),
+                                                # end_date=pd.Timestamp.today().date(),
+                                                start_date=pd.Timestamp("2021-01-01").date(),
+                                                end_date=pd.Timestamp("2023-01-19").date(),
                                                 display_format="YYYY-MM-DD",
                                             ),
 
@@ -150,7 +152,7 @@ def build_layout():
                                             dcc.Dropdown(
                                                 id="rank-method",
                                                 options=[{"label": lbl, "value": v} for v, lbl in RANK_METHODS],
-                                                value="kendall_spread_ref",
+                                                value="kendall_spread_pair",
                                                 clearable=False,
                                             ),
 
@@ -186,7 +188,7 @@ def build_layout():
                                             html.Label("Entry / Exit thresholds"),
                                             dbc.Row(
                                                 [
-                                                    dbc.Col(dbc.Input(id="entry", type="number", value=0.10, min=0.01, max=0.49, step=0.01), width=6),
+                                                    dbc.Col(dbc.Input(id="entry", type="number", value=0.20, min=0.01, max=0.49, step=0.01), width=6),
                                                     dbc.Col(dbc.Input(id="exit", type="number", value=0.10, min=0.01, max=0.49, step=0.01), width=6),
                                                 ],
                                                 style={"marginBottom": "8px"},
@@ -194,7 +196,7 @@ def build_layout():
 
                                             dbc.Checklist(
                                                 options=[{"label": " Flip on opposite signal", "value": "flip"}],
-                                                value=["flip"],
+                                                value=[],
                                                 id="flip",
                                             ),
 
@@ -219,7 +221,7 @@ def build_layout():
                                             dbc.Checklist(
                                                 options=[{"label": " Trade Stop-Loss (per-trade max loss)",
                                                           "value": "trade_sl"}],
-                                                value=["trade_sl"],
+                                                value=[],
                                                 id="use-trade-sl",
                                                 style={"marginTop": "4px"},
                                             ),
@@ -240,7 +242,7 @@ def build_layout():
 
                                             dbc.Checklist(
                                                 options=[{"label": " Max Portfolio Drawdown Stop", "value": "max_dd"}],
-                                                value=["max_dd"],
+                                                value=[],
                                                 id="use-max-dd-stop",
                                                 style={"marginTop": "6px"},
                                             ),

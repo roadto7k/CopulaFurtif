@@ -32,7 +32,7 @@ class BacktestParams:
     # selection
     # "kendall_spread_ref" = paper Eq.39 : τ(S_i, P_ref) on spread vs BTC
     # "kendall_prices"     = τ(P_ref, P_coin) on raw prices (off-paper)
-    rank_method: str = "kendall_spread_ref"
+    rank_method: str = "kendall_spread_pair"
     top_k: int = 2   # how many coins to pick (2 => 1 pair)
 
     # copula
@@ -40,9 +40,9 @@ class BacktestParams:
     copula_manual: str = "gaussian"
 
     # trading
-    entry: float = 0.10
+    entry: float = 0.20
     exit: float = 0.10
-    flip_on_opposite: bool = True
+    flip_on_opposite: bool = False
 
     # sizing & costs
     # cap_per_leg is the base capital per leg.
@@ -57,7 +57,7 @@ class BacktestParams:
     # RISK MANAGEMENT / STOP-LOSS
     # ============================================================
     # Trade-level stop-loss: ferme le trade si unrealized PnL < -X% du notionnel (2 legs)
-    use_trade_stop_loss: bool = True
+    use_trade_stop_loss: bool = False
     trade_stop_loss_pct: float = 0.03      # 3% du notionnel total (2 * cap_per_leg)
 
     # Daily drawdown limit: stop trading pour la journée si equity baisse de > Y%
@@ -65,7 +65,7 @@ class BacktestParams:
     daily_drawdown_limit_pct: float = 0.02  # 2% de l'equity au début de la journée
 
     # Max portfolio drawdown: arrête totalement si drawdown > Z% depuis HWM
-    use_max_drawdown_stop: bool = True
+    use_max_drawdown_stop: bool = False
     max_drawdown_stop_pct: float = 0.15     # 15% de drawdown max => stop tout
 
     # Trailing stop sur PnL du trade (optionnel) : si le trade a gagné, protège les gains
@@ -74,7 +74,7 @@ class BacktestParams:
     trailing_stop_activation: float = 0.01  # s'active quand PnL > 1% du notionnel
 
     # Position closing behaviour
-    # True  → comportement papier : toutes positions fermees en fin de semaine
+    # True → comportement papier : toutes positions fermees en fin de semaine
     # False → multi-slot : les positions ouvertes continuent jusqu'a signal/stop,
     #          le copula d'origine continue de generer les signaux de sortie
     force_week_end_close: bool = True

@@ -154,11 +154,28 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
     t0       = start_dt
     cycle_id = 0
 
+    # Pré-calcul du nombre total de cycles pour la progression
+    _t = start_dt
+    _total_cycles = 0
     while True:
-        t_form_end  = t0 + formation_delta
+        if _t + formation_delta + trading_delta > end_dt:
+            break
+        _total_cycles += 1
+        _t += step_delta
+
+    while True:
+        t_form_end = t0 + formation_delta
         t_trade_end = t_form_end + trading_delta
         if t_trade_end > end_dt:
             break
+
+        print(
+            f"[Backtest] Cycle {cycle_id + 1}/{_total_cycles} │ "
+            f"Formation: {t0.strftime('%Y-%m-%d')} → {t_form_end.strftime('%Y-%m-%d')} │ "
+            f"Trading: {t_form_end.strftime('%Y-%m-%d')} → {t_trade_end.strftime('%Y-%m-%d')} │ "
+            f"Equity: {current_equity:,.0f} USDT",
+            flush=True,
+        )
 
         # Max drawdown portfolio stop
         if p.use_max_drawdown_stop and not portfolio_stopped:
@@ -243,8 +260,14 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                             p1_open = float(first_bar.iloc[0][coin1])
                             p2_open = float(first_bar.iloc[0][coin2])
 
+                            #ToDo check here for the beta coefs
+
                             q1 = (p.cap_per_leg / p1_open) if (np.isfinite(p1_open) and p1_open > 0) else 0.0
-                            q2 = (p.cap_per_leg / p2_open) if (np.isfinite(p2_open) and p2_open > 0) else 0.0
+                            q2 = ((beta2 / beta1) * p.cap_per_leg / p2_open) if (
+                                    np.isfinite(p2_open) and p2_open > 0
+                                    and np.isfinite(beta1) and beta1 > 0
+                                    and np.isfinite(beta2) and beta2 > 0
+                            ) else (p.cap_per_leg / p2_open) if (np.isfinite(p2_open) and p2_open > 0) else 0.0
 
                             new_slot = _make_slot(
                                 cycle_id=cycle_id,
@@ -253,7 +276,7 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                                 beta1=beta1, beta2=beta2,
                                 s1_sorted=s1_sorted, s2_sorted=s2_sorted,
                                 q1=q1, q2=q2,
-                                total_notional=p.cap_per_leg * 2.0,
+                                total_notional=(q1 * p1_open) + (q2 * p2_open),
                             )
                             active_slots.append(new_slot)
 
@@ -461,8 +484,8 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
     trades_df = pd.DataFrame(trades)
     weekly_df = pd.DataFrame(weekly)
 
-    metrics   = performance_metrics(equity,       p.interval)
-    metrics_g = performance_metrics(equity_gross, p.interval)
+    metrics = performance_metrics(equity, interval=p.interval)
+    metrics_g = performance_metrics(equity_gross, interval=p.interval)
 
     monthly = pd.Series(dtype=float)
     if len(equity) > 10:
