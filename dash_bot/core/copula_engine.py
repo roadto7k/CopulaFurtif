@@ -258,3 +258,5 @@ def fit_pair_copula(
                                                   "ou étends _call_cdf pour CopulaFurtif."]
     best = df_ok.iloc[0]
     return str(best["name"]), best["params"], df_fit, msgs
+
+

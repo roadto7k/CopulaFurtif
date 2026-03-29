@@ -33,6 +33,7 @@ class BacktestParams:
     # "kendall_spread_ref" = paper Eq.39 : τ(S_i, P_ref) on spread vs BTC
     # "kendall_prices"     = τ(P_ref, P_coin) on raw prices (off-paper)
     rank_method: str = "kendall_spread_pair"
+
     top_k: int = 2   # how many coins to pick (2 => 1 pair)
 
     # copula

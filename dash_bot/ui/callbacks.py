@@ -9,7 +9,13 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table, Input, Output, State
 
 from .serialization import serialize_results, _deserialize_series
-from ..viz.figures import fig_equity, fig_drawdown, fig_monthly_heatmap, fig_copula_freq, compute_copula_stats
+from ..viz.figures import fig_equity, fig_drawdown, fig_monthly_heatmap, fig_copula_freq, compute_copula_stats, fig_empty
+from ..viz.figures_diagnostic import (
+    fig_copula_decision_map,
+    fig_h_functions_timeseries,
+    fig_spread_with_trades,
+    fig_cycle_summary_card,
+)
 
 # data (tu dis OK)
 from ..data.sources import fetch_prices_cached, load_prices_csv
@@ -508,4 +514,185 @@ def register_callbacks(app):
                 ]
             )
 
+        if tab == "tab-diagnostic":
+            return html.Div(
+                "⬡  Select a cycle from the dropdown above to inspect its copula, signals, and trades.",
+                style={"color": "#5a7a90", "fontFamily": "Share Tech Mono", "padding": "40px",
+                       "textAlign": "center", "fontSize": "1rem"},
+            )
+
         return dbc.Alert("Unknown tab", color="warning")
+
+    # ── Toggle diagnostic controls visibility ──────────────────────
+    @app.callback(
+        Output("diagnostic-controls", "style"),
+        Input("tabs", "value"),
+    )
+    def toggle_diag_controls(tab):
+        if tab == "tab-diagnostic":
+            return {"display": "flex", "alignItems": "center", "gap": "12px",
+                    "marginTop": "10px", "marginBottom": "10px",
+                    "padding": "8px 16px", "backgroundColor": "rgba(10,22,40,0.6)",
+                    "borderRadius": "6px", "border": "1px solid rgba(0,240,255,0.08)"}
+        return {"display": "none"}
+
+    # ── Populate cycle selector ────────────────────────────────────
+    @app.callback(
+        Output("diagnostic-cycle-selector", "options"),
+        Input("store-results", "data"),
+    )
+    def populate_cycle_selector(store):
+        if not store:
+            return []
+        weekly = store.get("weekly", [])
+        options = []
+        for w in weekly:
+            cycle = w.get("cycle", "?")
+            pair = w.get("selected_pair") or "—"
+            status = w.get("status", "")
+            cop = w.get("copula") or "—"
+            label = f"Cycle {cycle} │ {pair} │ {cop} │ {status}"
+            options.append({"label": label, "value": cycle})
+        return options
+
+    # ── Render diagnostic detail for selected cycle ────────────────
+    @app.callback(
+        Output("tab-content", "children", allow_duplicate=True),
+        Input("diagnostic-cycle-selector", "value"),
+        State("store-results", "data"),
+        State("tabs", "value"),
+        prevent_initial_call=True,
+    )
+    def render_diagnostic_detail(selected_cycle, store, current_tab):
+        if current_tab != "tab-diagnostic" or selected_cycle is None or not store:
+            raise dash.exceptions.PreventUpdate
+
+        weekly = store.get("weekly", [])
+        trades_all = pd.DataFrame(store.get("trades", []))
+
+        # Find the selected cycle data
+        cycle_data = None
+        for w in weekly:
+            if w.get("cycle") == selected_cycle:
+                cycle_data = w
+                break
+
+        if cycle_data is None:
+            return dbc.Alert(f"Cycle {selected_cycle}: no data found.", className="alert-warning")
+        if cycle_data.get("status") != "OK":
+            return dbc.Alert(
+                f"Cycle {selected_cycle}: {cycle_data.get('status', 'no data')} — no diagnostic available.",
+                className="alert-warning",
+            )
+
+        # Extract diagnostic bars
+        diag_bars = cycle_data.get("diag_bars", [])
+        if not diag_bars:
+            return dbc.Alert("No diagnostic data for this cycle (no bars recorded).", className="alert-info")
+
+        diag_df = pd.DataFrame(diag_bars)
+        diag_df["ts"] = pd.to_datetime(diag_df["ts"])
+
+        pair = cycle_data.get("selected_pair", "?")
+        cop_name = cycle_data.get("copula", "?")
+        beta1 = cycle_data.get("beta1", float("nan"))
+        beta2 = cycle_data.get("beta2", float("nan"))
+        q1 = cycle_data.get("q1", 0)
+        q2 = cycle_data.get("q2", 0)
+        cop_rotation = int(cycle_data.get("cop_rotation", 0))
+        cop_params_list = cycle_data.get("cop_params", [])
+
+        # Rebuild copula for the decision map
+        cop = None
+        try:
+            from ..core.copula_engine import build_copula
+            cop_type_str = cop_name.split(" R")[0] if " R" in str(cop_name) else str(cop_name)
+            params = np.array(cop_params_list, dtype=float)
+            cop = build_copula(cop_type_str, params)
+            if cop_rotation != 0:
+                from CopulaFurtif.core.copulas.adapters import RotatedCopula
+                cop = RotatedCopula(cop, cop_rotation)
+        except Exception as e:
+            cop = None
+
+        # Cycle trades
+        cycle_trades = trades_all[trades_all["cycle"] == selected_cycle] if not trades_all.empty else pd.DataFrame()
+        n_trades = len(cycle_trades)
+        cycle_pnl = float(cycle_trades["net_pnl"].sum()) if not cycle_trades.empty and "net_pnl" in cycle_trades.columns else 0.0
+
+        # Entry/exit thresholds from stored params
+        params_dict = store.get("params", {})
+        entry_thr = float(params_dict.get("entry", 0.20))
+        exit_thr = float(params_dict.get("exit", 0.10))
+
+        # ── Build figures ──
+
+        # 1. Summary card
+        card = fig_cycle_summary_card(
+            cycle_id=selected_cycle, pair=pair, copula_name=str(cop_name),
+            beta1=float(beta1) if np.isfinite(beta1) else 0.0,
+            beta2=float(beta2) if np.isfinite(beta2) else 0.0,
+            q1=float(q1), q2=float(q2),
+            n_trades=n_trades, cycle_pnl=cycle_pnl,
+            entry_threshold=entry_thr, exit_threshold=exit_thr,
+        )
+
+        # 2. Decision map
+        fig_map = fig_empty("Decision map — copula could not be rebuilt")
+        if cop is not None and len(diag_df) > 0:
+            try:
+                fig_map = fig_copula_decision_map(
+                    cop=cop,
+                    u_trades=diag_df["u"].values,
+                    v_trades=diag_df["v"].values,
+                    signals=diag_df["sig"].values,
+                    entry=entry_thr, exit_thr=exit_thr,
+                    copula_name=str(cop_name), pair_label=pair,
+                )
+            except Exception:
+                pass
+
+        # 3. H-functions time series
+        fig_h = fig_h_functions_timeseries(
+            timestamps=diag_df["ts"],
+            h12_series=diag_df["h12"].values,
+            h21_series=diag_df["h21"].values,
+            signals=diag_df["sig"].values,
+            entry=entry_thr, exit_thr=exit_thr,
+            pair_label=pair,
+        )
+
+        # 4. Spreads with trade markers
+        fig_spreads = fig_spread_with_trades(
+            spread1_form=pd.Series(dtype=float),
+            spread2_form=pd.Series(dtype=float),
+            spread1_trade=pd.Series(diag_df["s1"].values, index=diag_df["ts"]),
+            spread2_trade=pd.Series(diag_df["s2"].values, index=diag_df["ts"]),
+            trade_entries=[
+                {"time": t.get("entry_time"), "direction": t.get("direction", "")}
+                for _, t in cycle_trades.iterrows()
+            ] if not cycle_trades.empty else [],
+            trade_exits=[
+                {"time": t.get("exit_time"), "reason": t.get("exit_reason", "")}
+                for _, t in cycle_trades.iterrows()
+            ] if not cycle_trades.empty else [],
+            pair_label=pair,
+            beta1=float(beta1) if np.isfinite(beta1) else 0.0,
+            beta2=float(beta2) if np.isfinite(beta2) else 0.0,
+        )
+
+        return dbc.Col([
+            # Row 1: Summary + Decision map
+            dbc.Row([
+                dbc.Col(dcc.Graph(figure=card, config={"responsive": True}), width=5),
+                dbc.Col(dcc.Graph(figure=fig_map, config={"responsive": True}), width=7),
+            ], className="mb-2"),
+            # Row 2: H-functions
+            dbc.Row([
+                dbc.Col(dcc.Graph(figure=fig_h, config={"responsive": True}), width=12),
+            ], className="mb-2"),
+            # Row 3: Spreads
+            dbc.Row([
+                dbc.Col(dcc.Graph(figure=fig_spreads, config={"responsive": True}), width=12),
+            ]),
+        ])

@@ -348,6 +348,35 @@ def build_layout():
                                     dcc.Tab(label="⬡ Weekly Selection", value="tab-weekly"),
                                     dcc.Tab(label="⬡ Trades", value="tab-trades"),
                                     dcc.Tab(label="⬡ Copula Stats", value="tab-copulas"),
+                                    dcc.Tab(label="⬡ Cycle Diagnostic", value="tab-diagnostic"),
+                                ],
+                            ),
+
+                            # Cycle selector (shown only on diagnostic tab)
+                            html.Div(
+                                id="diagnostic-controls",
+                                style={"display": "none"},
+                                children=[
+                                    html.Label(
+                                        "SELECT CYCLE",
+                                        style={
+                                            "fontFamily": "Orbitron, sans-serif",
+                                            "color": "#00f0ff",
+                                            "fontSize": "0.75rem",
+                                            "letterSpacing": "2px",
+                                            "marginRight": "12px",
+                                        },
+                                    ),
+                                    dcc.Dropdown(
+                                        id="diagnostic-cycle-selector",
+                                        placeholder="Select a trading cycle...",
+                                        style={
+                                            "width": "500px",
+                                            "backgroundColor": "#0a1628",
+                                            "color": "#c8dce8",
+                                            "borderColor": "rgba(0,240,255,0.15)",
+                                        },
+                                    ),
                                 ],
                             ),
 

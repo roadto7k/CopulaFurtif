@@ -260,14 +260,8 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                             p1_open = float(first_bar.iloc[0][coin1])
                             p2_open = float(first_bar.iloc[0][coin2])
 
-                            #ToDo check here for the beta coefs
-
                             q1 = (p.cap_per_leg / p1_open) if (np.isfinite(p1_open) and p1_open > 0) else 0.0
-                            q2 = ((beta2 / beta1) * p.cap_per_leg / p2_open) if (
-                                    np.isfinite(p2_open) and p2_open > 0
-                                    and np.isfinite(beta1) and beta1 > 0
-                                    and np.isfinite(beta2) and beta2 > 0
-                            ) else (p.cap_per_leg / p2_open) if (np.isfinite(p2_open) and p2_open > 0) else 0.0
+                            q2 = (p.cap_per_leg / p2_open) if (np.isfinite(p2_open) and p2_open > 0) else 0.0
 
                             new_slot = _make_slot(
                                 cycle_id=cycle_id,
@@ -279,6 +273,23 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                                 total_notional=(q1 * p1_open) + (q2 * p2_open),
                             )
                             active_slots.append(new_slot)
+
+        # ── Diagnostic storage for the current cycle (must be BEFORE weekly.append) ──
+        cycle_diag_bars = []  # will collect per-bar (u, v, h12, h21, sig)
+
+        # Extract cop metadata for dashboard reconstruction
+        _cop_params = []
+        _cop_rotation = 0
+        _s1_sorted_list = []
+        _s2_sorted_list = []
+        if new_slot is not None:
+            try:
+                _cop_params = list(float(x) for x in np.atleast_1d(cop.get_parameters()))
+            except Exception:
+                _cop_params = []
+            _cop_rotation = getattr(cop, 'rotation', 0)
+            _s1_sorted_list = s1_sorted.tolist() if s1_sorted is not None else []
+            _s2_sorted_list = s2_sorted.tolist() if s2_sorted is not None else []
 
         weekly.append(dict(
             cycle=cycle_id,
@@ -293,6 +304,11 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
             top_list=",".join(top) if top else "",
             fit_messages="; ".join(msgs) if msgs else "",
             open_slots_start=len(active_slots),
+            cop_rotation=_cop_rotation,
+            cop_params=_cop_params,
+            s1_sorted=_s1_sorted_list,
+            s2_sorted=_s2_sorted_list,
+            diag_bars=cycle_diag_bars,  # will be filled during bar loop below
         ))
 
         # Bar loop : all active slots
@@ -443,6 +459,15 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                         slot["pending_sig"] = int(sig)
                     elif slot["pos"] != 0 and sig != 0 and is_current:
                         slot["pending_sig"] = int(sig)
+                    # ── Diagnostic capture ──
+                    if slot is new_slot:
+                        cycle_diag_bars.append(dict(
+                            ts=ts, u=det["u"], v=det["v"],
+                            h12=det["h12"], h21=det["h21"],
+                            sig=sig, close=det["close"],
+                            p1=p1, p2=p2, pref=pref,
+                            s1=s1_val, s2=s2_val,
+                        ))
 
                 slot["prev_p1"] = p1
                 slot["prev_p2"] = p2

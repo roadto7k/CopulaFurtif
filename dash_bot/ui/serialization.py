@@ -90,6 +90,44 @@ def _deserialize_series(obj: Dict[str, Any]) -> pd.Series:
 
 #     return out
 
+def _serialize_weekly(weekly):
+    """Serialize weekly DataFrame/list with diagnostic data for JSON storage."""
+    if isinstance(weekly, pd.DataFrame):
+        records = weekly.to_dict("records")
+    elif isinstance(weekly, list):
+        records = weekly
+    else:
+        return []
+
+    for rec in records:
+        # Convert numpy arrays to lists
+        for key in ("s1_sorted", "s2_sorted", "cop_params"):
+            val = rec.get(key)
+            if val is not None:
+                if isinstance(val, np.ndarray):
+                    rec[key] = val.tolist()
+                elif not isinstance(val, list):
+                    try:
+                        rec[key] = list(val)
+                    except Exception:
+                        rec[key] = []
+
+        # Convert diag_bars timestamps to strings and ensure JSON-safe types
+        diag = rec.get("diag_bars")
+        if diag and isinstance(diag, list):
+            for bar in diag:
+                ts = bar.get("ts")
+                if ts is not None and not isinstance(ts, str):
+                    bar["ts"] = str(ts)
+                for k, v in list(bar.items()):
+                    if isinstance(v, (np.floating, np.integer)):
+                        bar[k] = float(v)
+                    elif isinstance(v, np.bool_):
+                        bar[k] = bool(v)
+
+    return records
+
+
 def serialize_results(res: Dict[str, Any]) -> Dict[str, Any]:
     def ser_series(s: pd.Series) -> Dict[str, Any]:
         return {"index": s.index.astype(str).tolist(), "values": s.values.tolist()}
@@ -100,7 +138,7 @@ def serialize_results(res: Dict[str, Any]) -> Dict[str, Any]:
         "metrics": res["metrics"],
         "metrics_gross": res["metrics_gross"],
         "trades": res["trades"].to_dict("records") if isinstance(res["trades"], pd.DataFrame) else [],
-        "weekly": res["weekly"].to_dict("records") if isinstance(res["weekly"], pd.DataFrame) else [],
+        "weekly": _serialize_weekly(res["weekly"]),
         "copula_freq": res["copula_freq"].to_dict("records") if isinstance(res["copula_freq"], pd.DataFrame) else [],
         "monthly_returns": ser_series(res["monthly_returns"]) if isinstance(res["monthly_returns"], pd.Series) else {"index": [], "values": []},
         "params": res["params"].__dict__,
