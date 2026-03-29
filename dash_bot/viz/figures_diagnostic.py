@@ -1,14 +1,10 @@
 # dash_bot/viz/figures_diagnostic.py
 """
 Cycle-level diagnostic visualizations for the copula pairs trading dashboard.
-
-Each function produces a Plotly figure styled in the TRON dark theme.
-Designed to be called from the dashboard callback when the user selects
-a specific trading cycle to inspect.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -29,15 +25,22 @@ SUBTEXT    = "#5a7a90"
 PANEL_BG   = "rgba(10,22,40,0.95)"
 GRID_COLOR = "rgba(0,240,255,0.06)"
 
-# Neon open/close zones
-ZONE_OPEN_LONG  = "rgba(0,255,136,0.12)"   # green zone
-ZONE_OPEN_SHORT = "rgba(255,51,85,0.12)"   # red zone
-ZONE_CLOSE      = "rgba(255,228,26,0.10)"  # gold zone
-ZONE_HOLD       = "rgba(0,0,0,0)"          # transparent
+ZONE_OPEN_LONG  = "rgba(0,255,136,0.12)"
+ZONE_OPEN_SHORT = "rgba(255,51,85,0.12)"
+ZONE_CLOSE      = "rgba(255,228,26,0.10)"
+
+
+def _tron_layout(**overrides) -> dict:
+    """
+    Merge TRON_LAYOUT with overrides. Later keys win → no duplicate kwarg error.
+    """
+    out = dict(TRON_LAYOUT)
+    out.update(overrides)
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 1. COPULA DECISION MAP  (the "Figure 1" from the paper)
+# 1. COPULA DECISION MAP
 # ═════════════════════════════════════════════════════════════════════════
 
 def fig_copula_decision_map(
@@ -46,29 +49,17 @@ def fig_copula_decision_map(
     v_trades: np.ndarray,
     signals: np.ndarray,
     entry: float,
-    exit_thr: float,  # renamed to avoid shadowing 'exit'
+    exit_thr: float,
     copula_name: str = "",
     pair_label: str = "",
     Ngrid: int = 80,
 ) -> go.Figure:
-    """
-    Contour plot of the copula decision regions in (u,v) space
-    with actual trading-period observations overlaid.
-
-    Regions:
-      - Green  : OPEN LONG coin1 / SHORT coin2  (h12>1-α1, h21<α1)
-      - Red    : OPEN SHORT coin1 / LONG coin2  (h12<α1, h21>1-α1)
-      - Gold   : CLOSE zone  (|h12-0.5|<α2  AND  |h21-0.5|<α2)
-      - Dark   : HOLD / no signal
-    """
     fig = go.Figure()
 
-    # ── Compute decision regions on grid ────────────────────────────
     eps = 1e-4
     grid = np.linspace(eps, 1 - eps, Ngrid)
     U, V = np.meshgrid(grid, grid)
 
-    # Compute h-functions on full grid
     H12 = np.zeros_like(U)
     H21 = np.zeros_like(U)
 
@@ -86,7 +77,6 @@ def fig_copula_decision_map(
                 H12[i, j] = 0.5
                 H21[i, j] = 0.5
 
-    # Decision zones: 1=long, -1=short, 2=close, 0=hold
     Z = np.zeros_like(U)
     close_mask = (np.abs(H12 - 0.5) < exit_thr) & (np.abs(H21 - 0.5) < exit_thr)
     long_mask  = (H12 > 1 - entry) & (H21 < entry)
@@ -94,26 +84,21 @@ def fig_copula_decision_map(
 
     Z[long_mask]  = 1
     Z[short_mask] = -1
-    Z[close_mask] = 2  # close overrides (though zones don't overlap)
+    Z[close_mask] = 2
 
-    # Custom colorscale: -1=red, 0=dark, 1=green, 2=gold
     zone_colorscale = [
-        [0.0,  RED],            # -1
-        [0.33, "rgba(10,22,40,0.95)"],  # 0 (hold)
-        [0.66, GREEN],          # +1
-        [1.0,  GOLD],           # 2 (close)
+        [0.0,  RED],
+        [0.33, "rgba(10,22,40,0.95)"],
+        [0.66, GREEN],
+        [1.0,  GOLD],
     ]
 
     fig.add_trace(go.Heatmap(
         x=grid, y=grid, z=Z,
-        colorscale=zone_colorscale,
-        zmin=-1, zmax=2,
-        showscale=False,
-        opacity=0.35,
-        hoverinfo="skip",
+        colorscale=zone_colorscale, zmin=-1, zmax=2,
+        showscale=False, opacity=0.35, hoverinfo="skip",
     ))
 
-    # ── Copula PDF contours (faint) ─────────────────────────────────
     try:
         Z_pdf = np.zeros_like(U)
         for i in range(Ngrid):
@@ -123,27 +108,17 @@ def fig_copula_decision_map(
                 except Exception:
                     Z_pdf[i, j] = 0.0
         Z_pdf = np.clip(Z_pdf, 0, np.percentile(Z_pdf[Z_pdf > 0], 98) if (Z_pdf > 0).any() else 1)
-
         fig.add_trace(go.Contour(
-            x=grid, y=grid, z=Z_pdf,
-            ncontours=12,
-            colorscale="Blues",
-            showscale=False,
-            opacity=0.20,
-            line=dict(width=0.5, color="rgba(0,240,255,0.15)"),
-            hoverinfo="skip",
+            x=grid, y=grid, z=Z_pdf, ncontours=12, colorscale="Blues",
+            showscale=False, opacity=0.20,
+            line=dict(width=0.5, color="rgba(0,240,255,0.15)"), hoverinfo="skip",
         ))
     except Exception:
         pass
 
-    # ── Decision boundary lines ─────────────────────────────────────
-    # h12 = entry line (horizontal frontier in contour of H12)
     fig.add_trace(go.Contour(
         x=grid, y=grid, z=H12,
-        contours=dict(
-            start=entry, end=entry, size=0.01,
-            coloring="none",
-        ),
+        contours=dict(start=entry, end=entry, size=0.01, coloring="none"),
         line=dict(color=RED, width=1.5, dash="dot"),
         showscale=False, hoverinfo="skip", name=f"h12={entry:.2f}",
     ))
@@ -153,7 +128,6 @@ def fig_copula_decision_map(
         line=dict(color=GREEN, width=1.5, dash="dot"),
         showscale=False, hoverinfo="skip", name=f"h12={1-entry:.2f}",
     ))
-    # h21 boundaries
     fig.add_trace(go.Contour(
         x=grid, y=grid, z=H21,
         contours=dict(start=entry, end=entry, size=0.01, coloring="none"),
@@ -167,38 +141,29 @@ def fig_copula_decision_map(
         showscale=False, hoverinfo="skip", name=f"h21={1-entry:.2f}",
     ))
 
-    # ── Close zone boundary ─────────────────────────────────────────
-    # |h12-0.5|=exit and |h21-0.5|=exit → rectangle in h-space
-    # We approximate with contour lines
     for val in [0.5 - exit_thr, 0.5 + exit_thr]:
         fig.add_trace(go.Contour(
             x=grid, y=grid, z=H12,
             contours=dict(start=val, end=val, size=0.01, coloring="none"),
             line=dict(color=GOLD, width=1, dash="dot"),
-            showscale=False, hoverinfo="skip",
-            showlegend=False,
+            showscale=False, hoverinfo="skip", showlegend=False,
         ))
         fig.add_trace(go.Contour(
             x=grid, y=grid, z=H21,
             contours=dict(start=val, end=val, size=0.01, coloring="none"),
             line=dict(color=GOLD, width=1, dash="dot"),
-            showscale=False, hoverinfo="skip",
-            showlegend=False,
+            showscale=False, hoverinfo="skip", showlegend=False,
         ))
 
-    # ── Trading observations ────────────────────────────────────────
     if len(u_trades) > 0:
         sig = np.asarray(signals)
 
-        # Trajectory line (thin, shows time evolution)
         fig.add_trace(go.Scatter(
-            x=u_trades, y=v_trades,
-            mode="lines",
+            x=u_trades, y=v_trades, mode="lines",
             line=dict(color="rgba(200,220,232,0.15)", width=0.8),
             hoverinfo="skip", showlegend=False,
         ))
 
-        # Hold points (no signal)
         mask_hold = sig == 0
         if mask_hold.any():
             fig.add_trace(go.Scatter(
@@ -208,7 +173,6 @@ def fig_copula_decision_map(
                 hovertemplate="u=%{x:.3f} v=%{y:.3f}<extra>hold</extra>",
             ))
 
-        # Open long points
         mask_long = sig == 1
         if mask_long.any():
             fig.add_trace(go.Scatter(
@@ -219,7 +183,6 @@ def fig_copula_decision_map(
                 hovertemplate="u=%{x:.3f} v=%{y:.3f}<extra>LONG coin1</extra>",
             ))
 
-        # Open short points
         mask_short = sig == -1
         if mask_short.any():
             fig.add_trace(go.Scatter(
@@ -234,8 +197,7 @@ def fig_copula_decision_map(
     if pair_label:
         title += f"  [{pair_label}]"
 
-    fig.update_layout(
-        **TRON_LAYOUT,
+    fig.update_layout(**_tron_layout(
         height=520, width=560,
         title=title,
         xaxis=dict(title="u (ECDF spread₁)", range=[0, 1],
@@ -243,9 +205,8 @@ def fig_copula_decision_map(
         yaxis=dict(title="v (ECDF spread₂)", range=[0, 1],
                    gridcolor=GRID_COLOR, tickfont=dict(color=SUBTEXT),
                    scaleanchor="x", scaleratio=1),
-        legend=dict(x=0.01, y=0.99, bgcolor="rgba(10,22,40,0.8)",
-                    font=dict(size=9)),
-    )
+        legend=dict(x=0.01, y=0.99, bgcolor="rgba(10,22,40,0.8)", font=dict(size=9)),
+    ))
     return fig
 
 
@@ -262,10 +223,6 @@ def fig_h_functions_timeseries(
     exit_thr: float,
     pair_label: str = "",
 ) -> go.Figure:
-    """
-    Time series of h1|2 and h2|1 with entry/exit threshold bands
-    and trade markers.
-    """
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True,
         subplot_titles=["h₁|₂ = P(U₁≤u₁ | U₂=u₂)", "h₂|₁ = P(U₂≤u₂ | U₁=u₁)"],
@@ -276,29 +233,21 @@ def fig_h_functions_timeseries(
         (h12_series, "h₁|₂", CYAN),
         (h21_series, "h₂|₁", MAGENTA),
     ], 1):
-        # h-function line
         fig.add_trace(go.Scatter(
-            x=timestamps, y=h_vals,
-            name=name, mode="lines",
+            x=timestamps, y=h_vals, name=name, mode="lines",
             line=dict(color=color, width=1.8),
         ), row=row, col=1)
 
-        # Entry thresholds
         fig.add_hline(y=entry, line=dict(color=RED, width=1, dash="dash"),
                       annotation_text=f"α₁={entry}", row=row, col=1)
         fig.add_hline(y=1 - entry, line=dict(color=GREEN, width=1, dash="dash"),
                       annotation_text=f"1-α₁={1-entry:.2f}", row=row, col=1)
-
-        # Close band
         fig.add_hrect(y0=0.5 - exit_thr, y1=0.5 + exit_thr,
                       fillcolor=ZONE_CLOSE, line_width=0,
                       annotation_text="close zone", row=row, col=1)
-
-        # 0.5 reference
         fig.add_hline(y=0.5, line=dict(color=SUBTEXT, width=0.5, dash="dot"),
                       row=row, col=1)
 
-    # Trade markers on h12
     sig = np.asarray(signals)
     ts = np.asarray(timestamps)
     for mask, color, name, symbol in [
@@ -315,12 +264,13 @@ def fig_h_functions_timeseries(
             ), row=1, col=1)
 
     title = f"⬡  H-FUNCTIONS — {pair_label}" if pair_label else "⬡  H-FUNCTIONS"
-    fig.update_layout(
-        **TRON_LAYOUT,
-        height=480,
-        title=title,
-        legend=dict(x=1.02, y=1, font=dict(size=9)),
-    )
+
+    # For subplots: only keep keys that don't clash with make_subplots axes
+    base = {k: v for k, v in TRON_LAYOUT.items()
+            if k not in ("xaxis", "yaxis", "legend", "margin")}
+    fig.update_layout(**base, height=480, title=title,
+                      margin=dict(l=35, r=25, t=55, b=35),
+                      legend=dict(x=1.02, y=1, font=dict(size=9)))
     fig.update_yaxes(range=[-0.02, 1.02])
     return fig
 
@@ -340,10 +290,6 @@ def fig_spread_with_trades(
     beta1: float = np.nan,
     beta2: float = np.nan,
 ) -> go.Figure:
-    """
-    Spread time series for both coins over formation + trading period.
-    Vertical line separating formation/trading, with trade entry/exit markers.
-    """
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True,
         subplot_titles=["Spread₁ = BTC − β₁·P₁", "Spread₂ = BTC − β₂·P₂"],
@@ -354,16 +300,13 @@ def fig_spread_with_trades(
         (spread1_form, spread1_trade, CYAN, beta1, "S₁"),
         (spread2_form, spread2_trade, MAGENTA, beta2, "S₂"),
     ], 1):
-        # Formation period
         if s_form is not None and len(s_form) > 0:
             fig.add_trace(go.Scatter(
                 x=s_form.index, y=s_form.values,
                 name=f"{label} (formation)", mode="lines",
-                line=dict(color=color, width=1.2, dash="dot"),
-                opacity=0.5,
+                line=dict(color=color, width=1.2, dash="dot"), opacity=0.5,
             ), row=row, col=1)
 
-        # Trading period
         if s_trade is not None and len(s_trade) > 0:
             fig.add_trace(go.Scatter(
                 x=s_trade.index, y=s_trade.values,
@@ -371,14 +314,12 @@ def fig_spread_with_trades(
                 line=dict(color=color, width=2),
             ), row=row, col=1)
 
-            # Boundary line
             if s_form is not None and len(s_form) > 0:
                 fig.add_vline(
                     x=s_trade.index[0], line=dict(color=GOLD, width=1.5, dash="dash"),
                     row=row, col=1,
                 )
 
-    # Trade entry/exit markers (on spread1 subplot)
     for entry_d in trade_entries:
         t = pd.to_datetime(entry_d.get("time"))
         direction = entry_d.get("direction", "")
@@ -386,26 +327,27 @@ def fig_spread_with_trades(
         label = "▲ LONG" if "LONG1" in direction else "▼ SHORT"
         fig.add_vline(x=t, line=dict(color=color, width=1.5), row="all", col=1)
         fig.add_annotation(
-            x=t, y=1.02, yref="paper",
-            text=label, showarrow=False,
+            x=t, y=1.02, yref="paper", text=label, showarrow=False,
             font=dict(color=color, size=9, family="Share Tech Mono"),
         )
 
     for exit_d in trade_exits:
         t = pd.to_datetime(exit_d.get("time"))
-        reason = exit_d.get("reason", "")
         fig.add_vline(x=t, line=dict(color=GOLD, width=1, dash="dot"), row="all", col=1)
 
     title = f"⬡  SPREADS — {pair_label}" if pair_label else "⬡  SPREADS"
     if np.isfinite(beta1) and np.isfinite(beta2):
         title += f"  (β₁={beta1:.2f}, β₂={beta2:.2f})"
 
-    fig.update_layout(**TRON_LAYOUT, height=420, title=title)
+    base = {k: v for k, v in TRON_LAYOUT.items()
+            if k not in ("xaxis", "yaxis", "legend", "margin")}
+    fig.update_layout(**base, height=420, title=title,
+                      margin=dict(l=35, r=25, t=55, b=35))
     return fig
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 4. CYCLE SUMMARY CARD (key stats as annotation figure)
+# 4. CYCLE SUMMARY CARD
 # ═════════════════════════════════════════════════════════════════════════
 
 def fig_cycle_summary_card(
@@ -422,9 +364,6 @@ def fig_cycle_summary_card(
     exit_threshold: float,
     status: str = "OK",
 ) -> go.Figure:
-    """
-    Compact summary card for a single cycle — key parameters at a glance.
-    """
     fig = go.Figure()
 
     lines = [
@@ -446,11 +385,10 @@ def fig_cycle_summary_card(
         bgcolor="rgba(10,22,40,0.95)",
     )
 
-    fig.update_layout(
-        **TRON_LAYOUT,
+    fig.update_layout(**_tron_layout(
         height=200,
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),
         margin=dict(l=10, r=10, t=10, b=10),
-    )
+    ))
     return fig
