@@ -357,26 +357,22 @@ def build_layout():
                                 id="diagnostic-controls",
                                 style={"display": "none"},
                                 children=[
-                                    html.Label(
-                                        "SELECT CYCLE",
-                                        style={
-                                            "fontFamily": "Orbitron, sans-serif",
-                                            "color": "#00f0ff",
-                                            "fontSize": "0.75rem",
-                                            "letterSpacing": "2px",
-                                            "marginRight": "12px",
-                                        },
-                                    ),
-                                    dcc.Dropdown(
-                                        id="diagnostic-cycle-selector",
-                                        placeholder="Select a trading cycle...",
-                                        style={
-                                            "width": "500px",
-                                            "backgroundColor": "#0a1628",
-                                            "color": "#c8dce8",
-                                            "borderColor": "rgba(0,240,255,0.15)",
-                                        },
-                                    ),
+                                    html.Label("SELECT CYCLE", style={
+                                        "fontFamily": "Orbitron, sans-serif", "color": "#00f0ff",
+                                        "fontSize": "0.75rem", "letterSpacing": "2px", "marginRight": "12px",
+                                    }),
+                                    dcc.Dropdown(id="diagnostic-cycle-selector",
+                                                 placeholder="Select a trading cycle...",
+                                                 style={"width": "450px", "backgroundColor": "#0a1628",
+                                                        "color": "#c8dce8", "borderColor": "rgba(0,240,255,0.15)"}),
+                                    html.Label("COPULA OVERLAY", style={
+                                        "fontFamily": "Orbitron, sans-serif", "color": "#ff2eed",
+                                        "fontSize": "0.75rem", "letterSpacing": "2px",
+                                        "marginLeft": "20px", "marginRight": "12px",
+                                    }),
+                                    dcc.Dropdown(id="diagnostic-copula-overlay", placeholder="Best (selected)",
+                                                 style={"width": "280px", "backgroundColor": "#0a1628",
+                                                        "color": "#c8dce8", "borderColor": "rgba(0,240,255,0.15)"}),
                                 ],
                             ),
 

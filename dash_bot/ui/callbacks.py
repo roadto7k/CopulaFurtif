@@ -17,6 +17,16 @@ from ..viz.figures_diagnostic import (
     fig_cycle_summary_card,
 )
 
+from ..viz.figures_diagnostic import (
+    fig_copula_decision_map,
+    fig_h_functions_timeseries,
+    fig_spread_with_trades,
+    fig_cycle_summary_card,
+    fig_pseudo_obs_scatter,
+    fig_fit_ranking,
+    fig_tail_dependence,
+)
+
 # data (tu dis OK)
 from ..data.sources import fetch_prices_cached, load_prices_csv
 from ..data.cleaning import clean_prices_basic
@@ -559,11 +569,12 @@ def register_callbacks(app):
     @app.callback(
         Output("tab-content", "children", allow_duplicate=True),
         Input("diagnostic-cycle-selector", "value"),
+        Input("diagnostic-copula-overlay", "value"),
         State("store-results", "data"),
         State("tabs", "value"),
         prevent_initial_call=True,
     )
-    def render_diagnostic_detail(selected_cycle, store, current_tab):
+    def render_diagnostic_detail(selected_cycle, overlay_copula_name, store, current_tab):
         if current_tab != "tab-diagnostic" or selected_cycle is None or not store:
             raise dash.exceptions.PreventUpdate
 
@@ -681,18 +692,56 @@ def register_callbacks(app):
             beta2=float(beta2) if np.isfinite(beta2) else 0.0,
         )
 
+        # 5. Pseudo-obs scatter with copula overlay
+        pseudo_u = cycle_data.get("pseudo_u", [])
+        pseudo_v = cycle_data.get("pseudo_v", [])
+        fit_summary = cycle_data.get("fit_summary", [])
+
+        # Build overlay copula (from dropdown selection)
+        overlay_cop = None
+        overlay_name = overlay_copula_name or cop_name
+        if fit_summary and overlay_name:
+            for fs in fit_summary:
+                if fs["name"] == overlay_name and fs.get("evaluable", False):
+                    try:
+                        from ..core.copula_engine import build_copula
+                        rot = int(fs.get("rotation", 0))
+                        oc = build_copula(fs["name"].split(" R")[0] if " R" in fs["name"] else fs["name"],
+                                          np.array(fs["params"], dtype=float))
+                        if rot != 0:
+                            from CopulaFurtif.core.copulas.adapters import RotatedCopula
+                            oc = RotatedCopula(oc, rot)
+                        overlay_cop = oc
+                    except Exception:
+                        pass
+                    break
+
+        fig_scatter = fig_pseudo_obs_scatter(
+            pseudo_u=np.array(pseudo_u), pseudo_v=np.array(pseudo_v),
+            overlay_cop=overlay_cop, overlay_name=overlay_name,
+            selected_name=str(cop_name), pair_label=pair,
+        )
+
+        # 6. Fit ranking
+        fig_rank = fig_fit_ranking(fit_summary, selected_name=str(cop_name))
+
+        # 7. Tail dependence
+        fig_tails = fig_tail_dependence(fit_summary, selected_name=str(cop_name))
+
         return dbc.Col([
-            # Row 1: Summary + Decision map
             dbc.Row([
                 dbc.Col(dcc.Graph(figure=card, config={"responsive": True}), width=5),
                 dbc.Col(dcc.Graph(figure=fig_map, config={"responsive": True}), width=7),
             ], className="mb-2"),
-            # Row 2: H-functions
+            dbc.Row([
+                dbc.Col(dcc.Graph(figure=fig_scatter, config={"responsive": True}), width=5),
+                dbc.Col(dcc.Graph(figure=fig_rank, config={"responsive": True}), width=7),
+            ], className="mb-2"),
             dbc.Row([
                 dbc.Col(dcc.Graph(figure=fig_h, config={"responsive": True}), width=12),
             ], className="mb-2"),
-            # Row 3: Spreads
             dbc.Row([
-                dbc.Col(dcc.Graph(figure=fig_spreads, config={"responsive": True}), width=12),
+                dbc.Col(dcc.Graph(figure=fig_spreads, config={"responsive": True}), width=8),
+                dbc.Col(dcc.Graph(figure=fig_tails, config={"responsive": True}), width=4),
             ]),
         ])

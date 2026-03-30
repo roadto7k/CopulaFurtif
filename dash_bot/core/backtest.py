@@ -15,6 +15,29 @@ from .signals import generate_signals_reference_copula
 # Slot helpers
 # ---------------------------------------------------------------------------
 
+def _serialize_fit_summary(df_fit):
+    """Extract JSON-safe summary from fit_copulas DataFrame for dashboard."""
+    if df_fit is None or df_fit.empty:
+        return []
+    rows = []
+    for _, r in df_fit.iterrows():
+        if not np.isfinite(r.get("aic", np.nan)):
+            continue
+        rows.append(dict(
+            name=str(r.get("name", "?")),
+            rotation=int(r.get("rotation", 0)),
+            aic=float(r["aic"]) if np.isfinite(r.get("aic", np.nan)) else None,
+            loglik=float(r["loglik"]) if np.isfinite(r.get("loglik", np.nan)) else None,
+            kt_err=float(r["kt_err"]) if np.isfinite(r.get("kt_err", np.nan)) else None,
+            tail_gap=float(r["tail_gap"]) if np.isfinite(r.get("tail_gap", np.nan)) else None,
+            score=float(r["score_stage1"]) if "score_stage1" in r and np.isfinite(r.get("score_stage1", np.nan)) else None,
+            tail_dep_L=float(r["tail_dep_L"]) if np.isfinite(r.get("tail_dep_L", np.nan)) else None,
+            tail_dep_U=float(r["tail_dep_U"]) if np.isfinite(r.get("tail_dep_U", np.nan)) else None,
+            params=[float(x) for x in np.atleast_1d(r["params"])] if r.get("params") is not None and len(np.atleast_1d(r["params"])) > 0 else [],
+            evaluable=bool(r.get("evaluable", False)),
+        ))
+    return rows
+
 def _make_slot(cycle_id, coin1, coin2, cop, best_name,
                beta1, beta2, s1_sorted, s2_sorted,
                q1, q2, total_notional):
@@ -200,6 +223,9 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         q1 = q2 = 0.0
         msgs = []
         top  = []
+        pseudo_u = []
+        pseudo_v = []
+        df_fit = None
 
         if portfolio_stopped:
             skip_status = "STOPPED (max drawdown limit reached)"
@@ -242,7 +268,7 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                     beta1   = betas.get(coin1, np.nan)
                     beta2   = betas.get(coin2, np.nan)
 
-                    best_name, best_params, _, msgs = fit_pair_copula(
+                    best_name, best_params, df_fit, msgs = fit_pair_copula(
                         s1_form, s2_form, p.copula_pick, p.copula_manual,
                         suppress_logs=p.suppress_fit_logs,
                     )
@@ -252,6 +278,19 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                         cop       = build_copula(best_name, best_params)
                         s1_sorted = np.sort(s1_form.dropna().values.astype(float))
                         s2_sorted = np.sort(s2_form.dropna().values.astype(float))
+
+                        # Pseudo-observations for diagnostic scatter
+                        _s1_aligned, _s2_aligned = s1_form.align(s2_form, join="inner")
+                        _s1_clean = _s1_aligned.dropna()
+                        _s2_clean = _s2_aligned.loc[_s1_clean.index].dropna()
+                        _common = _s1_clean.index.intersection(_s2_clean.index)
+                        _n_po = len(_common)
+                        if _n_po > 10:
+                            from scipy.stats import rankdata
+                            pseudo_u = (rankdata(_s1_clean.loc[_common].values) / (_n_po + 1)).tolist()
+                            pseudo_v = (rankdata(_s2_clean.loc[_common].values) / (_n_po + 1)).tolist()
+                        else:
+                            pseudo_u, pseudo_v = [], []
 
                         first_bar = df_trade[[coin1, coin2]].dropna().head(1)
                         if first_bar.empty:
@@ -309,6 +348,9 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
             s1_sorted=_s1_sorted_list,
             s2_sorted=_s2_sorted_list,
             diag_bars=cycle_diag_bars,  # will be filled during bar loop below
+            pseudo_u=pseudo_u if new_slot is not None else [],
+            pseudo_v=pseudo_v if new_slot is not None else [],
+            fit_summary=_serialize_fit_summary(df_fit) if new_slot is not None and df_fit is not None else [],
         ))
 
         # Bar loop : all active slots
