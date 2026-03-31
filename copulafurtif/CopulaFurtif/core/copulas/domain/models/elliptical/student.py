@@ -71,9 +71,9 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         u = np.clip(u, eps, 1.0 - eps)
         v = np.clip(v, eps, 1.0 - eps)
 
-        if abs(rho) < 1e-12:
-            out = u * v
-            return float(out) if is_scalar else out
+        # if abs(rho) < 1e-12:
+        #     out = u * v
+        #     return float(out) if is_scalar else out
 
         x = t.ppf(u, df=nu)
         y = t.ppf(v, df=nu)
@@ -106,12 +106,12 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         u = np.clip(u, eps, 1 - eps)
         v = np.clip(v, eps, 1 - eps)
 
-        if abs(rho) < 1e-12:
-            u = np.asarray(u, float);
-            v = np.asarray(v, float)
-            u, v = np.broadcast_arrays(u, v)
-            out = np.ones_like(u, dtype=float)
-            return float(out) if out.shape == () else out
+        # if abs(rho) < 1e-12:
+        #     u = np.asarray(u, float);
+        #     v = np.asarray(v, float)
+        #     u, v = np.broadcast_arrays(u, v)
+        #     out = np.ones_like(u, dtype=float)
+        #     return float(out) if out.shape == () else out
 
         u_q = t.ppf(u, df=nu)
         v_q = t.ppf(v, df=nu)
@@ -243,13 +243,13 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         u = np.clip(u, eps, 1.0 - eps)
         v = np.clip(v, eps, 1.0 - eps)
 
-        if abs(rho) < 1e-12:
-            u = np.asarray(u, float)
-            v = np.asarray(v, float)
-            u, v = np.broadcast_arrays(u, v)
-            out = u
-            return float(out) if out.shape == () else out
-
+        # if abs(rho) < 1e-12:
+        #     u = np.asarray(u, float)
+        #     v = np.asarray(v, float)
+        #     u, v = np.broadcast_arrays(u, v)
+        #     out = u
+        #     return float(out) if out.shape == () else out
+        # THEO CHANGE
         tx = t.ppf(u, df=nu)
         ty = t.ppf(v, df=nu)
 

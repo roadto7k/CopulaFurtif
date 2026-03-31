@@ -82,7 +82,11 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # independence case theta→0
         if abs(theta) < 1e-12:
-            return np.ones_like(u)
+            u = np.asarray(u, dtype=float)
+            v = np.asarray(v, dtype=float)
+            u, v = np.broadcast_arrays(u, v)
+            out = np.ones_like(u, dtype=float)
+            return float(out) if out.shape == () else out# THEO CHANGE
 
         # clip to avoid under/overflow
         eps = 1e-12
@@ -182,7 +186,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if abs(theta) < 1e-8:
             t = theta
             t2 = t * t
-            return t / 9 - t2 * t / 900 + t2 * t2 / 52920  # θ/9 − θ³/900 + θ⁵/52920
+            return t / 9 - t2 * t / 900 + t2 * t2 * t / 52920  # θ/9 − θ³/900 + θ⁵/52920
 
         D1 = self.debye1(theta)
         return 1.0 + 4.0 * (D1 - 1.0) / theta
@@ -359,7 +363,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
                 return 0.0
             num = 2.0 * np.exp(-theta / 2.0) - 2.0 * np.exp(-theta)
             den = 1.0 - np.exp(-theta)
-            return (4.0 / theta) * np.log(num / den) - 1.0
+            return -(4.0 / theta) * np.log(num / den) - 1.0
 
         func = beta_theta if use_beta else tau_theta
 

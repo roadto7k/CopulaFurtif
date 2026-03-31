@@ -47,7 +47,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         y = -np.log(v)
         s = x + y
         w = (1 - delta) * (x / s) ** theta + delta * (y / s) ** theta
-        return np.exp(-s * w ** (1 / theta))
+        return np.exp(-s * w ** (1 / theta)) #THEO : FALSE, need to change
 
     def get_pdf(self, u, v, param=None):
         """Compute the copula PDF c(u, v).
@@ -95,7 +95,7 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta, delta = param
-        return (theta * (1 - delta + delta)) / (theta + 2)
+        return (theta * (1 - delta + delta)) / (theta + 2) # THEO : FALSE https://search.r-project.org/CRAN/refmans/VineCopula/html/BiCopPar2Tau.html
 
     def LTDC(self, param=None):
         """Lower tail dependence coefficient (0 for Tawn copula).
@@ -120,7 +120,8 @@ class TawnCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         if param is None:
             param = self.get_parameters()
         theta, delta = param
-        return 2 - 2 ** (1 / theta)
+        # return 2 - 2 ** (1 / theta)
+        return delta + 1 - (delta**theta + 1 )**(1/theta) #THEO CHANGE (from : https://tnagler.github.io/VineCopula/reference/BiCopPar2TailDep.html)
 
     def IAD(self, data):
         """Integrated Absolute Deviation (disabled for Tawn copula).

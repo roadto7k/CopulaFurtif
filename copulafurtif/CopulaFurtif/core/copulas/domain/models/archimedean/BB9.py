@@ -270,7 +270,8 @@ class BB9Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         v = np.asarray(v, float)
 
         # ---- 1. Estimate δ from Blomqvist β̂ (prior ϑ=2) ------------------
-        beta_emp = float(np.clip(4.0 * np.mean((u > 0.5) == (v > 0.5)) - 1.0, -0.99, 0.99))
+        # beta_emp = float(np.clip(4.0 * np.mean((u > 0.5) == (v > 0.5)) - 1.0, -0.99, 0.99))
+        beta_emp = 2.0 * np.mean((u > 0.5) == (v > 0.5)) - 1.0 # THEO CHANGE
         delta0 = 1.0
         best_err = np.inf
         for de in np.linspace(0.1, 8.0, 25):

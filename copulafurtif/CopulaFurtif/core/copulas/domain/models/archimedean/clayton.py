@@ -348,7 +348,8 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # --- 2) Blomqvist beta empirical ---
         concord = np.mean(((u > 0.5) & (v > 0.5)) | ((u < 0.5) & (v < 0.5)))
-        beta_emp = 4.0 * concord - 1.0
+        # beta_emp = 4.0 * concord - 1.0
+        beta_emp = 2.0 * concord - 1.0
         beta_emp = np.clip(beta_emp, -0.99, 0.99)
 
         # --- 3) Lower-tail dependence empirical ---
@@ -358,8 +359,14 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # --- 4) Choose best method ---
         if n < 200 or abs(tau_emp) < 0.05 or lambda_L_emp < 1e-3:
-            # Small sample or weak dependence → prefer beta
-            theta0 = 2.0 * beta_emp / max(1e-6, (1.0 - beta_emp))
+            # THEO CHANGE
+            sol = root_scalar(
+                lambda th: 4.0 * (2.0 ** (th + 1.0) - 1.0) ** (-1.0 / th) - 1.0 - beta_emp,
+                bracket=(1e-6, 30.0),
+                method="brentq"
+            )
+            theta0 = sol.root if sol.converged else 1e-6
+            # theta0 = 2.0 * beta_emp / max(1e-6, (1.0 - beta_emp))
         else:
             # Normal case → use tau (same here)
             theta0 = 2.0 * tau_emp / max(1e-6, (1.0 - tau_emp))
