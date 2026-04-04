@@ -328,7 +328,7 @@ class GumbelCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
                                   bracket=(1.01, 30.0), method="brentq")
                 theta0 = sol.root if sol.converged else 2.0
             except Exception:
-                theta0 = 2.0
+                theta0 = 1.0 + 1e-6
 
         # --- 4) clip to bounds
         low, high = self.get_bounds()[0]
