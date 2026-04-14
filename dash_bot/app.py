@@ -2,10 +2,10 @@
 from dash import Dash
 import dash_bootstrap_components as dbc
 
-from .config import APP_TITLE
-from .theme import apply_theme
-from .ui.layout import build_layout
-from .ui.callbacks import register_callbacks
+from dash_bot.config import APP_TITLE
+from dash_bot.theme import apply_theme
+from dash_bot.ui.layout import build_layout
+from dash_bot.ui.callbacks import register_callbacks
 
 
 def create_app() -> Dash:

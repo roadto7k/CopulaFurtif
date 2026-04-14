@@ -7,7 +7,7 @@ import pandas as pd
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
-from ..config import (
+from dash_bot.config import (
     DEFAULT_USDT_SYMBOLS,
     DEFAULT_USDT_SYMBOLS_EXT,
     DEFAULT_REFERENCE,
