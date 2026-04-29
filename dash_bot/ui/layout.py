@@ -13,7 +13,6 @@ from dash_bot.config import (
     DEFAULT_REFERENCE,
     INTERVALS,
     STRATEGIES,
-    RANK_METHODS,
     COPULA_PICK,
     COINTEGRATION_TESTS,
 )
@@ -150,16 +149,12 @@ def build_layout():
 
                                             html.Hr(),
 
-                                            html.Label("Ranking method"),
-                                            dcc.Dropdown(
-                                                id="rank-method",
-                                                options=[{"label": lbl, "value": v} for v, lbl in RANK_METHODS],
-                                                value="kendall_spread_pair",
-                                                clearable=False,
+                                            html.Label("Pair ranking"),
+                                            html.Div(
+                                                "Fixed paper-replicating method: Kendall τ on log-returns vs BTCUSDT. "
+                                                "Among stationary spreads, the two coins with the highest τ are selected.",
+                                                className="tip-text",
                                             ),
-
-                                            html.Label("Top-K coins (2 => 1 pair/week)"),
-                                            dbc.Input(id="top-k", type="number", value=2, min=2, max=50, step=1),
 
                                             html.Hr(),
 

@@ -1,8 +1,6 @@
-# dash_bot/core/__init__.py
-
 from .params import BacktestParams
 from .metrics import performance_metrics
-from .selection import select_stationary_spreads, rank_coins
+from .selection import select_stationary_spreads, rank_coins_by_kendall_returns
 from .copula_engine import (
     is_copula_evaluable,
     fit_pair_copula,
@@ -17,7 +15,7 @@ __all__ = [
     "BacktestParams",
     "performance_metrics",
     "select_stationary_spreads",
-    "rank_coins",
+    "rank_coins_by_kendall_returns",
     "is_copula_evaluable",
     "fit_pair_copula",
     "build_copula",

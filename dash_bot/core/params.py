@@ -29,12 +29,11 @@ class BacktestParams:
     min_coverage: float = 0.90  # % non-NaN vs ref timeline (drop symbols below)
     suppress_fit_logs: bool = True  # silence CMLE/loglik boundary spam
 
-    # selection
-    # "kendall_spread_ref" = paper Eq.39 : τ(S_i, P_ref) on spread vs BTC
-    # "kendall_prices"     = τ(P_ref, P_coin) on raw prices (off-paper)
-    rank_method: str = "kendall_spread_pair"
+    # Selection / ranking
+    # Fixed paper-replicating rule:
+    # after ADF/KSS filtering, select the two accepted altcoins with the highest
+    # Kendall tau between BTCUSDT log-returns and altcoin log-returns.
 
-    top_k: int = 2   # how many coins to pick (2 => 1 pair)
 
     # copula
     copula_pick: str = "best_aic"
@@ -50,9 +49,12 @@ class BacktestParams:
     # Actual quantities are beta-weighted: q_i = β_i * cap_per_leg / P_i
     # This ensures the BTC leg cancels and the position is market-neutral
     # with respect to the reference asset (paper Section 4).
-    cap_per_leg: float = 200000.0   # paper: each side max ~200k USDT
-    initial_equity: float = 200000.0  # paper: 200k USDT total invested
-    fee_rate: float = 0.0004       # taker futures typical
+    #
+    # Note: paper uses 20,000 USDT total. We default to 200,000 here for
+    # production sizing — change to 20_000 to reproduce paper Table 6 exactly.
+    cap_per_leg: float = 200000.0
+    initial_equity: float = 200000.0
+    fee_rate: float = 0.0004       # taker futures typical (paper: 0.04%)
 
     # ============================================================
     # RISK MANAGEMENT / STOP-LOSS

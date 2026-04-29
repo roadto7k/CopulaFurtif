@@ -20,7 +20,9 @@ Usage :
 
 Options communes :
     --test       adf | kss | both        (défaut: both)
-    --rank       kendall_returns | kendall_prices | kendall_spread_pair | kendall_spread_ref
+    Ranking:
+    fixed paper-faithful ranking:
+    Kendall tau between BTCUSDT log-returns and each accepted altcoin's log-returns.
                                           (défaut: kendall_returns — match Table 8 paper)
     --formation  semaines de formation    (défaut: 3)
     --trading    semaine de trading       (défaut: 1)
@@ -61,7 +63,7 @@ if not os.path.isdir(os.path.join(ROOT, 'dash_bot')):
             'dans CopulaFurtif-main/ (à côté de dash_bot/).'
         )
 
-from dash_bot.core.selection   import select_stationary_spreads, rank_coins
+from dash_bot.core.selection import select_pair_from_formation_window
 from dash_bot.data.sources     import fetch_prices_cached, load_prices_csv
 from dash_bot.data.cleaning    import clean_prices_basic
 
@@ -313,50 +315,6 @@ def build_cycles(prices, formation_w, trading_w, n_cycles):
     return cycles
 
 
-# ── sélection d'une paire ──────────────────────────────────────────────────────
-def select_pair(form_data, ref, candidates, coint_test,
-                rank_method, adf_alpha, kss_crit, min_obs, verbose):
-
-    summary, spreads, _ = select_stationary_spreads(
-        prices=form_data, ref=ref, candidates=candidates,
-        adf_alpha=adf_alpha, cointegration_test=coint_test,
-        kss_crit=kss_crit, min_obs=min_obs,
-    )
-    accepted = (summary[summary["accepted"] == True]["coin"].tolist()
-                if not summary.empty else [])
-
-    if verbose:
-        stat_col = "adf_p" if coint_test == "adf" else "kss"
-        lbl      = "p-val" if coint_test == "adf" else "t-stat"
-        print(f"    [{coint_test.upper()}] {lbl} — acceptés ({len(accepted)}): "
-              f"{[c.replace('USDT','') for c in accepted]}")
-        for _, r in summary[["coin", stat_col, "accepted"]].iterrows():
-            tick = "✓" if r["accepted"] else " "
-            val  = f"{r[stat_col]:.4f}" if pd.notna(r[stat_col]) else "  nan"
-            print(f"      {tick} {r['coin'].replace('USDT',''):<8} {val}")
-
-    if len(accepted) < 2:
-        return None
-
-    ranked = rank_coins(form_data, spreads, ref, accepted, rank_method)
-    if ranked.empty or len(ranked) < 2:
-        return None
-
-    c1, c2   = ranked.iloc[0]["coin"], ranked.iloc[1]["coin"]
-    stat_col = "adf_p" if coint_test == "adf" else "kss"
-
-    def stat(coin):
-        r = summary[summary["coin"] == coin]
-        return float(r[stat_col].values[0]) if not r.empty else np.nan
-
-    if verbose:
-        print(f"    → Paire : {c1.replace('USDT','')}-{c2.replace('USDT','')}  "
-              f"τ={ranked.iloc[0]['tau']:.4f}")
-
-    label = c1.replace("USDT","") + "-" + c2.replace("USDT","")
-    return label, stat(c1), stat(c2)
-
-
 # ── boucle principale ──────────────────────────────────────────────────────────
 def run(args):
     print("\n── Chargement des données ─────────────────────────────")
@@ -374,7 +332,7 @@ def run(args):
     print(f"  Candidates  : {len(candidates)} coins")
     print(f"  Cycles      : {n_cycles}  (formation={args.formation}w, trading={args.trading}w)")
     print(f"  Tests       : {', '.join(t.upper() for t in tests)}")
-    print(f"  Rank method : {args.rank}")
+    print("  Rank method : Kendall tau on log-returns vs BTCUSDT")
     print(f"  ADF alpha   : {args.adf_alpha}  |  KSS crit : {args.kss_crit}")
     print(f"  Paper match : {'enabled (' + freq_key + ')' if freq_key else 'disabled (interval not in {5m, 1h})'}")
 
@@ -399,12 +357,24 @@ def run(args):
             "trade_start": str(td.index[0].date()),
         }
         for t in tests:
-            res = select_pair(fd, ref, candidates, t, args.rank,
-                              args.adf_alpha, args.kss_crit, 50, args.verbose)
-            our_pair = res[0] if res else "—"
+            res, summary, spreads, betas, ranked = select_pair_from_formation_window(
+                form_data=fd,
+                ref=ref,
+                candidates=candidates,
+                cointegration_test=t,
+                adf_alpha=args.adf_alpha,
+                kss_crit=args.kss_crit,
+                min_obs=50,
+                verbose=args.verbose,
+            )
+
+            our_pair = res["pair"] if res else "—"
+
             row[f"{t}_pair"] = our_pair
-            row[f"{t}_s1"]   = round(res[1], 3) if res and np.isfinite(res[1]) else np.nan
-            row[f"{t}_s2"]   = round(res[2], 3) if res and np.isfinite(res[2]) else np.nan
+            row[f"{t}_s1"] = round(res["stat1"], 3) if res and np.isfinite(res["stat1"]) else np.nan
+            row[f"{t}_s2"] = round(res["stat2"], 3) if res and np.isfinite(res["stat2"]) else np.nan
+            row[f"{t}_tau1"] = round(res["tau1"], 4) if res and np.isfinite(res["tau1"]) else np.nan
+            row[f"{t}_tau2"] = round(res["tau2"], 4) if res and np.isfinite(res["tau2"]) else np.nan
 
             # Paper match (only meaningful for article_5min/1h)
             if freq_key:
@@ -528,7 +498,7 @@ def build_pdf(df, args, tests, ref, candidates, interval, n_cycles, freq_key, ou
         ("Candidates",     f"{len(candidates)} coins  [{', '.join(c.replace('USDT','') for c in candidates[:8])}{'…' if len(candidates)>8 else ''}]"),
         ("Cycles",         f"{n_cycles}  (formation={args.formation}w, trading={args.trading}w, step=1w)"),
         ("Tests",          " + ".join(t.upper() for t in tests)),
-        ("Ranking method", args.rank),
+        ("Ranking method", "Kendall tau on log-returns vs BTCUSDT"),
         ("ADF alpha",      str(args.adf_alpha)),
         ("KSS critical",   str(args.kss_crit)),
         ("Weeks filter",   args.weeks or "all"),
@@ -615,7 +585,7 @@ def build_pdf(df, args, tests, ref, candidates, interval, n_cycles, freq_key, ou
         story.append(Paragraph(
             f"{t.upper()} Unit-Root Test — {lbl}s  ({crit_str})", s_h1))
         story.append(Paragraph(
-            f"Source: {src_label}  |  Ranking: {args.rank}  |  Paper match: {'on' if freq_key else 'off'}",
+            f"Source: {src_label}  |  Ranking: Kendall log-returns vs BTCUSDT  |  Paper match: {'on' if freq_key else 'off'}",
             s_note))
         story.append(Spacer(1, 3))
 
@@ -828,9 +798,6 @@ if __name__ == "__main__":
 
     # tests & ranking
     p.add_argument("--test",      choices=["adf","kss","both"], default="both")
-    p.add_argument("--rank",      default="kendall_returns",
-                   choices=["kendall_returns","kendall_prices",
-                            "kendall_spread_pair","kendall_spread_ref"])
     p.add_argument("--adf-alpha", type=float, default=0.10)
     p.add_argument("--kss-crit",  type=float, default=-1.92)
 
