@@ -55,6 +55,8 @@ def build_layout():
                                                 id="data-source",
                                                 options=[
                                                     {"label": "🟢 Binance SPOT — recommandé (cache local)", "value": "binance"},
+                                                    {"label": "📄 Article Tadi & Witzany 2025 — 5-min",
+                                                     "value": "article_5min"},
                                                     {"label": "📁 CSV locaux (DataAnalysis/data/raw/)", "value": "csv"},
                                                 ],
                                                 value="binance",

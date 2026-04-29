@@ -28,7 +28,7 @@ from ..viz.figures_diagnostic import (
 )
 
 # data (tu dis OK)
-from ..data.sources import fetch_prices_cached, load_prices_csv
+from ..data.sources import fetch_prices_cached, load_prices_csv, load_article_5min, ARTICLE_5MIN_META
 from ..data.cleaning import clean_prices_basic
 
 # core (tu dis OK)
@@ -157,14 +157,21 @@ def register_callbacks(app):
                 prices, fetch_errors = fetch_prices_cached(
                     symbols, start_date, end_date, interval, source="binance"
                 )
-            else:
+            elif data_source == "article_5min":
+                prices, fetch_errors = load_article_5min()
+                # override tous les params UI par ceux de l'article
+                interval = "5m"
+                start_date = ARTICLE_5MIN_META["start"]
+                end_date = ARTICLE_5MIN_META["end"]
+                ref_asset = ARTICLE_5MIN_META["ref"]
+                symbols = ARTICLE_5MIN_META["symbols"]
+            else:  # csv
                 if not DATA_PATH:
                     raise RuntimeError("DATA_PATH manquant pour mode CSV.")
                 prices = load_prices_csv(DATA_PATH)
-                # slice dates
                 prices = prices.loc[
-                    (prices.index >= pd.to_datetime(start_date)) & (prices.index < pd.to_datetime(end_date))]
-                # resample best effort
+                    (prices.index >= pd.to_datetime(start_date)) &
+                    (prices.index < pd.to_datetime(end_date))]
                 if interval != "1h":
                     rule_map = {"5m": "5T", "15m": "15T", "1h": "1H", "4h": "4H", "1d": "1D"}
                     rule = rule_map.get(interval)

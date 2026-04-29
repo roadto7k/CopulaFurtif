@@ -2,6 +2,7 @@
 # import numpy as np
 # from typing import Tuple, Dict
 # from .copula_engine import ecdf_value, copula_h_funcs
+from __future__ import annotations
 
 # def generate_signals_reference_copula(
 #     cop,

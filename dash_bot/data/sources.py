@@ -86,3 +86,32 @@ def load_prices_csv(data_path: str, *, tz=None) -> pd.DataFrame:
     df = load_all_prices(data_path)
     df.index = pd.to_datetime(df.index)
     return df.sort_index()
+
+# ---------------------------------------------------------------------------
+# Données article Tadi & Witzany (2025)
+# ---------------------------------------------------------------------------
+import os
+
+ARTICLE_5MIN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "DataAnalysis", "data", "article_5min.csv"
+)
+
+ARTICLE_5MIN_META = {
+    "interval": "5m",
+    "start": "2021-01-01",
+    "end": "2023-01-19",
+    "ref": "BTCUSDT",
+    "symbols": [
+        "BTCUSDT","ETHUSDT","BCHUSDT","XRPUSDT","EOSUSDT",
+        "LTCUSDT","TRXUSDT","ETCUSDT","LINKUSDT","XLMUSDT",
+        "ADAUSDT","XMRUSDT","DASHUSDT","ZECUSDT","XTZUSDT",
+        "ATOMUSDT","BNBUSDT","ONTUSDT","IOTAUSDT","BATUSDT",
+    ],
+}
+
+def load_article_5min():
+    import pandas as pd
+    path = os.path.normpath(ARTICLE_5MIN_PATH)
+    df = pd.read_csv(path, index_col=0, parse_dates=True)
+    df = df.sort_index().replace(0, float("nan"))
+    return df, {}
