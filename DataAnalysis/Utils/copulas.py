@@ -1014,7 +1014,6 @@ def fit_copulas(
         else:
             name, ctype = candidate
             rotation = 0
-
         try:
             base_cop = CopulaFactory.create(ctype)
             cop = RotatedCopula(base_cop, rotation) if rotation != 0 else base_cop
