@@ -25,7 +25,7 @@ from sympy import symbols
 from sympy import symbols, diff, pretty, sqrt, exp, pi, sin, acos, erf, erfinv
 
 
-class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin):
+class GaussianCopulaS(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin):
     """
     Gaussian Copula model.
 
@@ -312,7 +312,7 @@ class GaussianCopula(SymbolicCopula, SupportsTailDependence, ModelSelectionMixin
 
 
 def main():
-    gaussian_copula = GaussianCopula()
+    gaussian_copula = GaussianCopulaS()
 
     print("Valeurs initiales des paramètres:", gaussian_copula.get_parameters())
 

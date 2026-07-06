@@ -1,5 +1,6 @@
 import numpy as np
 from numpy import log as _np_log, exp as _np_exp
+from numpy.polynomial.legendre import leggauss
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
@@ -28,12 +29,32 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     """
     BB5 Copula (Joe's two-parameter extreme-value copula).
 
-    Attributes:
-        name (str): Human-readable name of the copula.
-        type (str): Identifier for the copula family.
-        bounds_param (list of tuple): Bounds for copula parameters [theta, delta].
-        parameters (np.ndarray): Current copula parameters.
-        default_optim_method (str): Optimization method.
+    Identifiability note
+    --------------------
+    BB5 may exhibit weak practical parameter identifiability.
+
+    Both theta and delta contribute to the upper-tail dependence coefficient
+
+        lambda_U
+            = 2 - (2 - 2**(-1 / delta))**(1 / theta).
+
+    Consequently, different (theta, delta) pairs may lie on a nearly flat
+    likelihood ridge while implying almost identical copula dependence
+    structures.
+
+    For BB5, the lower-tail order is determined by lambda_U,
+
+        kappa_L = 2 - lambda_U,
+
+    and Blomqvist's beta is also a deterministic function of lambda_U.
+
+    Therefore, raw fitted parameters should be interpreted cautiously.
+    Model comparisons across samples or rolling windows should preferably use
+    implied dependence quantities such as Kendall's tau and lambda_U rather
+    than theta and delta individually.
+
+    As delta tends to zero, BB5 approaches the Gumbel copula, which can further
+    create near-equivalent parameterizations close to the Gumbel boundary.
     """
 
     def __init__(self):
@@ -169,50 +190,81 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         return np.clip(pdf, 0.0, None)
 
     # ------------------------------------------------------------------
-    # Cached Gauss-Legendre nodes/weights for kendall_tau (32×32 grid)
+    # Cached Gauss-Legendre quadrature for bounded Kendall tau identity
     # ------------------------------------------------------------------
-    _GL_N = 32
-    _xi_gl, _wi_gl = __import__(
-        'numpy.polynomial.legendre', fromlist=['leggauss']
-    ).leggauss(_GL_N)
-    _GL_HALF = 0.5 * (0.995 - 0.005)
-    _GL_MID = 0.5 * (0.995 + 0.005)
-    _GL_U = _GL_HALF * _xi_gl + _GL_MID
-    _GL_W = _GL_HALF * _wi_gl
-    _GL_UU, _GL_VV = np.meshgrid(_GL_U, _GL_U)
-    _GL_WU, _GL_WV = np.meshgrid(_GL_W, _GL_W)
+    _GL_N = 64
+    _xi_gl, _wi_gl = leggauss(_GL_N)
+
+    _GL_U = 0.5 * (_xi_gl + 1.0)
+    _GL_W = 0.5 * _wi_gl
+
+    _GL_UU, _GL_VV = np.meshgrid(
+        _GL_U,
+        _GL_U,
+        indexing="ij",
+    )
+
+    _GL_W2D = np.outer(_GL_W, _GL_W)
 
     def kendall_tau(self, param=None):
         """
-        Kendall's τ via 2-D Gauss-Legendre quadrature (32×32 grid).
+        Compute Kendall's tau by bounded two-dimensional Gauss-Legendre
+        quadrature.
 
-        BB5 is an extreme-value copula (no closed-form τ expression).
+        For a bivariate copula C,
 
-        Uses the concordance identity:
-            τ = 4 · ∫₀¹∫₀¹ C(u,v) · c(u,v) du dv − 1
+            tau = 1 - 4 * integral_0^1 integral_0^1
+                  C_{2|1}(v|u) * C_{1|2}(u|v) du dv
+
+        where
+
+            C_{2|1}(v|u) = dC(u,v) / du
+            C_{1|2}(u|v) = dC(u,v) / dv
+
+        The conditional CDFs are bounded in [0, 1], making this identity
+        numerically more stable than integrating C(u,v) * c(u,v) when the
+        copula density becomes large near the boundaries.
 
         Parameters
         ----------
-        param : [theta, delta], optional
+        param : array-like, optional
+            Copula parameters [theta, delta]. If omitted, the current model
+            parameters are used.
 
         Returns
         -------
-        float  in (0, 1)
+        float
+            Kendall's tau implied by the copula parameters.
         """
         if param is None:
             param = self.get_parameters()
 
-        n = self._GL_N
         U = self._GL_UU.ravel()
         V = self._GL_VV.ravel()
 
-        cdf_vals = self.get_cdf(U, V, param).reshape(n, n)
-        pdf_vals = self.get_pdf(U, V, param).reshape(n, n)
+        partial_u = np.asarray(
+            self.partial_derivative_C_wrt_u(U, V, param),
+            dtype=float,
+        ).reshape(self._GL_N, self._GL_N)
 
-        Q = float(np.sum(cdf_vals * pdf_vals * self._GL_WU * self._GL_WV))
-        return float(np.clip(4.0 * Q - 1.0, 0.0, 1.0 - 1e-15))
+        partial_v = np.asarray(
+            self.partial_derivative_C_wrt_v(U, V, param),
+            dtype=float,
+        ).reshape(self._GL_N, self._GL_N)
 
-    def sample(self, n, rng=None):
+        integral = float(
+            np.sum(
+                self._GL_W2D
+                * partial_u
+                * partial_v
+            )
+        )
+
+        tau = 1.0 - 4.0 * integral
+
+        return float(tau)
+
+    def sample(self, n, param=None, rng=None):
         """
         Draw n samples from the BB5 copula via conditional inversion.
 
@@ -235,6 +287,9 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         """
         from scipy.optimize import brentq
 
+        if param is None:
+            param = self.get_parameters()
+
         if rng is None:
             rng = np.random.default_rng()
 
@@ -247,7 +302,8 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             w_i = float(W[i])
 
             def obj(v_):
-                return float(self.partial_derivative_C_wrt_u(u_i, v_)) - w_i
+                return float(
+                    self.partial_derivative_C_wrt_u(u_i,v_,param=param,)) - w_i
 
             # At v→0, h→0; at v→1, h→1 — bracket always valid
             try:
@@ -282,20 +338,35 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def init_from_data(self, u, v):
         """
-        Moment-matching initialisation from pseudo-observations.
+        Construct a dependence-matched starting point for BB5 estimation.
+
+        BB5 may exhibit weak practical identifiability of the raw parameters
+        (theta, delta). In particular, different parameter pairs can imply very
+        similar upper-tail dependence and Kendall's tau.
+
+        This routine is therefore intended only to provide a numerically sensible
+        starting point for likelihood optimization. It should not be interpreted
+        as an independent moment estimator of theta and delta.
 
         Strategy
         --------
-        1. Estimate δ from empirical λ_U using tail quantile ratios.
-        2. For that δ₀, bracket and solve for θ via numerical kendall_tau.
+        1. Estimate empirical upper-tail dependence lambda_U.
+        2. Use a fixed reference value of theta to obtain a provisional delta
+           lying on a compatible lambda_U contour.
+        3. Conditional on this provisional delta, select theta by matching the
+           model-implied Kendall's tau to the empirical Kendall's tau.
+        4. Return the resulting pair as an initialization for likelihood-based
+           refinement.
 
         Parameters
         ----------
-        u, v : array-like  – pseudo-observations in (0,1)
+        u, v : array-like
+            Pseudo-observations in (0, 1).
 
         Returns
         -------
-        np.ndarray [theta0, delta0]
+        numpy.ndarray
+            Initial BB5 parameters [theta0, delta0].
         """
         from scipy.optimize import brentq
         from scipy.stats import kendalltau as sp_kendalltau
@@ -316,8 +387,8 @@ class BB5Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         # Invert λ_U = 2 − (2 − 2^{-1/δ})^{1/θ} w.r.t. δ at θ=2 (prior)
         # (2 − λ_U)^θ = 2 − 2^{-1/δ}  →  δ = −1/log₂(1 − (2−λ_U)^θ)
-        theta_prior = 2.0
-        rhs = float(np.clip((2.0 - lam_U_emp) ** theta_prior, 1e-9, 1 - 1e-9))
+        theta_reference = 2.0
+        rhs = float(np.clip((2.0 - lam_U_emp) ** theta_reference, 1e-9, 1 - 1e-9))
         inner = 1.0 - rhs  # = 2^{-1/δ}
         if inner > 0:
             d_try = -1.0 / np.log2(inner)

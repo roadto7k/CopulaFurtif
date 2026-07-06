@@ -38,7 +38,7 @@ class GaussianCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         super().__init__()
         self.name = "Gaussian Copula"
         self.type = "gaussian"
-        self.default_optim_method = "Powell"
+        self.default_optim_method = "SLSQP"
         self.init_parameters(CopulaParameters(np.array([0.8]), [(-1, 1)], ["rho"]))
 
     def get_cdf(self, u, v, param=None):

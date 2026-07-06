@@ -77,7 +77,10 @@ class PlackettCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         denom = ((1 + (theta - 1) * (u + v)) ** 2 - 4 * theta * (theta - 1) * u * v) ** 1.5
         return num / denom
 
-    def sample(self, n: int, param=None, rng=None, eps: float = 1e-12) -> np.ndarray:
+    def sample(self, n: int, param=None, rng=None) -> np.ndarray:
+
+        eps = 1e-12
+
         if rng is None:
             rng = default_rng()
         theta = float(self.get_parameters()[0]) if param is None else float(param[0])

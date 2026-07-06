@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from CopulaFurtif.core.copulas.domain.copula_type import CopulaType
+from CopulaFurtif.core.copulas.domain.estimation.utils import evaluate_copula_log_pdf
 from CopulaFurtif.core.copulas.domain.factories.copula_factory import CopulaFactory
 from CopulaFurtif.core.copulas.application.services.fit_copula import CopulaFitter
 from CopulaFurtif.core.copulas.domain.estimation.estimation import pseudo_obs
@@ -52,11 +53,31 @@ def _tail_gap(metrics: dict) -> float:
 
 
 def _copula_only_loglik(copula, u, v, theta=None):
-    """Fast copula-only loglik on pseudo-obs."""
-    theta = copula.get_parameters() if theta is None else theta
-    pdf = copula.get_pdf(u, v, theta)
-    pdf = np.clip(pdf, 1e-12, None)
-    return float(np.sum(np.log(pdf)))
+    """
+    Compute the copula-only log-likelihood on pseudo-observations.
+
+    Native log-density implementations are used when available.
+    """
+    theta = (
+        copula.get_parameters()
+        if theta is None
+        else theta
+    )
+
+    logpdf = evaluate_copula_log_pdf(
+        copula,
+        u,
+        v,
+        param=theta,
+        pdf_floor=1e-12,
+    )
+
+    if np.any(~np.isfinite(logpdf)):
+        return -np.inf
+
+    return float(
+        np.sum(logpdf)
+    )
 
 
 class CopulaSelector:

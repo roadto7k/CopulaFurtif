@@ -209,15 +209,75 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def get_pdf(self, u, v, param=None):
         """
-        Compute the formal mixed derivative c(u,v) = ∂²C/∂u∂v.
+        Compute the BB2 copula density.
 
-        BB2 can generate extremely sharp lower-tail behavior; numerically,
-        this 'density' can become very large near (0,0). This method returns
-        the mixed derivative on the open square (0,1)^2 and returns 0 on the boundary.
+        The public density API is preserved. Internally, the density is
+        reconstructed from the native log-density implementation so that all
+        density calculations share a single numerical formulation.
 
-        Note:
-          In practice, tests based on Monte-Carlo integration of c(u,v) can be
-          unstable unless the sampling scheme resolves the extreme lower tail.
+        Extremely small positive densities may underflow to zero in standard
+        floating-point scale. Likelihood calculations should use
+        ``get_log_pdf`` directly.
+        """
+        logpdf = np.asarray(
+            self.get_log_pdf(
+                u,
+                v,
+                param,
+            ),
+            dtype=float,
+        )
+
+        with np.errstate(
+                over="ignore",
+                under="ignore",
+                invalid="ignore",
+        ):
+            pdf = np.exp(
+                np.minimum(
+                    logpdf,
+                    _MAX_EXP,
+                )
+            )
+
+        pdf = np.nan_to_num(
+            pdf,
+            nan=0.0,
+            posinf=np.exp(_MAX_EXP),
+            neginf=0.0,
+        )
+
+        return float(pdf) if pdf.shape == () else pdf
+
+    def get_log_pdf(self, u, v, param=None):
+        """
+        Compute the BB2 copula log-density directly on the open unit square.
+
+        This method is intended for likelihood-based calculations. It evaluates
+        the density natively in log-space and therefore avoids numerical
+        underflow when the true density is positive but too small to be
+        represented in standard floating-point scale.
+
+        The standard ``get_pdf`` method remains the canonical density API and is
+        not replaced by this method.
+
+        Parameters
+        ----------
+        u : float or array-like
+            First copula coordinate.
+
+        v : float or array-like
+            Second copula coordinate.
+
+        param : array-like, optional
+            BB2 parameters [theta, delta]. If omitted, the current model
+            parameters are used.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            BB2 log-density evaluated pairwise at (u, v). Values outside the
+            open unit square are returned as negative infinity.
         """
         if param is None:
             theta, delta = map(float, self.get_parameters())
@@ -226,47 +286,83 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         u, v = self._prep_uv(u, v)
 
-        # density only meaningful in the open square; return 0 on boundary
-        out = np.zeros_like(u, dtype=float)
-        mask = (u > 0.0) & (u < 1.0) & (v > 0.0) & (v < 1.0)
+        out = np.full_like(
+            u,
+            -np.inf,
+            dtype=float,
+        )
+
+        mask = (
+                (u > 0.0)
+                & (u < 1.0)
+                & (v > 0.0)
+                & (v < 1.0)
+        )
+
         if not np.any(mask):
             return float(out) if out.shape == () else out
 
         eps = 1e-15
-        um = np.clip(u[mask], eps, 1.0 - eps)
-        vm = np.clip(v[mask], eps, 1.0 - eps)
+
+        um = np.clip(
+            u[mask],
+            eps,
+            1.0 - eps,
+        )
+
+        vm = np.clip(
+            v[mask],
+            eps,
+            1.0 - eps,
+        )
 
         su = -theta * np.log(um)
         sv = -theta * np.log(vm)
+
         u_m_theta = _safe_exp(su)
         v_m_theta = _safe_exp(sv)
 
         A = delta * (u_m_theta - 1.0)
         B = delta * (v_m_theta - 1.0)
 
-        logS, w_u, w_v = _logS_and_weights(A, B)
-        # weights can be extremely close to 0 in extreme tails -> protect logs
-        w_u = np.maximum(w_u, 1e-300)
-        w_v = np.maximum(w_v, 1e-300)
-        log_w = np.log(w_u) + np.log(w_v)
+        logS, _, _ = _logS_and_weights(A, B)
+
+        # Since
+        #
+        #     w_u = exp(A) / S
+        #     w_v = exp(B) / S
+        #
+        # their logarithms are obtained exactly in log-space.
+        log_w_u = A - logS
+        log_w_v = B - logS
 
         T = 1.0 + logS / delta
         logT = np.log(T)
 
-        # bracket = theta*delta*T + theta + 1, computed stably for both small/large base
-        base = theta * delta * T
-        log_bracket = np.where(
-            base > 50.0,
-            np.log(base) + np.log1p((theta + 1.0) / base),
-            np.log(theta + 1.0) + np.log1p(base / (theta + 1.0)),
+        # bracket = theta * delta * T + theta + 1
+        log_bracket = np.logaddexp(
+            np.log(theta)
+            + np.log(delta)
+            + logT,
+            np.log(theta + 1.0),
         )
 
-        log_pow = (-theta - 1.0) * (np.log(um) + np.log(vm))
-        logpdf = (-1.0 / theta - 2.0) * logT + log_pow + log_w + log_bracket
+        log_power = (
+                (-theta - 1.0)
+                * (
+                        np.log(um)
+                        + np.log(vm)
+                )
+        )
 
-        pdf = np.exp(logpdf)
-        pdf = np.nan_to_num(pdf, nan=0.0, posinf=0.0, neginf=0.0)
-        out[mask] = pdf
+        out[mask] = (
+                (-1.0 / theta - 2.0) * logT
+                + log_power
+                + log_w_u
+                + log_w_v
+                + log_bracket
+        )
+
         return float(out) if out.shape == () else out
 
     # ---------------------------------------------------------------------
@@ -369,48 +465,57 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         hi_th_cap = float(hi_th) if np.isfinite(hi_th) else 50.0
         hi_de_cap = float(hi_de) if np.isfinite(hi_de) else 50.0
 
-        # ----- internal stable logpdf (pairwise) -----
-        def _logpdf_pairwise(u_, v_, th, de):
-            # mirrors get_pdf() but returns log-density directly
-            u_ = np.asarray(u_, float)
-            v_ = np.asarray(v_, float)
-            u_, v_ = np.broadcast_arrays(u_, v_)
-
-            su = -th * np.log(u_)
-            sv = -th * np.log(v_)
-
-            u_m_th = _safe_exp(su)
-            v_m_th = _safe_exp(sv)
-
-            A = de * (u_m_th - 1.0)
-            B = de * (v_m_th - 1.0)
-
-            logS, w_u, w_v = _logS_and_weights(A, B)
-            w_u = np.maximum(w_u, 1e-300)
-            w_v = np.maximum(w_v, 1e-300)
-
-            T = 1.0 + logS / de
-            logT = np.log(T)
-
-            base = th * de * T
-            log_bracket = np.where(
-                base > 50.0,
-                np.log(base) + np.log1p((th + 1.0) / base),
-                np.log(th + 1.0) + np.log1p(base / (th + 1.0)),
-            )
-
-            log_pow = (-th - 1.0) * (np.log(u_) + np.log(v_))
-            log_w = np.log(w_u) + np.log(w_v)
-
-            return (-1.0 / th - 2.0) * logT + log_pow + log_w + log_bracket
+        # # ----- internal stable logpdf (pairwise) -----
+        # def _logpdf_pairwise(u_, v_, th, de):
+        #     # mirrors get_pdf() but returns log-density directly
+        #     u_ = np.asarray(u_, float)
+        #     v_ = np.asarray(v_, float)
+        #     u_, v_ = np.broadcast_arrays(u_, v_)
+        #
+        #     su = -th * np.log(u_)
+        #     sv = -th * np.log(v_)
+        #
+        #     u_m_th = _safe_exp(su)
+        #     v_m_th = _safe_exp(sv)
+        #
+        #     A = de * (u_m_th - 1.0)
+        #     B = de * (v_m_th - 1.0)
+        #
+        #     logS, w_u, w_v = _logS_and_weights(A, B)
+        #     w_u = np.maximum(w_u, 1e-300)
+        #     w_v = np.maximum(w_v, 1e-300)
+        #
+        #     T = 1.0 + logS / de
+        #     logT = np.log(T)
+        #
+        #     base = th * de * T
+        #     log_bracket = np.where(
+        #         base > 50.0,
+        #         np.log(base) + np.log1p((th + 1.0) / base),
+        #         np.log(th + 1.0) + np.log1p(base / (th + 1.0)),
+        #     )
+        #
+        #     log_pow = (-th - 1.0) * (np.log(u_) + np.log(v_))
+        #     log_w = np.log(w_u) + np.log(w_v)
+        #
+        #     return (-1.0 / th - 2.0) * logT + log_pow + log_w + log_bracket
 
         def _nll(th, de):
-            # negative mean log-likelihood (robust)
-            lp = _logpdf_pairwise(uu, vv, th, de)
-            m = -float(np.mean(lp))
-            if not np.isfinite(m):
+            logpdf = np.asarray(
+                self.get_log_pdf(
+                    uu,
+                    vv,
+                    param=(th, de),
+                ),
+                dtype=float,
+            )
+
+            if np.any(~np.isfinite(logpdf)):
                 return 1e99
-            return m
+
+            return -float(
+                np.mean(logpdf)
+            )
 
         # ----- coarse grid search for a good start -----
         th_min = max(float(lo_th) * 1.05, 0.2)
@@ -463,9 +568,9 @@ class BB2Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     # Sampling via conditional inversion (bisection)
     # ---------------------------------------------------------------------
 
-    def sample(self, n: int, rng=None, param=None):
+    def sample(self, n: int, param=None, rng=None):
         if rng is None:
-            rng = default_rng(0)
+            rng = default_rng()
 
         if param is None:
             theta, delta = map(float, self.get_parameters())

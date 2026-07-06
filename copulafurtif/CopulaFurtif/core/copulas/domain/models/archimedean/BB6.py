@@ -358,7 +358,7 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     # Sampling — conditional inversion
     # ------------------------------------------------------------------
 
-    def sample(self, n: int, seed: int | None = None, param=None, rng=None):
+    def sample(self, n: int, param=None, rng=None):
         """
         Sample (u, v) from BB6 via conditional inversion.
 
@@ -373,7 +373,7 @@ class BB6Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.get_parameters()
 
         if rng is None:
-            rng = np.random.default_rng(seed)
+            rng = np.random.default_rng()
 
         u_samples = rng.random(n)
         w_samples = rng.random(n)

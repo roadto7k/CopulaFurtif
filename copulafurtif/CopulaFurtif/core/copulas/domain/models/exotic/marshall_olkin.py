@@ -41,7 +41,15 @@ class MarshallOlkinCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependen
         super().__init__()
         self.name = "Marshall–Olkin Copula"
         self.type = "marshall-olkin"
-        self.default_optim_method = "Powell"
+        self.default_optim_method  = None # to find best compromise
+        # Marshall-Olkin contains a singular probability component concentrated
+        # on the curve u**pi1 = v**pi2.
+        self.is_absolutely_continuous = False
+        self.has_singular_component = True
+
+        # get_pdf returns only the absolutely-continuous component. Therefore it
+        # cannot be used as a complete density likelihood.
+        self.supports_density_likelihood = False
 
         # Book parameters: 0 ≤ pi1, pi2 ≤ 1.
         # In CopulaFurtif, bounds are *exclusive* (lo < val < hi), so we use (0,1) open interval
@@ -77,30 +85,112 @@ class MarshallOlkinCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependen
 
     def get_pdf(self, u, v, param=None):
         """
-        Absolutely-continuous density part (singular mass ignored), a.e.
+        Compute the absolutely-continuous component of the Marshall-Olkin
+        copula density.
 
-        For u^pi1 < v^pi2  (i.e., cond True with strict inequality):
-            C = u v^(1-pi2)  => c(u,v) = ∂^2C/∂u∂v = (1-pi2) v^(-pi2)
-        For u^pi1 > v^pi2:
-            C = v u^(1-pi1)  => c(u,v) = (1-pi1) u^(-pi1)
+        Important
+        ---------
+        The Marshall-Olkin copula is not absolutely continuous. It contains a
+        singular probability component concentrated on the curve
 
-        On the boundary u^pi1 = v^pi2 the copula has a singular component; we return 0 there.
+            u**pi1 = v**pi2.
+
+        Consequently, this method does NOT represent the complete copula law.
+        Its integral over the unit square is
+
+            1 - singular_mass(param),
+
+        rather than 1.
+
+        The returned function is the two-dimensional Lebesgue density of the
+        absolutely-continuous component only:
+
+            c_ac(u, v) = (1-pi2) * v**(-pi2),
+                if u**pi1 < v**pi2,
+
+            c_ac(u, v) = (1-pi1) * u**(-pi1),
+                if u**pi1 > v**pi2.
+
+        On the singular curve u**pi1 = v**pi2, no ordinary two-dimensional
+        density represents the singular probability mass. This method returns
+        zero there.
+
+        This density must not be used as a complete CMLE, MLE, IFM, AIC, or BIC
+        likelihood contribution.
+
+        Parameters
+        ----------
+        u : float or array-like
+            First copula coordinate.
+
+        v : float or array-like
+            Second copula coordinate.
+
+        param : array-like, optional
+            Marshall-Olkin parameters [pi1, pi2]. If omitted, the current
+            model parameters are used.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            Absolutely-continuous density component evaluated pairwise at
+            (u, v).
+        """
+
+    def singular_mass(self, param=None) -> float:
+        """
+        Return the total probability mass of the singular component.
+
+        For the bivariate Marshall-Olkin copula,
+
+            p_sing = pi1 * pi2 / (pi1 + pi2 - pi1 * pi2).
+
+        The singular mass is concentrated on
+
+            u**pi1 = v**pi2.
+
+        For this copula, the singular mass is also equal to Kendall's tau.
+
+        Parameters
+        ----------
+        param : array-like, optional
+            Marshall-Olkin parameters [pi1, pi2]. If omitted, the current
+            model parameters are used.
+
+        Returns
+        -------
+        float
+            Total probability mass of the singular component.
         """
         if param is None:
             param = self.get_parameters()
-        pi1, pi2 = float(param[0]), float(param[1])
 
-        eps = 1e-12
-        u = np.clip(np.asarray(u, dtype=float), eps, 1.0 - eps)
-        v = np.clip(np.asarray(v, dtype=float), eps, 1.0 - eps)
+        pi1, pi2 = map(float, param)
 
-        a = u ** pi1
-        b = v ** pi2
+        denominator = (
+                pi1
+                + pi2
+                - pi1 * pi2
+        )
 
-        left = (1.0 - pi2) * (v ** (-pi2))   # region a < b
-        right = (1.0 - pi1) * (u ** (-pi1))  # region a > b
+        if denominator <= 0.0:
+            return 0.0
 
-        return np.where(a < b, left, np.where(a > b, right, 0.0))
+        return float(
+            pi1 * pi2 / denominator
+        )
+
+    def continuous_mass(self, param=None) -> float:
+        """
+        Return the total probability mass of the absolutely-continuous component.
+
+        The integral of get_pdf over the unit square is
+
+            1 - singular_mass.
+        """
+        return float(
+            1.0 - self.singular_mass(param)
+        )
 
     def sample(self, n: int, param=None, rng=None) -> np.ndarray:
         """
@@ -146,14 +236,14 @@ class MarshallOlkinCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependen
     # ---------------------------------------------------------------------
     def kendall_tau(self, param=None):
         """
-        Kendall's tau:
-            τ = (pi1*pi2) / (pi1 + pi2 − pi1*pi2)
+        Kendall's tau.
+
+        For the bivariate Marshall-Olkin copula, Kendall's tau equals the
+        probability mass of the singular component:
+
+            tau = pi1 * pi2 / (pi1 + pi2 - pi1 * pi2).
         """
-        if param is None:
-            param = self.get_parameters()
-        pi1, pi2 = float(param[0]), float(param[1])
-        denom = pi1 + pi2 - pi1 * pi2
-        return 0.0 if denom <= 0 else (pi1 * pi2) / denom
+        return self.singular_mass(param)
 
     def blomqvist_beta(self, param=None) -> float:
         """

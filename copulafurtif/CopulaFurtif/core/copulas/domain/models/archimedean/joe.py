@@ -96,7 +96,7 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return coef * marg * hook
 
-    def sample(self, n, param=None, rng=None, tol=1e-12, max_iter=60):
+    def sample(self, n, param=None, rng=None):
         """
         Draw n samples from a Joe copula (θ ≥ 1) using conditional
         inversion with a monotone bisection solver.
@@ -115,6 +115,10 @@ class JoeCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         -------
         (n, 2) ndarray of (U, V)
         """
+
+        tol = 1e-12
+        max_iter = 60
+
         if rng is None:
             rng = default_rng()
 

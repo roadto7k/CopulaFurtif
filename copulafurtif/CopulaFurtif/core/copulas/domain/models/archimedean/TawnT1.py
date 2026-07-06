@@ -17,11 +17,17 @@ Properties:
     - Lower-tail dependence:  λ_L = 0 always.
     - Upper-tail dependence:  λ_U = 2 − 2A(½) > 0 when α > 0 and θ > 1.
     - C(u, v) ≠ C(v, u) in general (asymmetric).
-    - Kendall's τ ∈ [0, 1), computed via Gauss–Legendre quadrature of
-      τ = ∫₀¹ t(1−t)A″(t)/A(t) dt.
+    - Kendall's tau belongs to [0, 1) and is evaluated numerically using
+      the bounded conditional-CDF identity
+
+          tau = 1 - 4 * integral integral
+                C_{2|1}(v|u) * C_{1|2}(u|v) du dv.
+
+      This representation avoids the numerical concentration of A''(t)
+      that occurs for large theta.
 
 References:
-    - Joe (2014), §4.8.1.
+    - Joe (2014), §4.15.1.
     - Gudendorf & Segers (2010), "Extreme-value copulas".
     - Tadi & Witzany (2025), Table 2.
 
@@ -33,7 +39,7 @@ Attributes:
 
 import numpy as np
 from numpy import log as _np_log, exp as _np_exp
-from scipy.optimize import brentq
+# from scipy.optimize import brentq
 from scipy.stats import kendalltau as sp_kendalltau
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
@@ -79,20 +85,26 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     _EPS = 1e-12
 
-    # Gauss–Legendre nodes for Kendall's tau quadrature
-    _GL_N_TAU = 96
+    # Gauss-Legendre quadrature for the bounded Kendall's tau identity
+    _GL_N_TAU = 64
     _xi_tau, _wi_tau = np.polynomial.legendre.leggauss(_GL_N_TAU)
-    _TAU_EPS = 1e-6
-    _GL_HALF_TAU = 0.5 * (1.0 - 2.0 * _TAU_EPS)
-    _GL_MID_TAU = 0.5
-    _GL_T_TAU = _GL_HALF_TAU * _xi_tau + _GL_MID_TAU
-    _GL_W_TAU = _GL_HALF_TAU * _wi_tau
+
+    _GL_U_TAU = 0.5 * (_xi_tau + 1.0)
+    _GL_W_TAU = 0.5 * _wi_tau
+
+    _GL_UU_TAU, _GL_VV_TAU = np.meshgrid(
+        _GL_U_TAU,
+        _GL_U_TAU,
+        indexing="ij",
+    )
+
+    _GL_W2D_TAU = np.outer(_GL_W_TAU, _GL_W_TAU)
 
     def __init__(self):
         super().__init__()
         self.name = "Tawn Type-1 Copula"
         self.type = "tawn1"
-        self.default_optim_method = "Powell"
+        self.default_optim_method = "SLSQP"
         self.init_parameters(
             CopulaParameters(
                 np.array([2.0, 0.5], dtype=float),
@@ -293,20 +305,63 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def kendall_tau(self, param=None):
         r"""
-        Kendall's τ via Gauss–Legendre quadrature:
+        Compute Kendall's tau using the bounded conditional-CDF identity.
 
-            τ = ∫₀¹ t(1−t)A″(t) / A(t) dt.
+        For a bivariate copula C,
+
+            tau = 1 - 4 * integral_0^1 integral_0^1
+                  C_{2|1}(v|u) * C_{1|2}(u|v) du dv
+
+        where
+
+            C_{2|1}(v|u) = dC(u,v) / du
+            C_{1|2}(u|v) = dC(u,v) / dv
+
+        This representation is numerically preferable to the extreme-value
+        identity involving A''(t) when theta is large. In that regime, the
+        curvature of the Pickands dependence function becomes increasingly
+        concentrated around its kink, and a fixed one-dimensional quadrature
+        may fail to capture the resulting narrow peak.
+
+        The conditional CDFs remain bounded in [0, 1], giving a more stable
+        numerical integrand across the full admissible parameter domain.
+
+        Parameters
+        ----------
+        param : array-like, optional
+            Copula parameters [theta, alpha]. If omitted, the current model
+            parameters are used.
+
+        Returns
+        -------
+        float
+            Kendall's tau implied by the copula parameters.
         """
         if param is None:
             param = self.get_parameters()
 
-        t = self._GL_T_TAU
-        w = self._GL_W_TAU
-        A = np.clip(self._A(t, param), self._EPS, None)
-        App = np.maximum(self._A_double(t, param), 0.0)
+        U = self._GL_UU_TAU.ravel()
+        V = self._GL_VV_TAU.ravel()
 
-        tau = float(np.dot(w, t * (1.0 - t) * App / A))
-        return float(np.clip(tau, 0.0, 1.0))
+        partial_u = np.asarray(
+            self.partial_derivative_C_wrt_u(U, V, param),
+            dtype=float,
+        ).reshape(self._GL_N_TAU, self._GL_N_TAU)
+
+        partial_v = np.asarray(
+            self.partial_derivative_C_wrt_v(U, V, param),
+            dtype=float,
+        ).reshape(self._GL_N_TAU, self._GL_N_TAU)
+
+        integral = float(
+            np.sum(
+                self._GL_W2D_TAU
+                * partial_u
+                * partial_v
+            )
+        )
+
+        return float(1.0 - 4.0 * integral)
 
     def blomqvist_beta(self, param=None):
         r"""Blomqvist's β = 4·C(½, ½) − 1."""
@@ -330,35 +385,122 @@ class TawnT1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def sample(self, n, param=None, rng=None):
         r"""
-        Draw *n* samples via conditional inversion (Brent's method).
+        Draw samples by vectorized conditional inversion.
 
-        For each u_i ~ U(0,1) and w_i ~ U(0,1), solve
-            ∂C(u_i, v)/∂u = w_i  for v.
+        Let
+
+            h(v | u) = P(V <= v | U = u)
+                     = dC(u, v) / du.
+
+        For independent draws
+
+            U ~ Uniform(0, 1),
+            W ~ Uniform(0, 1),
+
+        the second copula coordinate is obtained from
+
+            V = h^{-1}(W | U).
+
+        The inverse conditional CDF is computed by vectorized bisection.
+        All observations are updated simultaneously with NumPy arrays, avoiding
+        one scalar root solver per sample.
+
+        Because h(v | u) is non-decreasing in v, bisection converges to the
+        conditional quantile. After ``n_iter`` iterations, the remaining
+        interval width is approximately 2**(-n_iter).
+
+        Parameters
+        ----------
+        n : int
+            Number of samples.
+
+        param : array-like, optional
+            Tawn Type-1 parameters [theta, alpha]. If omitted, the current
+            model parameters are used.
+
+        rng : numpy.random.Generator, optional
+            NumPy random number generator.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape (n, 2) containing the sampled copula coordinates.
         """
         if param is None:
             param = self.get_parameters()
+
         if rng is None:
             rng = np.random.default_rng()
 
         n = int(n)
-        u = rng.uniform(1e-6, 1.0 - 1e-6, n)
-        w_uni = rng.uniform(1e-6, 1.0 - 1e-6, n)
-        v = np.empty(n, dtype=float)
 
-        for i in range(n):
-            u_i, w_i = float(u[i]), float(w_uni[i])
+        if n < 0:
+            raise ValueError("n must be non-negative.")
 
-            def obj(v_):
-                return float(self.conditional_cdf_v_given_u(u_i, v_, param)) - w_i
+        if n == 0:
+            return np.empty((0, 2), dtype=float)
 
-            try:
-                v[i] = brentq(obj, 1e-8, 1.0 - 1e-8, xtol=1e-10, maxiter=100)
-            except ValueError:
-                left = abs(obj(1e-8))
-                right = abs(obj(1.0 - 1e-8))
-                v[i] = 1e-6 if left <= right else 1.0 - 1e-6
+        eps = 1e-8
+        n_iter = 40
 
-        return np.column_stack([u, v])
+        u = rng.uniform(
+            eps,
+            1.0 - eps,
+            size=n,
+        )
+
+        w = rng.uniform(
+            eps,
+            1.0 - eps,
+            size=n,
+        )
+
+        lo = np.full(
+            n,
+            eps,
+            dtype=float,
+        )
+
+        hi = np.full(
+            n,
+            1.0 - eps,
+            dtype=float,
+        )
+
+        for _ in range(n_iter):
+            mid = 0.5 * (lo + hi)
+
+            h_mid = np.asarray(
+                self.conditional_cdf_v_given_u(
+                    u,
+                    mid,
+                    param,
+                ),
+                dtype=float,
+            )
+
+            go_left = h_mid >= w
+
+            hi = np.where(
+                go_left,
+                mid,
+                hi,
+            )
+
+            lo = np.where(
+                go_left,
+                lo,
+                mid,
+            )
+
+        v = 0.5 * (lo + hi)
+
+        return np.column_stack(
+            [
+                u,
+                v,
+            ]
+        )
 
     # ── init_from_data ────────────────────────────────────────────────────
 

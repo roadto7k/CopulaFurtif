@@ -66,11 +66,21 @@ def plot_tail_concentration_curves(
     ur_emp = np.array([np.mean((u >= 1 - t) & (v >= 1 - t)) for t in t_vals], dtype=float)
 
     # Theoretical
-    ll_theo = np.array([float(copula.get_cdf(t, t)) for t in t_vals], dtype=float)
-    ur_theo = np.array([
-        1 - 2 * (1 - t) + float(copula.get_cdf(1 - t, 1 - t))
-        for t in t_vals
-    ], dtype=float)
+    ll_theo = np.array(
+        [
+            float(copula.get_cdf(t, t))
+            for t in t_vals
+        ],
+        dtype=float,
+    )
+
+    ur_theo = np.array(
+        [
+            float(copula.get_survival_cdf(t, t))
+            for t in t_vals
+        ],
+        dtype=float,
+    )
 
     if normalize_by_t:
         safe_t  = np.maximum(t_vals, 1e-12)

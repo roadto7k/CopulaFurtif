@@ -158,11 +158,20 @@ def log_likelihood_only_copula(theta_array, copula: CopulaModel, X, Y, marginals
     u = np.clip(u, eps_u, 1 - eps_u)
     v = np.clip(v, eps_u, 1 - eps_u)
 
-    cop_pdf = copula.get_pdf(u, v, theta)
-    eps = 1e-12
-    cop_pdf = np.clip(cop_pdf, eps, None)
+    log_cop_pdf = evaluate_copula_log_pdf(
+        copula,
+        u,
+        v,
+        param=theta,
+        pdf_floor=1e-12,
+    )
 
-    return -np.sum(np.log(cop_pdf))
+    if np.any(~np.isfinite(log_cop_pdf)):
+        return np.inf
+
+    return -float(
+        np.sum(log_cop_pdf)
+    )
 
 
 def log_likelihood_joint(param_vec,
@@ -225,12 +234,146 @@ def log_likelihood_joint(param_vec,
     pdf2 = dist1.pdf(Y, *shape_params_2, loc=loc2, scale=scale2)
 
     # 5) Copula PDF
-    cop_pdf = copula.get_pdf(u, v, theta)
+    eps_u = 1e-12
+
+    u = np.clip(
+        u,
+        eps_u,
+        1.0 - eps_u,
+    )
+
+    v = np.clip(
+        v,
+        eps_u,
+        1.0 - eps_u,
+    )
+
+    log_cop_pdf = evaluate_copula_log_pdf(
+        copula,
+        u,
+        v,
+        param=theta,
+        pdf_floor=1e-8,
+    )
+
     eps = 1e-8
-    cop_pdf = np.clip(cop_pdf, eps, None)
-    pdf1 = np.clip(pdf1, eps, None)
-    pdf2 = np.clip(pdf2, eps, None)
-    # 6) Negative log-likelihood
-    return -np.sum(np.log(cop_pdf) + np.log(pdf1) + np.log(pdf2))
+
+    pdf1 = np.clip(
+        pdf1,
+        eps,
+        None,
+    )
+
+    pdf2 = np.clip(
+        pdf2,
+        eps,
+        None,
+    )
+
+    if np.any(~np.isfinite(log_cop_pdf)):
+        return np.inf
+
+    return -float(
+        np.sum(
+            log_cop_pdf
+            + np.log(pdf1)
+            + np.log(pdf2)
+        )
+    )
+
+def evaluate_copula_log_pdf(
+    copula: CopulaModel,
+    u,
+    v,
+    param=None,
+    pdf_floor: float = 1e-300,
+):
+    """
+    Evaluate a copula log-density for likelihood calculations.
+
+    If the copula provides a native ``get_log_pdf`` implementation, it is
+    used directly. Otherwise, the standard ``get_pdf`` API is preserved and
+    the logarithm is computed from the returned density using a numerical
+    floor.
+
+    Parameters
+    ----------
+    copula : CopulaModel
+        Copula instance.
+
+    u : array-like
+        First copula coordinate.
+
+    v : array-like
+        Second copula coordinate.
+
+    param : array-like, optional
+        Copula parameters.
+
+    pdf_floor : float, optional
+        Numerical density floor used only for copulas without a native
+        log-density implementation.
+
+    Returns
+    -------
+    numpy.ndarray
+        Copula log-density evaluated pairwise at (u, v).
+    """
+
+    require_density_likelihood_supported(copula)
+
+    get_log_pdf = getattr(
+        copula,
+        "get_log_pdf",
+        None,
+    )
+
+    if callable(get_log_pdf):
+        return np.asarray(
+            get_log_pdf(
+                u,
+                v,
+                param,
+            ),
+            dtype=float,
+        )
+
+    pdf = np.asarray(
+        copula.get_pdf(
+            u,
+            v,
+            param,
+        ),
+        dtype=float,
+    )
+
+    return np.log(
+        np.clip(
+            pdf,
+            float(pdf_floor),
+            None,
+        )
+    )
+
+def require_density_likelihood_supported(copula: CopulaModel) -> None:
+    """
+    Ensure that the copula can be fitted with a standard density likelihood.
+
+    Standard CMLE/MLE/IFM assumes that get_pdf represents the complete
+    copula law with respect to two-dimensional Lebesgue measure.
+
+    Copulas with singular components require a dedicated likelihood or a
+    distribution-based estimation criterion.
+    """
+    if not getattr(
+        copula,
+        "supports_density_likelihood",
+        True,
+    ):
+        raise NotImplementedError(
+            f"{copula.get_name()} does not support standard density-based "
+            "likelihood estimation. Its get_pdf method represents only the "
+            "absolutely-continuous component of the copula law."
+        )
 
 

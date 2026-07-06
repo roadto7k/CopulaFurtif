@@ -58,11 +58,11 @@ class CopulaParameters:
         if partial_u_numeric and partial_v_numeric:
             self.partial_u_numeric = partial_u_numeric
             self.partial_v_numeric = partial_v_numeric
-        elif self.pdf_expr and input_symbols:
-            self.partial_u_expr = diff(self.pdf_expr, self.input_symbols[0])
-            self.partial_v_expr = diff(self.pdf_expr, self.input_symbols[1])
-            self.partial_u_numeric = lambdify(all_symbols, self.partial_u_expr, modules=['scipy', 'numpy'])
-            self.partial_v_numeric = lambdify(all_symbols, self.partial_v_expr, modules=['scipy', 'numpy'])
+        elif self.cdf_expr is not None and input_symbols:
+            self.partial_u_expr = diff(self.cdf_expr, self.input_symbols[0])
+            self.partial_v_expr = diff(self.cdf_expr, self.input_symbols[1])
+            self.partial_u_numeric = lambdify(all_symbols, self.partial_u_expr, modules=["scipy", "numpy"])
+            self.partial_v_numeric = lambdify(all_symbols, self.partial_v_expr, modules=["scipy", "numpy"])
         else:
             self.partial_u_expr = self.partial_v_expr = None
             self.partial_u_numeric = self.partial_v_numeric = None
@@ -141,17 +141,19 @@ class CopulaModel(ABC):
     """
 
     def __init__(self, *, use_jax: bool = False):
-        """
-        Initialize the copula model with default attributes.
-        use_jax : bool
-            False  → backend NumPy (copule «light»)
-            True   → backend JAX  (copule high‑dimension, AD, JIT…)
-        """
         self._use_jax = bool(use_jax)
         self._parameters = None
         self.log_likelihood_ = None
         self.n_obs = None
         self.name = ""
+
+        # Distribution structure
+        self.is_absolutely_continuous = True
+        self.has_singular_component = False
+
+        # Standard density likelihood assumes that get_pdf represents the
+        # complete copula law with respect to two-dimensional Lebesgue measure.
+        self.supports_density_likelihood = True
 
     def pretty_print(self, equation='cdf'):
         if equation == 'cdf':
@@ -221,6 +223,62 @@ class CopulaModel(ABC):
             return self._parameters.cdf_numeric(u, v, *self.get_parameters())
         raise NotImplementedError("CDF not defined symbolically. Override get_cdf method.")
 
+    def get_survival_cdf(self, q_u, q_v, param=None):
+        """
+        Compute the bivariate survival copula.
+
+        The input coordinates q_u and q_v are upper-tail probabilities.
+        The reflected or survival copula is defined by
+
+            C_bar(q_u, q_v)
+                = q_u + q_v - 1
+                  + C(1 - q_u, 1 - q_v).
+
+        Equivalently,
+
+            C_bar(q_u, q_v)
+                = P(U > 1 - q_u, V > 1 - q_v).
+
+        This generic implementation is suitable for most copula families.
+        Families requiring enhanced numerical precision in the upper-right
+        corner may override this method.
+
+        Parameters
+        ----------
+        q_u : float or array-like
+            Upper-tail probability for the first margin, in [0, 1].
+
+        q_v : float or array-like
+            Upper-tail probability for the second margin, in [0, 1].
+
+        param : array-like, optional
+            Copula parameters. If omitted, the current model parameters
+            are used.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            Survival copula evaluated pairwise at (q_u, q_v).
+        """
+        if param is None:
+            param = self.get_parameters()
+
+        q_u = np.asarray(q_u, dtype=float)
+        q_v = np.asarray(q_v, dtype=float)
+        q_u, q_v = np.broadcast_arrays(q_u, q_v)
+
+        u = 1.0 - q_u
+        v = 1.0 - q_v
+
+        cdf = np.asarray(
+            self.get_cdf(u, v, param),
+            dtype=float,
+        )
+
+        out = q_u + q_v - 1.0 + cdf
+
+        return float(out) if out.shape == () else out
+
     def get_pdf(self, u, v, param = None):
         """
         Compute the probability density function c(u, v).
@@ -233,7 +291,7 @@ class CopulaModel(ABC):
         Returns:
             float or np.ndarray: Value(s) of the PDF.
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def kendall_tau(self, param=None):
@@ -246,7 +304,7 @@ class CopulaModel(ABC):
         Returns:
             float: Kendall's tau coefficient.
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def sample(self, n, param=None, rng=None):
@@ -260,7 +318,7 @@ class CopulaModel(ABC):
         Returns:
             np.ndarray: Array of shape (n, 2) with samples from the copula.
         """
-        pass
+        raise NotImplementedError
     
     def partial_derivative_C_wrt_u(self, u, v, param = None):
         """
@@ -275,9 +333,10 @@ class CopulaModel(ABC):
 
         Raises:
             NotImplementedError: If no numeric implementation is provided.
+            because some copula aren't symetric
         """
 
-        pass
+        raise NotImplementedError
 
     def partial_derivative_C_wrt_v(self, u, v, param = None):
         """
@@ -292,9 +351,10 @@ class CopulaModel(ABC):
 
         Raises:
             NotImplementedError: If no numeric implementation is provided.
+            because some copula aren't symetric
         """
 
-        return self.partial_derivative_C_wrt_u(v, u, param)
+        raise NotImplementedError
 
     def conditional_cdf_u_given_v(self, u, v, param=None, normalize=True):
         """

@@ -15,7 +15,11 @@ Key properties
 • Symmetric copula: C(u,v) = C(v,u).
 • Both lower and upper tail dependence.
   λ_L = (2 - 2^{-1/δ})^{-1/θ}   λ_U = 2^{-1/δ}
-• Kendall's τ = 1 - 2·B(1+1/θ, 1+1/δ)   (B = beta function)
+• Kendall's tau has no closed-form expression used here.
+  It is evaluated numerically using the bounded conditional-CDF identity:
+
+      tau = 1 - 4 * integral integral
+            C_{2|1}(v|u) * C_{1|2}(u|v) du dv
 • Blomqvist β = 4·C(½,½) - 1
   with C(½,½) = (2^{θ+1} - 1 - 2^{-1/δ}(2^θ-1))^{-1/θ}
 • δ → ∞ → Gumbel limit;  θ → 0 → Galambos limit.
@@ -25,7 +29,7 @@ import numpy as np
 from numpy.random import default_rng
 from scipy.optimize import brentq
 from scipy.stats import kendalltau as sp_kendalltau
-
+from numpy.polynomial.legendre import leggauss
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
 from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
@@ -296,47 +300,80 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     # Pre-computed 32-point Gauss-Legendre nodes/weights on [0.005, 0.995]
     # (computed once at import time, reused by every kendall_tau call)
-    _GL_N = 32
-    _xi_gl, _wi_gl = __import__('numpy.polynomial.legendre', fromlist=['leggauss']).leggauss(_GL_N)
-    _GL_HALF = 0.5 * (0.995 - 0.005)
-    _GL_MID  = 0.5 * (0.995 + 0.005)
-    _GL_U    = _GL_HALF * _xi_gl + _GL_MID        # nodes on [0.005, 0.995]
-    _GL_W    = _GL_HALF * _wi_gl                   # scaled weights
-    # meshgrid (32×32 = 1024 points)
-    _GL_UU, _GL_VV = np.meshgrid(_GL_U, _GL_U)    # shape (32, 32)
-    _GL_WU, _GL_WV = np.meshgrid(_GL_W, _GL_W)
+    _GL_N = 64
+    _xi_gl, _wi_gl = leggauss(_GL_N)
+
+    _GL_U = 0.5 * (_xi_gl + 1.0)
+    _GL_W = 0.5 * _wi_gl
+
+    _GL_UU, _GL_VV = np.meshgrid(
+        _GL_U,
+        _GL_U,
+        indexing="ij",
+    )
+
+    _GL_W2D = np.outer(_GL_W, _GL_W)
 
     def kendall_tau(self, param=None):
         """
-        Kendall's τ via 2D Gauss-Legendre quadrature (32×32 grid).
+        Compute Kendall's tau by bounded two-dimensional Gauss-Legendre
+        quadrature.
 
-        BB4 is NOT Archimedean so the standard φ/φ' formula does not apply.
-        The formula τ = 1 − 2·B(1+1/θ, 1+1/δ) is INCORRECT for BB4.
+        For a bivariate copula C,
 
-        General concordance identity:
-            τ = 4·∫₀¹∫₀¹ C(u,v)·c(u,v) du dv − 1
+            tau = 1 - 4 * integral_0^1 integral_0^1
+                  C_{2|1}(v|u) * C_{1|2}(u|v) du dv
+
+        where
+
+            C_{2|1}(v|u) = dC(u,v) / du
+            C_{1|2}(u|v) = dC(u,v) / dv
+
+        This representation is numerically preferable to
+
+            tau = 4 * integral C(u,v) * c(u,v) du dv - 1
+
+        when the copula density is unbounded or highly concentrated near
+        the boundaries of the unit square.
 
         Parameters
         ----------
-        param : [theta, delta], optional
+        param : array-like, optional
+            Copula parameters [theta, delta]. If omitted, the current model
+            parameters are used.
 
         Returns
         -------
-        float  in (0, 1) for θ,δ > 0
+        float
+            Kendall's tau implied by the copula parameters.
         """
         if param is None:
             param = self.get_parameters()
 
-        n = self._GL_N
         U = self._GL_UU.ravel()
         V = self._GL_VV.ravel()
 
-        cdf_vals = self.get_cdf(U, V, param).reshape(n, n)
-        pdf_vals = self.get_pdf(U, V, param).reshape(n, n)
+        partial_u = np.asarray(
+            self.partial_derivative_C_wrt_u(U, V, param),
+            dtype=float,
+        ).reshape(self._GL_N, self._GL_N)
 
-        Q = float(np.sum(cdf_vals * pdf_vals * self._GL_WU * self._GL_WV))
-        # clip to [0, 1) — exact 1.0 can occur numerically for extreme params
-        return float(np.clip(4.0 * Q - 1.0, 0.0, 1.0 - 1e-15))
+        partial_v = np.asarray(
+            self.partial_derivative_C_wrt_v(U, V, param),
+            dtype=float,
+        ).reshape(self._GL_N, self._GL_N)
+
+        integral = float(
+            np.sum(
+                self._GL_W2D
+                * partial_u
+                * partial_v
+            )
+        )
+
+        tau = 1.0 - 4.0 * integral
+
+        return float(tau)
 
     # ------------------------------------------------------------------
     # Blomqvist beta
@@ -369,7 +406,7 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     # Sampling
     # ------------------------------------------------------------------
 
-    def sample(self, n, param=None, rng=None, eps=1e-12, max_iter=48):
+    def sample(self, n, param=None, rng=None):
         """
         Draw n i.i.d. pairs (U, V) via conditional inversion (vectorised bisection).
 
@@ -393,6 +430,10 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         -------
         np.ndarray, shape (n, 2)
         """
+
+        eps = 1e-12
+        max_iter = 48
+
         if rng is None:
             rng = default_rng()
         if param is None:
@@ -430,10 +471,10 @@ class BB4Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         --------
         1. Estimate δ from empirical upper tail dependence:
                λ̂_U  →  δ = -1 / log₂(λ̂_U)
-        2. Given δ, estimate θ by inverting the closed-form tau:
-               τ = 1 - 2·B(1+1/θ, 1+1/δ)  →  solve for θ.
-        3. Fallback: if step 1 fails, estimate δ from Blomqvist β̂,
-           then repeat step 2.
+        2. Given delta, estimate theta by numerically matching the model-implied
+           Kendall's tau to the empirical Kendall's tau.
+        3. Use a coarse parameter grid to identify a root bracket, then refine
+           theta with Brent's method.
 
         Parameters
         ----------

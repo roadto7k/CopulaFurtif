@@ -129,8 +129,8 @@ def compare_tail_dependence(
 
         rows.append({
             "Copula": name,
-            "Empirical λ_L": lambda_L_emp,
-            "Empirical λ_U": lambda_U_emp,
+            "Empirical λ_L_hat_q": lambda_L_emp,
+            "Empirical λ_U_hat_q": lambda_U_emp,
             "Model λ_L": lambda_L_model,
             "Model λ_U": lambda_U_model,
             "Tail Error": tail_error,

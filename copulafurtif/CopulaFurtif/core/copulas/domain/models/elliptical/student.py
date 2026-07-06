@@ -19,12 +19,19 @@ Attributes:
 """
 
 import numpy as np
-from scipy.stats import kendalltau, t as student_t
+
 from scipy.optimize import brentq
-from scipy.stats import t, multivariate_t, kendalltau, multivariate_normal
-from scipy.special import gammaln, gamma, roots_genlaguerre
-from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
-from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, SupportsTailDependence
+from scipy.special import gammaln
+from scipy.stats import kendalltau, t
+
+from CopulaFurtif.core.copulas.domain.models.interfaces import (
+    CopulaModel,
+    CopulaParameters,
+)
+from CopulaFurtif.core.copulas.domain.models.mixins import (
+    ModelSelectionMixin,
+    SupportsTailDependence,
+)
 
 
 class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
@@ -38,54 +45,274 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         # self.bounds_param = [(-0.999, 0.999), (2.01, 30.0)] 
         # self.param_names = ["rho", "nu"]
         # self.get_parameters() = [0.5, 4.0]
-        self.default_optim_method = "SLSQP"
+        self.default_optim_method = "Powell"
+
+        # Deterministic Gauss-Legendre quadrature used by get_cdf.
         self.n_nodes = 64
-        self.init_parameters(CopulaParameters(np.array([0.5, 4.0]),[(-1, 1), (2.01, 30.0)], ["rho", "nu"] ))
+        self._cdf_nodes, self._cdf_weights = np.polynomial.legendre.leggauss(
+            self.n_nodes
+        )
+
+        # Maximum number of copula points evaluated in one vectorized batch.
+        # This avoids creating very large (n_points, n_nodes) temporary arrays
+        # during grid-based goodness-of-fit calculations.
+        self._cdf_batch_size = 4096
+
+        self.init_parameters(
+            CopulaParameters(
+                np.array([0.5, 4.0]),
+                [(-1, 1), (2.01, 30.0)],
+                ["rho", "nu"],
+            )
+        )
 
     def get_cdf(self, u, v, param=None):
-        """
-        Student-t copula CDF on the open square (0,1)^2:
-            C(u,v) = t_{ν,ρ}( t_ν^{-1}(u), t_ν^{-1}(v) )
+        r"""
+        Compute the bivariate Student-t copula CDF deterministically.
 
-        Convention:
-          - Always clip u,v to (eps, 1-eps) (open interval), no explicit boundary handling.
-          - Pairwise vectorization only: u and v must have the same shape.
-        """
+        For the Student copula,
 
+            C(u, v) = P(U <= u, V <= v)
+
+        and, using the conditional copula distribution,
+
+            C(u, v)
+                = integral_0^u C_{2|1}(v | s) ds
+                = integral_0^u dC(s, v) / ds ds.
+
+        For a bivariate Student distribution with correlation rho and
+        degrees of freedom nu,
+
+            T2 | T1 = x
+
+        follows a Student distribution with
+
+            df    = nu + 1,
+            loc   = rho * x,
+            scale = sqrt(
+                (nu + x**2) * (1 - rho**2) / (nu + 1)
+            ).
+
+        The integral is evaluated with deterministic Gauss-Legendre
+        quadrature.
+
+        The Student copula is exchangeable,
+
+            C(u, v) = C(v, u),
+
+        so integration is always performed over the smaller coordinate.
+
+        The Student copula is also radially symmetric,
+
+            C(u, v) = u + v - 1 + C(1 - u, 1 - v).
+
+        Upper-right points are therefore reflected into the lower-left
+        quadrant before numerical integration. This avoids integrating over
+        almost the full unit interval and strongly improves upper-tail
+        numerical precision.
+
+        Parameters
+        ----------
+        u : float or numpy.ndarray
+            First copula coordinate.
+
+        v : float or numpy.ndarray
+            Second copula coordinate. For vectorized evaluation, `u` and
+            `v` must have identical shapes.
+
+        param : array-like, optional
+            Copula parameters [rho, nu]. If omitted, the current model
+            parameters are used.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            Student copula CDF evaluated pairwise at (u, v).
+        """
         if param is None:
             param = self.get_parameters()
+
         rho, nu = float(param[0]), float(param[1])
 
         u = np.asarray(u, dtype=float)
         v = np.asarray(v, dtype=float)
 
-        # pairwise vectorization contract
         if u.ndim == 0 and v.ndim == 0:
             is_scalar = True
+            output_shape = ()
         else:
             is_scalar = False
+
             if u.shape != v.shape:
-                raise ValueError("Vectorized evaluation is pairwise: u and v must have the same shape.")
+                raise ValueError(
+                    "Vectorized evaluation is pairwise: "
+                    "u and v must have the same shape."
+                )
 
-        eps = 1e-12
-        u = np.clip(u, eps, 1.0 - eps)
-        v = np.clip(v, eps, 1.0 - eps)
+            output_shape = u.shape
 
-        # if abs(rho) < 1e-12:
-        #     out = u * v
-        #     return float(out) if is_scalar else out
+        u_flat = np.atleast_1d(u).ravel()
+        v_flat = np.atleast_1d(v).ravel()
 
-        x = t.ppf(u, df=nu)
-        y = t.ppf(v, df=nu)
+        # Keep copula inputs on the closed unit square.
+        u_flat = np.clip(u_flat, 0.0, 1.0)
+        v_flat = np.clip(v_flat, 0.0, 1.0)
 
-        pts = np.column_stack([x.ravel(), y.ravel()])  # (n,2)
-        shape = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
+        cdf = np.empty_like(u_flat, dtype=float)
 
-        cdf_vals = multivariate_t.cdf(pts, loc=np.zeros(2), shape=shape, df=nu)
+        # ------------------------------------------------------------------
+        # Exact copula boundary conditions
+        # ------------------------------------------------------------------
+        zero_mask = (
+                (u_flat <= 0.0)
+                | (v_flat <= 0.0)
+        )
+        cdf[zero_mask] = 0.0
+
+        u_one_mask = (
+                ~zero_mask
+                & (u_flat >= 1.0)
+        )
+        cdf[u_one_mask] = v_flat[u_one_mask]
+
+        v_one_mask = (
+                ~zero_mask
+                & ~u_one_mask
+                & (v_flat >= 1.0)
+        )
+        cdf[v_one_mask] = u_flat[v_one_mask]
+
+        interior_mask = (
+                ~zero_mask
+                & ~u_one_mask
+                & ~v_one_mask
+        )
+
+        # ------------------------------------------------------------------
+        # Deterministic one-dimensional conditional integration
+        # ------------------------------------------------------------------
+        if np.any(interior_mask):
+            u_inner = u_flat[interior_mask]
+            v_inner = v_flat[interior_mask]
+
+            # --------------------------------------------------------------
+            # Radial symmetry
+            #
+            #     C(u, v)
+            #         = u + v - 1 + C(1 - u, 1 - v)
+            #
+            # Reflect upper-right points into the lower-left quadrant.
+            # --------------------------------------------------------------
+            radial_mask = (
+                    (u_inner > 0.5)
+                    & (v_inner > 0.5)
+            )
+
+            eval_u = np.where(
+                radial_mask,
+                1.0 - u_inner,
+                u_inner,
+            )
+
+            eval_v = np.where(
+                radial_mask,
+                1.0 - v_inner,
+                v_inner,
+            )
+
+            # Student copula is exchangeable:
+            #
+            #     C(u, v) = C(v, u)
+            #
+            # Always integrate over the smaller coordinate.
+            integration_limit = np.minimum(eval_u, eval_v)
+            fixed_coordinate = np.maximum(eval_u, eval_v)
+
+            values = np.empty_like(integration_limit)
+
+            nodes = self._cdf_nodes[None, :]
+            base_weights = self._cdf_weights[None, :]
+
+            df_conditional = nu + 1.0
+            one_minus_rho2 = 1.0 - rho ** 2
+
+            eps = 1e-15
+
+            for start in range(
+                    0,
+                    integration_limit.size,
+                    self._cdf_batch_size,
+            ):
+                stop = min(
+                    start + self._cdf_batch_size,
+                    integration_limit.size,
+                )
+
+                upper = integration_limit[start:stop, None]
+                fixed = fixed_coordinate[start:stop, None]
+
+                # Map Gauss-Legendre nodes from [-1, 1] to [0, upper].
+                s = 0.5 * upper * (nodes + 1.0)
+                weights = 0.5 * upper * base_weights
+
+                s = np.clip(
+                    s,
+                    eps,
+                    1.0 - eps,
+                )
+                fixed = np.clip(
+                    fixed,
+                    eps,
+                    1.0 - eps,
+                )
+
+                x = t.ppf(
+                    s,
+                    df=nu,
+                )
+                y = t.ppf(
+                    fixed,
+                    df=nu,
+                )
+
+                conditional_scale = np.sqrt(
+                    (nu + x ** 2)
+                    * one_minus_rho2
+                    / df_conditional
+                )
+
+                z = (
+                            y - rho * x
+                    ) / conditional_scale
+
+                conditional_cdf = t.cdf(
+                    z,
+                    df=df_conditional,
+                )
+
+                values[start:stop] = np.sum(
+                    weights * conditional_cdf,
+                    axis=1,
+                )
+
+            # --------------------------------------------------------------
+            # Reconstruct reflected upper-right CDF values.
+            # --------------------------------------------------------------
+            values[radial_mask] = (
+                    u_inner[radial_mask]
+                    + v_inner[radial_mask]
+                    - 1.0
+                    + values[radial_mask]
+            )
+
+            cdf[interior_mask] = values
 
         if is_scalar:
-            return float(cdf_vals)
-        return np.asarray(cdf_vals, dtype=float).reshape(u.shape)
+            return float(cdf[0])
+
+        return cdf.reshape(output_shape)
+
+
 
     def get_pdf(self, u, v, param=None):
         """Compute the joint PDF c(u,v) of the Student copula.
@@ -125,7 +352,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         log_c = log_num - log_den - log_det + log_prod - log_dent
         return np.exp(log_c)
 
-    def sample(self, n, param=None, random_state=None, rng=None):
+    def sample(self, n, param=None, rng=None):
         """Generate n samples from the Student copula.
 
         Returns:
@@ -310,7 +537,7 @@ class StudentCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             def lambda_of_nu(nu):
                 den = max(1e-8, 1.0 + rho0)
                 arg = -np.sqrt((nu + 1.0) * (1.0 - rho0) / den)
-                return 2.0 * student_t.cdf(arg, df=nu + 1.0)
+                return 2.0 * t.cdf(arg, df=nu + 1.0)
 
             a = max(nu_lo + 1e-6, 2.01)
             b = nu_hi - 1e-6

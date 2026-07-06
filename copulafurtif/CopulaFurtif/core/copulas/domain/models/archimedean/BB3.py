@@ -11,6 +11,7 @@ from CopulaFurtif.core.copulas.domain.models.mixins import ModelSelectionMixin, 
 
 
 _MAX_LOG_EXP = 700.0  # safe exp bound (exp(700) ~ 1e304)
+_LOG_SAFE = 30.0
 
 
 def _safe_exp(x: np.ndarray) -> np.ndarray:
@@ -25,27 +26,92 @@ def _pow_pos(x: np.ndarray, p: float) -> np.ndarray:
 
 def _logS_and_weights(A: np.ndarray, B: np.ndarray):
     """
-    Compute:
-      logS = log(exp(A) + exp(B) - 1)
-      w_u  = exp(A) / (exp(A)+exp(B)-1)
-      w_v  = exp(B) / (exp(A)+exp(B)-1)
-    stably, using the max-trick (no catastrophic cancellation).
-    Assumes A,B >= 0 (true for BB3).
+    Compute
+
+        logS = log(exp(A) + exp(B) - 1)
+        w_u  = exp(A) / S
+        w_v  = exp(B) / S
+
+    with
+
+        S = exp(A) + exp(B) - 1.
+
+    Two numerical regimes are handled separately.
+
+    For small or moderate A and B, expm1/log1p preserve the small
+    O(A) and O(B) terms that would otherwise be lost when exp(A)
+    and exp(B) round to 1.
+
+    For large A or B, a max-shifted log-sum representation avoids
+    overflow.
+
+    Parameters
+    ----------
+    A : array-like
+        Non-negative transformed first-coordinate values.
+
+    B : array-like
+        Non-negative transformed second-coordinate values.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        logS, w_u and w_v.
     """
-    A = np.asarray(A, float)
-    B = np.asarray(B, float)
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    A, B = np.broadcast_arrays(A, B)
 
     M = np.maximum(A, B)
-    eA = np.exp(A - M)          # in (0,1]
-    eB = np.exp(B - M)
-    em = np.exp(-M)             # may underflow to 0 (fine)
+    m = np.minimum(A, B)
 
-    denom = eA + eB - em
-    denom = np.maximum(denom, 1e-300)
+    logS = np.empty_like(M, dtype=float)
 
-    logS = M + np.log(denom)
-    w_u = eA / denom
-    w_v = eB / denom
+    # --------------------------------------------------------------
+    # Large regime
+    #
+    # S = exp(M) * [1 + exp(m-M) - exp(-M)]
+    # --------------------------------------------------------------
+    large = M > _LOG_SAFE
+
+    if np.any(large):
+        correction = (
+            np.exp(m[large] - M[large])
+            - np.exp(-M[large])
+        )
+
+        logS[large] = (
+            M[large]
+            + np.log1p(correction)
+        )
+
+    # --------------------------------------------------------------
+    # Small / moderate regime
+    #
+    # exp(A) + exp(B) - 1
+    #     = 1 + expm1(A) + expm1(B)
+    #
+    # This is essential near the upper-right corner where A and B
+    # may be far below machine epsilon relative to 1.
+    # --------------------------------------------------------------
+    small = ~large
+
+    if np.any(small):
+        logS[small] = np.log1p(
+            np.expm1(A[small])
+            + np.expm1(B[small])
+        )
+
+    # Since S >= exp(A) and S >= exp(B),
+    # A - logS and B - logS are theoretically non-positive.
+    w_u = np.exp(
+        np.minimum(A - logS, 0.0)
+    )
+
+    w_v = np.exp(
+        np.minimum(B - logS, 0.0)
+    )
+
     return logS, w_u, w_v
 
 
@@ -141,6 +207,141 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         t = _pow_pos(W, 1.0 / theta)  # W^{1/theta}
 
         out[mask] = np.exp(-t)
+        return float(out) if out.shape == () else out
+
+    def get_survival_cdf(self, q_u, q_v, param=None):
+        """
+        Compute the BB3 survival copula directly in the upper-tail scale.
+
+        For upper-tail probabilities q_u and q_v,
+
+            C_bar(q_u, q_v)
+                = q_u + q_v - 1
+                  + C(1 - q_u, 1 - q_v).
+
+        For BB3,
+
+            C(1-q_u, 1-q_v) = exp(-t),
+
+        so the survival copula can be written as
+
+            C_bar(q_u, q_v)
+                = q_u + q_v + expm1(-t).
+
+        Evaluating expm1(-t) directly avoids the catastrophic cancellation
+        caused by forming exp(-t) close to 1 and subsequently subtracting 1.
+
+        Parameters
+        ----------
+        q_u : float or array-like
+            Upper-tail probability for the first margin, in [0, 1].
+
+        q_v : float or array-like
+            Upper-tail probability for the second margin, in [0, 1].
+
+        param : array-like, optional
+            BB3 parameters [theta, delta]. If omitted, the current model
+            parameters are used.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            BB3 survival copula evaluated pairwise at (q_u, q_v).
+        """
+        if param is None:
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        q_u, q_v = self._prep_uv(q_u, q_v)
+
+        out = np.empty_like(q_u, dtype=float)
+
+        # Exact survival-copula boundaries
+        zero_mask = (q_u <= 0.0) | (q_v <= 0.0)
+        out[zero_mask] = 0.0
+
+        q_u_one_mask = (
+                ~zero_mask
+                & (q_u >= 1.0)
+        )
+        out[q_u_one_mask] = np.clip(
+            q_v[q_u_one_mask],
+            0.0,
+            1.0,
+        )
+
+        q_v_one_mask = (
+                ~zero_mask
+                & ~q_u_one_mask
+                & (q_v >= 1.0)
+        )
+        out[q_v_one_mask] = np.clip(
+            q_u[q_v_one_mask],
+            0.0,
+            1.0,
+        )
+
+        mask = (
+                (q_u > 0.0)
+                & (q_u < 1.0)
+                & (q_v > 0.0)
+                & (q_v < 1.0)
+        )
+
+        if not np.any(mask):
+            return float(out) if out.shape == () else out
+
+        eps = 1e-15
+
+        qu = np.clip(
+            q_u[mask],
+            eps,
+            1.0 - eps,
+        )
+
+        qv = np.clip(
+            q_v[mask],
+            eps,
+            1.0 - eps,
+        )
+
+        # u = 1 - q_u and v = 1 - q_v.
+        #
+        # Compute -log(1-q) directly with log1p to preserve accuracy
+        # for very small upper-tail probabilities.
+        au = -np.log1p(-qu)
+        av = -np.log1p(-qv)
+
+        au_th = _safe_exp(
+            theta * np.log(
+                np.maximum(au, 1e-300)
+            )
+        )
+
+        av_th = _safe_exp(
+            theta * np.log(
+                np.maximum(av, 1e-300)
+            )
+        )
+
+        A = delta * au_th
+        B = delta * av_th
+
+        logS, _, _ = _logS_and_weights(A, B)
+
+        W = logS / delta
+        t = _pow_pos(W, 1.0 / theta)
+
+        # q_u + q_v - 1 + exp(-t)
+        #
+        # Written as q_u + q_v + expm1(-t) to avoid cancellation.
+        out[mask] = (
+                qu
+                + qv
+                + np.expm1(-t)
+        )
+
         return float(out) if out.shape == () else out
 
     def partial_derivative_C_wrt_u(self, u, v, param=None):
@@ -269,6 +470,149 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         out[mask] = pdf
         return float(out) if out.shape == () else out
 
+    def get_log_pdf(self, u, v, param=None):
+        """
+        Compute the BB3 copula log-density directly on the open unit square.
+
+        This method is intended for likelihood-based calculations. All density
+        terms are combined directly in log-space, avoiding underflow in regions
+        where the standard density is positive but smaller than the floating-
+        point representation limit.
+
+        The standard ``get_pdf`` method remains the canonical density API and is
+        not replaced by this method.
+
+        Parameters
+        ----------
+        u : float or array-like
+            First copula coordinate.
+
+        v : float or array-like
+            Second copula coordinate.
+
+        param : array-like, optional
+            BB3 parameters [theta, delta]. If omitted, the current model
+            parameters are used.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            BB3 log-density evaluated pairwise at (u, v). Values outside the
+            open unit square are returned as negative infinity.
+        """
+        if param is None:
+            theta, delta = map(float, self.get_parameters())
+        else:
+            theta, delta = map(float, param)
+
+        u, v = self._prep_uv(u, v)
+
+        out = np.full_like(
+            u,
+            -np.inf,
+            dtype=float,
+        )
+
+        mask = (
+                (u > 0.0)
+                & (u < 1.0)
+                & (v > 0.0)
+                & (v < 1.0)
+        )
+
+        if not np.any(mask):
+            return float(out) if out.shape == () else out
+
+        eps = 1e-15
+
+        um = np.clip(
+            u[mask],
+            eps,
+            1.0 - eps,
+        )
+
+        vm = np.clip(
+            v[mask],
+            eps,
+            1.0 - eps,
+        )
+
+        au = -np.log(um)
+        av = -np.log(vm)
+
+        log_au = np.log(
+            np.maximum(au, 1e-300)
+        )
+
+        log_av = np.log(
+            np.maximum(av, 1e-300)
+        )
+
+        au_theta = _safe_exp(
+            theta * log_au
+        )
+
+        av_theta = _safe_exp(
+            theta * log_av
+        )
+
+        A = delta * au_theta
+        B = delta * av_theta
+
+        logS, _, _ = _logS_and_weights(A, B)
+
+        log_w_u = A - logS
+        log_w_v = B - logS
+
+        W = logS / delta
+
+        logW = np.log(
+            np.maximum(W, 1e-300)
+        )
+
+        t = np.exp(
+            (1.0 / theta) * logW
+        )
+
+        # Match the current validated BB3 density implementation:
+        #
+        #     bracket = t + theta * delta * W + theta - 1
+        log_term_1 = np.log(
+            np.maximum(t, 1e-300)
+        )
+
+        log_term_2 = (
+                np.log(theta)
+                + np.log(delta)
+                + logW
+        )
+
+        log_term_3 = np.log(
+            theta - 1.0
+        )
+
+        log_bracket = np.logaddexp(
+            np.logaddexp(
+                log_term_1,
+                log_term_2,
+            ),
+            log_term_3,
+        )
+
+        out[mask] = (
+                -t
+                + (theta - 1.0) * log_au
+                + (theta - 1.0) * log_av
+                - np.log(um)
+                - np.log(vm)
+                + log_w_u
+                + log_w_v
+                + (1.0 / theta - 2.0) * logW
+                + log_bracket
+        )
+
+        return float(out) if out.shape == () else out
+
     # ------------------------------------------------------------------
     # Dependence measures
     # ------------------------------------------------------------------
@@ -380,11 +724,21 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         deltas = np.geomspace(de_min, de_max, 10)
 
         def nll(th, de):
-            lp = np.log(np.maximum(self.get_pdf(uu, vv, param=(th, de)), 1e-300))
-            val = -float(np.mean(lp))
-            if not np.isfinite(val):
+            logpdf = np.asarray(
+                self.get_log_pdf(
+                    uu,
+                    vv,
+                    param=(th, de),
+                ),
+                dtype=float,
+            )
+
+            if np.any(~np.isfinite(logpdf)):
                 return 1e99
-            return val
+
+            return -float(
+                np.mean(logpdf)
+            )
 
         best = None
         best_val = float("inf")
@@ -421,7 +775,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         self.set_parameters([th_hat, de_hat])
         return self.get_parameters()
 
-    def sample(self, n: int, rng=None, param=None):
+    def sample(self, n: int, param=None, rng=None):
         """
         Sampling via conditional inversion:
           U ~ Unif(0,1),
@@ -431,7 +785,7 @@ class BB3Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         Bisection is robust for BB3 even in sharp tails.
         """
         if rng is None:
-            rng = default_rng(0)
+            rng = default_rng()
 
         if param is None:
             theta, delta = map(float, self.get_parameters())

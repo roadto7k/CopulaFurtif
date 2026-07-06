@@ -108,7 +108,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
         return num / denom
 
-    def sample(self, n: int, seed: int | None = None, param=None, rng=None):
+    def sample(self, n: int, param=None, rng=None):
         """
         Sample (u, v) from the Frank copula using conditional inversion.
 
@@ -120,7 +120,7 @@ class FrankCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         theta = float(param[0])
 
         if rng is None:
-            rng = np.random.default_rng(seed)
+            rng = np.random.default_rng()
 
         # Independence limit
         if abs(theta) < 1e-8:

@@ -14,6 +14,7 @@ Attributes:
 """
 
 import numpy as np
+from scipy.optimize import root_scalar
 from scipy.stats import kendalltau
 
 from CopulaFurtif.core.copulas.domain.models.interfaces import CopulaModel, CopulaParameters
@@ -311,32 +312,47 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
 
     def init_from_data(self, u, v):
         """
-        Robust initialization of the Clayton copula parameter θ from data.
+        Robust initialization of the Clayton copula dependence parameter θ from data.
 
         Strategy
         --------
         - Compute empirical Kendall's tau (τ̂).
         - Compute empirical Blomqvist's beta (β̂).
-        - Compute empirical lower-tail dependence λ̂_L as a diagnostic.
-        - Select the most robust initializer automatically:
-            * If sample size n < 200 or |τ̂| is very small → use β̂ (more robust).
-            * Otherwise → use τ̂ (more efficient).
-        - Invert the theoretical relation to get θ₀:
-            τ(θ) = β(θ) = θ / (θ + 2)  ⇒  θ = 2τ / (1 - τ).
-        - Clip θ₀ within the valid parameter bounds [0.01, 30].
+        - Estimate lower-tail dependence λ̂_L as an additional diagnostic.
+        - Select the initialization method according to the empirical dependence
+          structure and sample size:
+            * For small samples, weak concordance, or negligible estimated lower-tail
+              dependence, initialize θ from Blomqvist's beta.
+            * Otherwise, initialize θ from Kendall's tau.
+        - For Kendall's tau, use the Clayton closed-form relationship:
+
+              τ(θ) = θ / (θ + 2)
+
+          with inverse:
+
+              θ = 2τ / (1 - τ)
+
+        - For Blomqvist's beta, use the Clayton relationship:
+
+              β(θ) = 4 * (2**(θ + 1) - 1)**(-1 / θ) - 1
+
+          and solve numerically for θ using a scalar root-finding method.
+        - Return an initial parameter value compatible with the admissible Clayton
+          parameter domain. Open-boundary handling is delegated to the common copula
+          parameter validation framework.
 
         Parameters
         ----------
         u : array-like
-            Pseudo-observations in (0,1), first margin.
+            Pseudo-observations of the first margin, with values in (0, 1).
         v : array-like
-            Pseudo-observations in (0,1), second margin.
+            Pseudo-observations of the second margin, with values in (0, 1).
 
         Returns
         -------
-        float
-            Initial guess for θ suitable as a starting point for maximum
-            likelihood estimation.
+        numpy.ndarray
+            One-element array containing the initial estimate of θ, suitable as a
+            starting point for copula parameter estimation.
         """
 
         u, v = np.asarray(u), np.asarray(v)
@@ -357,22 +373,71 @@ class ClaytonCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         threshold_u, threshold_v = np.quantile(u, q), np.quantile(v, q)
         lambda_L_emp = np.mean((u < threshold_u) & (v < threshold_v)) / q
 
-        # --- 4) Choose best method ---
-        if n < 200 or abs(tau_emp) < 0.05 or lambda_L_emp < 1e-3:
-            # THEO CHANGE
-            sol = root_scalar(
-                lambda th: 4.0 * (2.0 ** (th + 1.0) - 1.0) ** (-1.0 / th) - 1.0 - beta_emp,
-                bracket=(1e-6, 30.0),
-                method="brentq"
-            )
-            theta0 = sol.root if sol.converged else 1e-6
-            # theta0 = 2.0 * beta_emp / max(1e-6, (1.0 - beta_emp))
-        else:
-            # Normal case → use tau (same here)
-            theta0 = 2.0 * tau_emp / max(1e-6, (1.0 - tau_emp))
+        # --- 4) Work strictly inside the open parameter bounds ---
+        low, high = map(float, self.get_bounds()[0])
 
-        # --- 5) Clip to parameter bounds ---
-        low, high = self.get_bounds()[0]
-        theta0 = float(np.clip(theta0, low, high))
+        eps_param = 1e-6
+        theta_min = low + eps_param
+        theta_max = high - eps_param
+
+        # --- 5) Choose initialization method ---
+        if n < 200 or abs(tau_emp) < 0.05 or lambda_L_emp < 1e-3:
+
+            beta_min = (
+                    4.0
+                    * (2.0 ** (theta_min + 1.0) - 1.0) ** (-1.0 / theta_min)
+                    - 1.0
+            )
+
+            beta_max = (
+                    4.0
+                    * (2.0 ** (theta_max + 1.0) - 1.0) ** (-1.0 / theta_max)
+                    - 1.0
+            )
+
+            # Clayton with theta > 0 only supports positive concordance.
+            # Keep the empirical beta inside the range allowed by the
+            # current parameter bounds.
+            beta_target = float(
+                np.clip(beta_emp, beta_min, beta_max)
+            )
+
+            if beta_target <= beta_min:
+                theta0 = theta_min
+
+            elif beta_target >= beta_max:
+                theta0 = theta_max
+
+            else:
+                sol = root_scalar(
+                    lambda theta: (
+                            4.0
+                            * (2.0 ** (theta + 1.0) - 1.0)
+                            ** (-1.0 / theta)
+                            - 1.0
+                            - beta_target
+                    ),
+                    bracket=(theta_min, theta_max),
+                    method="brentq",
+                )
+
+                theta0 = float(sol.root)
+
+        else:
+            # Clayton Kendall's tau:
+            # tau(theta) = theta / (theta + 2)
+            #
+            # Therefore:
+            # theta = 2 * tau / (1 - tau)
+
+            if not np.isfinite(tau_emp) or tau_emp <= 0.0:
+                theta0 = theta_min
+            else:
+                theta0 = 2.0 * tau_emp / (1.0 - tau_emp)
+
+        # --- 6) Final safety clip strictly inside the valid bounds ---
+        theta0 = float(
+            np.clip(theta0, theta_min, theta_max)
+        )
 
         return np.array([theta0])

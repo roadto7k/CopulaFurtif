@@ -146,9 +146,7 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     def sample(self,
                n: int,
                param=None,
-               rng=None,
-               eps: float = 1e-12,
-               max_iter: int = 40) -> np.ndarray:
+               rng=None) -> np.ndarray:
         """
         Draw *n* i.i.d. pairs (U, V) from the Galambos copula via conditional
         inversion.
@@ -178,6 +176,9 @@ class GalambosCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         ndarray, shape (n, 2)
             Columns are U and V.
         """
+
+        eps = 1e-12
+        max_iter = 48
         # ------------------------------------------------------------------ RNG + δ
         if rng is None:
             rng = default_rng()

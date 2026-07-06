@@ -280,7 +280,10 @@ class HuslerReissCopula(CopulaModel, ModelSelectionMixin, SupportsTailDependence
     # -------------------------
     # Sampling (vectorized bisection)
     # -------------------------
-    def sample(self, n: int, param=None, rng=None, eps: float = 1e-12) -> np.ndarray:
+    def sample(self, n: int, param=None, rng=None) -> np.ndarray:
+
+        eps = 1e-12
+
         if param is None:
             param = self.get_parameters()
         delta = float(param[0])

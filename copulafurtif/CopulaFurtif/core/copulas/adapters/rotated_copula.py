@@ -191,6 +191,37 @@ class RotatedCopula:
             return 1.0 - self._base.conditional_cdf_v_given_u(u, 1.0 - v)
 
     # ------------------------------------------------------------------
+    # Kendall tau
+    # ------------------------------------------------------------------
+
+    def kendall_tau(self, param=None):
+        tau = self._base.kendall_tau(param)
+        if self.rotation in (0, 180):
+            return tau
+        if self.rotation in (90, 270):
+            return -tau
+
+    # ------------------------------------------------------------------
+    # Tails
+    # ------------------------------------------------------------------
+
+    def LTDC(self, param=None):
+        if self.rotation == 0:
+            return self._base.LTDC(param)
+        if self.rotation == 180:
+            return self._base.UTDC(param)
+        if self.rotation in (90, 270):
+            return 0.0  # sauf si tu définis explicitement les corner-tail deps opposées
+
+    def UTDC(self, param=None):
+        if self.rotation == 0:
+            return self._base.UTDC(param)
+        if self.rotation == 180:
+            return self._base.LTDC(param)
+        if self.rotation in (90, 270):
+            return 0.0
+
+    # ------------------------------------------------------------------
     # GOF
     # ------------------------------------------------------------------
 

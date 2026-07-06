@@ -135,9 +135,7 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
     def sample(self,
                n: int,
                param=None,
-               rng=None,
-               eps: float = 1e-12,
-               max_iter: int = 40) -> np.ndarray:
+               rng=None) -> np.ndarray:
         """
         Generate n i.i.d. pairs (U, V) from the BB1 copula by conditional inversion.
 
@@ -159,6 +157,10 @@ class BB1Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
         ndarray of shape (n, 2)
             Columns are U and V.
         """
+
+        eps = 1e-12
+        max_iter = 48
+
         if rng is None:
             rng = default_rng()
 

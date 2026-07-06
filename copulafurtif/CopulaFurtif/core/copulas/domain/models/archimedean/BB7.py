@@ -252,45 +252,112 @@ class BB7Copula(CopulaModel, ModelSelectionMixin, SupportsTailDependence):
             param = self.get_parameters()
         return float(4.0 * self.get_cdf(0.5, 0.5, param) - 1.0)
 
-    def sample(self, n, rng=None):
+    def sample(self, n, param=None, rng=None):
         """
-        Draw n samples from the BB7 copula via conditional inversion.
+        Draw samples from the BB7 copula by conditional inversion.
 
-        For each u_i ~ U(0,1) draw w_i ~ U(0,1) and solve
-            h(v|u_i) = ∂C/∂u(u_i, v) = w_i  for v ∈ (0,1)
-        using Brent's method.
+        For each independent pair
+
+            U ~ Uniform(0, 1)
+            W ~ Uniform(0, 1),
+
+        solve
+
+            dC(u, v) / du = W
+
+        for v in (0, 1).
 
         Parameters
         ----------
-        n   : int
-        rng : np.random.Generator, optional
+        n : int
+            Number of samples.
+
+        param : array-like, optional
+            BB7 copula parameters [theta, delta]. If omitted, the current
+            model parameters are used.
+
+        rng : numpy.random.Generator, optional
+            NumPy random number generator. If omitted, a new generator
+            is created.
 
         Returns
         -------
-        np.ndarray, shape (n, 2)
+        numpy.ndarray
+            Array of shape (n, 2) containing copula samples.
         """
         from scipy.optimize import brentq
+
+        if param is None:
+            param = self.get_parameters()
 
         if rng is None:
             rng = np.random.default_rng()
 
-        U = rng.uniform(1e-6, 1 - 1e-6, n)
-        W = rng.uniform(1e-6, 1 - 1e-6, n)
-        V = np.empty(n)
+        n = int(n)
+
+        U = rng.uniform(
+            1e-6,
+            1.0 - 1e-6,
+            size=n,
+        )
+
+        W = rng.uniform(
+            1e-6,
+            1.0 - 1e-6,
+            size=n,
+        )
+
+        V = np.empty(
+            n,
+            dtype=float,
+        )
 
         for i in range(n):
             u_i = float(U[i])
             w_i = float(W[i])
 
             def obj(v_):
-                return float(self.partial_derivative_C_wrt_u(u_i, v_)) - w_i
+                return (
+                        float(
+                            self.partial_derivative_C_wrt_u(
+                                u_i,
+                                v_,
+                                param=param,
+                            )
+                        )
+                        - w_i
+                )
 
             try:
-                V[i] = brentq(obj, 1e-8, 1 - 1e-8, xtol=1e-10, maxiter=100)
-            except ValueError:
-                V[i] = 1e-6 if abs(obj(1e-8)) < abs(obj(1 - 1e-8)) else 1 - 1e-6
+                V[i] = brentq(
+                    obj,
+                    1e-8,
+                    1.0 - 1e-8,
+                    xtol=1e-10,
+                    maxiter=100,
+                )
 
-        return np.column_stack([U, V])
+            except ValueError:
+                left = abs(
+                    obj(1e-8)
+                )
+
+                right = abs(
+                    obj(1.0 - 1e-8)
+                )
+
+                V[i] = (
+                    1e-6
+                    if left < right
+                    else 1.0 - 1e-6
+                )
+
+        return np.column_stack(
+            [
+                U,
+                V,
+            ]
+        )
 
     def init_from_data(self, u, v):
         """
