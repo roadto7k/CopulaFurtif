@@ -8,33 +8,181 @@ from .selection import select_stationary_spreads, rank_coins_by_kendall_returns
 from .metrics import _to_datetime, performance_metrics
 from .copula_engine import fit_pair_copula, build_copula
 from .params import BacktestParams
-from .signals import generate_signals_reference_copula
+from .signals import (
+    generate_signals_reference_copula_array,
+)
 
 # ---------------------------------------------------------------------------
 # Slot helpers
 # ---------------------------------------------------------------------------
 
 def _serialize_fit_summary(df_fit):
-    """Extract JSON-safe summary from fit_copulas DataFrame for dashboard."""
+    """
+    Extract the effective copula fitting results used by the trading
+    engine and convert them to a JSON-safe dashboard summary.
+
+    Refined CMLE values are used when available. Otherwise, Stage 1
+    values are retained as fallback.
+    """
     if df_fit is None or df_fit.empty:
         return []
+
     rows = []
+
     for _, r in df_fit.iterrows():
-        if not np.isfinite(r.get("aic", np.nan)):
+        # --------------------------------------------------------------
+        # Effective fit metrics
+        # --------------------------------------------------------------
+        aic = r.get(
+            "aic_effective",
+            r.get("aic", np.nan),
+        )
+
+        loglik = r.get(
+            "loglik_effective",
+            r.get("loglik", np.nan),
+        )
+
+        kt_err = r.get(
+            "kt_err_effective",
+            r.get("kt_err", np.nan),
+        )
+
+        tail_gap = r.get(
+            "tail_gap_effective",
+            r.get("tail_gap", np.nan),
+        )
+
+        # Prefer Stage 2 score when available.
+        score = r.get(
+            "score_stage2",
+            np.nan,
+        )
+
+        if not np.isfinite(score):
+            score = r.get(
+                "score_stage1",
+                np.nan,
+            )
+
+        if not np.isfinite(aic):
             continue
-        rows.append(dict(
-            name=str(r.get("name", "?")),
-            rotation=int(r.get("rotation", 0)),
-            aic=float(r["aic"]) if np.isfinite(r.get("aic", np.nan)) else None,
-            loglik=float(r["loglik"]) if np.isfinite(r.get("loglik", np.nan)) else None,
-            kt_err=float(r["kt_err"]) if np.isfinite(r.get("kt_err", np.nan)) else None,
-            tail_gap=float(r["tail_gap"]) if np.isfinite(r.get("tail_gap", np.nan)) else None,
-            score=float(r["score_stage1"]) if "score_stage1" in r and np.isfinite(r.get("score_stage1", np.nan)) else None,
-            tail_dep_L=float(r["tail_dep_L"]) if np.isfinite(r.get("tail_dep_L", np.nan)) else None,
-            tail_dep_U=float(r["tail_dep_U"]) if np.isfinite(r.get("tail_dep_U", np.nan)) else None,
-            params=[float(x) for x in np.atleast_1d(r["params"])] if r.get("params") is not None and len(np.atleast_1d(r["params"])) > 0 else [],
-            evaluable=bool(r.get("evaluable", False)),
-        ))
+
+        # --------------------------------------------------------------
+        # Effective parameters
+        # --------------------------------------------------------------
+        params = r.get(
+            "params_effective",
+            None,
+        )
+
+        try:
+            params_array = np.asarray(
+                params,
+                dtype=float,
+            ).ravel()
+
+            if (
+                params_array.size == 0
+                or not np.all(np.isfinite(params_array))
+            ):
+                raise ValueError
+
+        except Exception:
+            params_array = np.asarray(
+                r.get("params", []),
+                dtype=float,
+            ).ravel()
+
+        # --------------------------------------------------------------
+        # Tail dependence of the effective fitted copula
+        #
+        # Recompute directly from the actual parameters used by trading.
+        # --------------------------------------------------------------
+        tail_dep_L = np.nan
+        tail_dep_U = np.nan
+
+        try:
+            effective_cop = build_copula(
+                str(r.get("name", "?")),
+                params_array,
+            )
+
+            tail_dep_L = float(
+                effective_cop.LTDC()
+            )
+
+            tail_dep_U = float(
+                effective_cop.UTDC()
+            )
+
+        except Exception:
+            tail_dep_L = r.get(
+                "tail_dep_L",
+                np.nan,
+            )
+
+            tail_dep_U = r.get(
+                "tail_dep_U",
+                np.nan,
+            )
+
+        # --------------------------------------------------------------
+        # JSON-safe dashboard row
+        # --------------------------------------------------------------
+        rows.append(
+            dict(
+                name=str(
+                    r.get("name", "?")
+                ),
+                rotation=int(
+                    r.get("rotation", 0)
+                ),
+                aic=(
+                    float(aic)
+                    if np.isfinite(aic)
+                    else None
+                ),
+                loglik=(
+                    float(loglik)
+                    if np.isfinite(loglik)
+                    else None
+                ),
+                kt_err=(
+                    float(kt_err)
+                    if np.isfinite(kt_err)
+                    else None
+                ),
+                tail_gap=(
+                    float(tail_gap)
+                    if np.isfinite(tail_gap)
+                    else None
+                ),
+                score=(
+                    float(score)
+                    if np.isfinite(score)
+                    else None
+                ),
+                tail_dep_L=(
+                    float(tail_dep_L)
+                    if np.isfinite(tail_dep_L)
+                    else None
+                ),
+                tail_dep_U=(
+                    float(tail_dep_U)
+                    if np.isfinite(tail_dep_U)
+                    else None
+                ),
+                params=[
+                    float(x)
+                    for x in params_array
+                ],
+                evaluable=bool(
+                    r.get("evaluable", False)
+                ),
+            )
+        )
+
     return rows
 
 def _make_slot(cycle_id, coin1, coin2, cop, best_name,
@@ -121,6 +269,16 @@ def _close_slot(slot, close_ts, close_p1, close_p2, reason,
 # Main backtest
 # ---------------------------------------------------------------------------
 
+def _downsample_pair_lists(a, b, max_points: int):
+    if max_points <= 0:
+        return [], []
+
+    if len(a) <= max_points:
+        return a, b
+
+    idx = np.linspace(0, len(a) - 1, int(max_points), dtype=int)
+    return [a[i] for i in idx], [b[i] for i in idx]
+
 def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[str, Any]:
     """
     Backtest de la strategie proposee (reference spread copula).
@@ -134,13 +292,14 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
       de sortie. Seul le slot courant peut ouvrir de nouvelles positions.
     - Un slot sans position en fin de cycle est purge (modele stale).
     """
-    prices = prices.copy()
-    prices = prices.loc[
-        (prices.index >= _to_datetime(p.start)) &
-        (prices.index <  _to_datetime(p.end))
-    ]
     prices = prices.sort_index()
-    prices = prices[p.symbols].dropna(how="all")
+    prices = prices.loc[
+        (_to_datetime(p.start) <= prices.index) &
+        (prices.index < _to_datetime(p.end)),
+        p.symbols,
+    ].dropna(how="all")
+
+    price_index = prices.index
 
     if p.ref not in prices.columns:
         raise ValueError(f"Reference asset '{p.ref}' absent des donnees.")
@@ -154,10 +313,17 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
     trading_delta   = pd.Timedelta(days=7 * p.trading_weeks)
     step_delta      = pd.Timedelta(days=7 * p.step_weeks)
 
-    equity       = pd.Series(index=prices.index, dtype=float)
-    equity_gross = pd.Series(index=prices.index, dtype=float)
-    equity.iloc[:]       = np.nan
-    equity_gross.iloc[:] = np.nan
+    equity_values = np.full(
+        len(price_index),
+        np.nan,
+        dtype=float,
+    )
+
+    equity_gross_values = np.full(
+        len(price_index),
+        np.nan,
+        dtype=float,
+    )
 
     trades:           list = []
     weekly:           list = []
@@ -212,8 +378,12 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                     equity=current_equity,
                 ))
 
-        df_form  = prices.loc[(prices.index >= t0)         & (prices.index < t_form_end)]
-        df_trade = prices.loc[(prices.index >= t_form_end) & (prices.index < t_trade_end)]
+        i0 = price_index.searchsorted(t0, side="left")
+        i1 = price_index.searchsorted(t_form_end, side="left")
+        i2 = price_index.searchsorted(t_trade_end, side="left")
+
+        df_form = prices.iloc[i0:i1]
+        df_trade = prices.iloc[i1:i2]
 
         # Fit this cycle's copula
         new_slot    = None
@@ -305,6 +475,13 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                         else:
                             pseudo_u, pseudo_v = [], []
 
+                        # Keep only a limited number of points for dashboard diagnostics.
+                        pseudo_u, pseudo_v = _downsample_pair_lists(
+                            pseudo_u,
+                            pseudo_v,
+                            max_points=5_000,
+                        )
+
                         first_bar = df_trade[[coin1, coin2]].dropna().head(1)
                         if first_bar.empty:
                             skip_status = "SKIP (no trade prices)"
@@ -331,18 +508,32 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         cycle_diag_bars = []  # will collect per-bar (u, v, h12, h21, sig)
 
         # Extract cop metadata for dashboard reconstruction
+        # Extract copula metadata for dashboard reconstruction.
         _cop_params = []
         _cop_rotation = 0
-        _s1_sorted_list = []
-        _s2_sorted_list = []
+
         if new_slot is not None:
+            cycle_cop = new_slot["cop"]
+
             try:
-                _cop_params = list(float(x) for x in np.atleast_1d(cop.get_parameters()))
+                _cop_params = [
+                    float(x)
+                    for x in np.atleast_1d(
+                        cycle_cop.get_parameters()
+                    )
+                ]
+
             except Exception:
                 _cop_params = []
-            _cop_rotation = getattr(cop, 'rotation', 0)
-            _s1_sorted_list = s1_sorted.tolist() if s1_sorted is not None else []
-            _s2_sorted_list = s2_sorted.tolist() if s2_sorted is not None else []
+
+            _cop_rotation = int(
+                getattr(
+                    cycle_cop,
+                    "rotation",
+                    0,
+                )
+                or 0
+            )
 
         weekly.append(dict(
             cycle=cycle_id,
@@ -362,12 +553,14 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
             open_slots_start=len(active_slots),
             cop_rotation=_cop_rotation,
             cop_params=_cop_params,
-            s1_sorted=_s1_sorted_list,
-            s2_sorted=_s2_sorted_list,
             marginal1=(
-                df_fit.attrs.get("marginal1_serialized") if new_slot is not None and df_fit is not None else None),
+                df_fit.attrs.get("marginal1_serialized")
+                if new_slot is not None and df_fit is not None else None
+            ),
             marginal2=(
-                df_fit.attrs.get("marginal2_serialized") if new_slot is not None and df_fit is not None else None),
+                df_fit.attrs.get("marginal2_serialized")
+                if new_slot is not None and df_fit is not None else None
+            ),
             diag_bars=cycle_diag_bars,
             pseudo_u=pseudo_u if new_slot is not None else [],
             pseudo_v=pseudo_v if new_slot is not None else [],
@@ -382,8 +575,77 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         needed_cols = [c for c in needed_coins if c in df_trade.columns]
         trade_bars  = df_trade[needed_cols].dropna(subset=[p.ref])
 
-        for ts, row in trade_bars.iterrows():
-            pref = float(row[p.ref])
+        trade_index = trade_bars.index
+        equity_positions = price_index.get_indexer(
+            trade_index
+        )
+        trade_arrays = {
+            col: trade_bars[col].to_numpy(dtype=float)
+            for col in trade_bars.columns
+        }
+        pref_arr = trade_arrays[p.ref]
+
+        for slot in active_slots:
+            c1 = slot["coin1"]
+            c2 = slot["coin2"]
+
+            p1_arr = trade_arrays.get(c1)
+            p2_arr = trade_arrays.get(c2)
+
+            if p1_arr is None or p2_arr is None:
+                slot["_sig_arr"] = np.zeros(len(trade_bars), dtype=np.int8)
+                slot["_close_arr"] = np.zeros(len(trade_bars), dtype=bool)
+                slot["_u_arr"] = np.full(len(trade_bars), np.nan)
+                slot["_v_arr"] = np.full(len(trade_bars), np.nan)
+                slot["_h12_arr"] = np.full(len(trade_bars), np.nan)
+                slot["_h21_arr"] = np.full(len(trade_bars), np.nan)
+                continue
+
+            s1_vals = pref_arr - float(slot["beta1"]) * p1_arr
+            s2_vals = pref_arr - float(slot["beta2"]) * p2_arr
+
+            valid = np.isfinite(s1_vals) & np.isfinite(s2_vals)
+
+            sig_arr = np.zeros(len(trade_bars), dtype=np.int8)
+            close_arr = np.zeros(len(trade_bars), dtype=bool)
+            u_arr = np.full(len(trade_bars), np.nan)
+            v_arr = np.full(len(trade_bars), np.nan)
+            h12_arr = np.full(len(trade_bars), np.nan)
+            h21_arr = np.full(len(trade_bars), np.nan)
+
+            if valid.any():
+                sig_sub, det_sub = generate_signals_reference_copula_array(
+                    cop=slot["cop"],
+                    sorted_s1=slot["s1_sorted"],
+                    sorted_s2=slot["s2_sorted"],
+                    s1_vals=s1_vals[valid],
+                    s2_vals=s2_vals[valid],
+                    entry=p.entry,
+                    exit=p.exit,
+                    marginal1=slot.get("marginal1"),
+                    marginal2=slot.get("marginal2"),
+                )
+
+                idx = np.flatnonzero(valid)
+
+                sig_arr[idx] = sig_sub
+                close_arr[idx] = det_sub["close"] > 0.5
+                u_arr[idx] = det_sub["u"]
+                v_arr[idx] = det_sub["v"]
+                h12_arr[idx] = det_sub["h12"]
+                h21_arr[idx] = det_sub["h21"]
+
+            slot["_sig_arr"] = sig_arr
+            slot["_close_arr"] = close_arr
+            slot["_u_arr"] = u_arr
+            slot["_v_arr"] = v_arr
+            slot["_h12_arr"] = h12_arr
+            slot["_h21_arr"] = h21_arr
+
+        for bar_i, ts in enumerate(trade_index):
+            pref = float(
+                pref_arr[bar_i]
+            )
 
             ts_dt   = pd.to_datetime(ts) if not isinstance(ts, pd.Timestamp) else ts
             ts_date = ts_dt.date()
@@ -394,13 +656,26 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                 daily_stopped      = False
 
             for slot in active_slots:
-                c1, c2 = slot["coin1"], slot["coin2"]
-                if c1 not in row.index or c2 not in row.index:
+                c1 = slot["coin1"]
+                c2 = slot["coin2"]
+
+                p1_arr = trade_arrays.get(c1)
+                p2_arr = trade_arrays.get(c2)
+
+                if p1_arr is None or p2_arr is None:
                     continue
-                p1_raw, p2_raw = row[c1], row[c2]
-                if pd.isna(p1_raw) or pd.isna(p2_raw):
+
+                p1_raw = p1_arr[bar_i]
+                p2_raw = p2_arr[bar_i]
+
+                if (
+                        not np.isfinite(p1_raw)
+                        or not np.isfinite(p2_raw)
+                ):
                     continue
-                p1, p2   = float(p1_raw), float(p2_raw)
+
+                p1 = float(p1_raw)
+                p2 = float(p2_raw)
                 _q1, _q2 = slot["q1"], slot["q2"]
                 _tn      = slot["total_notional"]
 
@@ -502,44 +777,101 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
                         slot["peak_trade_pnl"] = 0.0
                 slot["pending_sig"] = 0
 
-                # 4. Genere le signal pour la prochaine barre
-                b1, b2 = slot["beta1"], slot["beta2"]
-                s1_val = float(pref - b1 * p1) if np.isfinite(b1) else np.nan
-                s2_val = float(pref - b2 * p2) if np.isfinite(b2) else np.nan
+                # 4. Use the signal precomputed for this bar.
+                b1 = slot["beta1"]
+                b2 = slot["beta2"]
 
-                if np.isfinite(s1_val) and np.isfinite(s2_val):
-                    sig, det = generate_signals_reference_copula(
-                        cop=slot["cop"],
-                        sorted_s1=slot["s1_sorted"], sorted_s2=slot["s2_sorted"],
-                        s1_val=s1_val, s2_val=s2_val,
-                        entry=p.entry, exit=p.exit,
-                        marginal1=slot.get("marginal1"), marginal2=slot.get("marginal2"),
+                s1_val = (
+                    float(pref - b1 * p1)
+                    if np.isfinite(b1)
+                    else np.nan
+                )
+
+                s2_val = (
+                    float(pref - b2 * p2)
+                    if np.isfinite(b2)
+                    else np.nan
+                )
+
+                if (
+                        np.isfinite(s1_val)
+                        and np.isfinite(s2_val)
+                ):
+                    sig = int(
+                        slot["_sig_arr"][bar_i]
                     )
-                    close_now = bool(det.get("close", 0.0) > 0.5)
+
+                    close_now = bool(
+                        slot["_close_arr"][bar_i]
+                    )
 
                     if slot["pos"] != 0 and close_now:
                         slot["pending_close"] = True
-                    elif slot["pos"] == 0 and sig != 0 and is_current:
-                        slot["pending_sig"] = int(sig)
-                    elif slot["pos"] != 0 and sig != 0 and is_current:
-                        slot["pending_sig"] = int(sig)
-                    # ── Diagnostic capture ──
-                    if slot is new_slot:
-                        cycle_diag_bars.append(dict(
-                            ts=ts, u=det["u"], v=det["v"],
-                            h12=det["h12"], h21=det["h21"],
-                            sig=sig, close=det["close"],
-                            p1=p1, p2=p2, pref=pref,
-                            s1=s1_val, s2=s2_val,
-                        ))
+
+                    elif (
+                            slot["pos"] == 0
+                            and sig != 0
+                            and is_current
+                    ):
+                        slot["pending_sig"] = sig
+
+                    elif (
+                            slot["pos"] != 0
+                            and sig != 0
+                            and is_current
+                    ):
+                        slot["pending_sig"] = sig
+
+                    # Diagnostic capture.
+                    if (
+                            slot is new_slot
+                            and bar_i % 5 == 0
+                            and len(cycle_diag_bars) < 2_000
+                    ):
+                        cycle_diag_bars.append(
+                            dict(
+                                ts=ts,
+                                u=float(
+                                    slot["_u_arr"][bar_i]
+                                ),
+                                v=float(
+                                    slot["_v_arr"][bar_i]
+                                ),
+                                h12=float(
+                                    slot["_h12_arr"][bar_i]
+                                ),
+                                h21=float(
+                                    slot["_h21_arr"][bar_i]
+                                ),
+                                sig=sig,
+                                close=float(close_now),
+                                p1=p1,
+                                p2=p2,
+                                pref=pref,
+                                s1=s1_val,
+                                s2=s2_val,
+                            )
+                        )
 
                 slot["prev_p1"] = p1
                 slot["prev_p2"] = p2
 
             unrealized       = sum(s["net_pnl"]   for s in active_slots)
             unrealized_gross = sum(s["gross_pnl"] for s in active_slots)
-            equity.loc[ts]       = current_equity       + unrealized
-            equity_gross.loc[ts] = current_equity_gross + unrealized_gross
+            equity_pos = equity_positions[
+                bar_i
+            ]
+
+            if equity_pos >= 0:
+                equity_values[equity_pos] = (
+                        current_equity
+                        + unrealized
+                )
+
+                equity_gross_values[equity_pos] = (
+                        current_equity_gross
+                        + unrealized_gross
+                )
 
         # Fin du cycle
         if p.force_week_end_close:
@@ -567,8 +899,17 @@ def backtest_reference_copula(prices: pd.DataFrame, p: BacktestParams) -> Dict[s
         cycle_id += 1
 
     # Finalise
-    equity       = equity.ffill().dropna()
-    equity_gross = equity_gross.ffill().dropna()
+    equity = pd.Series(
+        equity_values,
+        index=price_index,
+        dtype=float,
+    ).ffill().dropna()
+
+    equity_gross = pd.Series(
+        equity_gross_values,
+        index=price_index,
+        dtype=float,
+    ).ffill().dropna()
 
     trades_df = pd.DataFrame(trades)
     weekly_df = pd.DataFrame(weekly)

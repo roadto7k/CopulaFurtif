@@ -132,7 +132,18 @@ class RotatedCopula:
         return self._base.get_parameters()
 
     def set_parameters(self, theta: Any) -> None:
-        self._base.set_parameters(np.asarray(theta, dtype=float))
+        self._base.set_parameters(
+            np.asarray(
+                theta,
+                dtype=float,
+            )
+        )
+
+    def get_bounds(self):
+        return self._base.get_bounds()
+
+    def get_parameters_names(self):
+        return self._base.get_parameters_names()
 
     # ------------------------------------------------------------------
     # CDF / PDF

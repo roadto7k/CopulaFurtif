@@ -857,13 +857,56 @@ def _cmle(
     use_init: bool = True,
     quick: bool = False,
     return_metrics: bool = False,
+    inputs_are_uniform: bool = False,
 ):
     """
-    Canonical Maximum Likelihood Estimation (CMLE) using pseudo-observations,
-    with robust data-driven initialization and an optional quick mode.
+    Fit copula parameters by maximizing the copula log-likelihood.
 
-    NOTE: CMLE here uses copula.get_pdf(u, v) after copula.set_parameters(params),
-          matching your CopulaModel API in this file.
+    Two input modes are supported.
+
+    inputs_are_uniform=False
+        Raw observations are converted to rank-based pseudo-observations
+        before optimization. This corresponds to canonical CML.
+
+    inputs_are_uniform=True
+        Inputs are already uniform PIT values and are used directly.
+        This corresponds to the copula estimation stage of IFM.
+
+    Parameters
+    ----------
+    copula : CopulaModel
+        Copula model to fit.
+
+    data : sequence
+        Pair of input arrays (x, y) or (u, v).
+
+    opti_method : str, optional
+        Optimization method.
+
+    options : dict, optional
+        Optimizer options.
+
+    verbose : bool, optional
+        Enable fitting diagnostics.
+
+    use_init : bool, optional
+        Use robust data-driven parameter initialization.
+
+    quick : bool, optional
+        Use reduced optimizer iterations.
+
+    return_metrics : bool, optional
+        Return optional tail diagnostics.
+
+    inputs_are_uniform : bool, optional
+        If True, data are treated as already-uniform PIT values and are
+        not rank-transformed.
+
+    Returns
+    -------
+    tuple or None
+        (fitted_params, loglik) or
+        (fitted_params, loglik, extras).
     """
     if options is None:
         options = {}
@@ -873,47 +916,174 @@ def _cmle(
         opti_method,
     )
 
-    # 1) Pseudo-observations
-    u, v = pseudo_obs(data)
+    # ------------------------------------------------------------------
+    # 1) Prepare copula observations
+    # ------------------------------------------------------------------
+    if inputs_are_uniform:
+        if not isinstance(data, (list, tuple)) or len(data) != 2:
+            raise ValueError(
+                "inputs_are_uniform=True requires data=(u, v)."
+            )
 
-    # 2) Bounds + "open-like" shrink (validators are strict on equality)
+        u = np.asarray(
+            data[0],
+            dtype=float,
+        ).ravel()
+
+        v = np.asarray(
+            data[1],
+            dtype=float,
+        ).ravel()
+
+        if u.shape[0] != v.shape[0]:
+            raise ValueError(
+                "u and v must have the same length."
+            )
+
+        finite_mask = (
+            np.isfinite(u)
+            & np.isfinite(v)
+        )
+
+        u = u[finite_mask]
+        v = v[finite_mask]
+
+        if u.size == 0:
+            raise ValueError(
+                "No finite uniform observations available."
+            )
+
+        # Do not silently reinterpret non-uniform data as PIT values.
+        tolerance = 1e-12
+
+        outside_unit_square = (
+            np.any(u < -tolerance)
+            or np.any(u > 1.0 + tolerance)
+            or np.any(v < -tolerance)
+            or np.any(v > 1.0 + tolerance)
+        )
+
+        if outside_unit_square:
+            raise ValueError(
+                "inputs_are_uniform=True requires values in [0, 1]."
+            )
+
+        # Protect copula densities from exact 0/1 evaluations.
+        eps_uv = 1e-10
+
+        u = np.clip(
+            u,
+            eps_uv,
+            1.0 - eps_uv,
+        )
+
+        v = np.clip(
+            v,
+            eps_uv,
+            1.0 - eps_uv,
+        )
+
+    else:
+        # Canonical CML:
+        # raw observations -> empirical rank pseudo-observations.
+        u, v = pseudo_obs(
+            data
+        )
+
+    # ------------------------------------------------------------------
+    # 2) Bounds and robust initialization
+    # ------------------------------------------------------------------
     try:
-        base = np.array(copula.get_parameters(), dtype=float)
-        bounds = copula.get_bounds() if hasattr(copula, "get_bounds") else [(None, None)] * len(base)
-        clean_bounds = _finite_bounds(bounds)
-        clean_bounds = _shrink_open_bounds(clean_bounds, eps_abs=1e-8, eps_rel=1e-12)
+        base = np.array(
+            copula.get_parameters(),
+            dtype=float,
+        )
 
-        lo = np.array([b[0] for b in clean_bounds], dtype=float)
-        hi = np.array([b[1] for b in clean_bounds], dtype=float)
+        bounds = (
+            copula.get_bounds()
+            if hasattr(copula, "get_bounds")
+            else [(None, None)] * len(base)
+        )
+
+        clean_bounds = _finite_bounds(
+            bounds
+        )
+
+        clean_bounds = _shrink_open_bounds(
+            clean_bounds,
+            eps_abs=1e-8,
+            eps_rel=1e-12,
+        )
+
+        lo = np.array(
+            [bound[0] for bound in clean_bounds],
+            dtype=float,
+        )
+
+        hi = np.array(
+            [bound[1] for bound in clean_bounds],
+            dtype=float,
+        )
 
         if use_init:
-            x0 = _robust_init_from_uv(copula, u, v, bounds)
+            x0 = _robust_init_from_uv(
+                copula,
+                u,
+                v,
+                bounds,
+            )
+
         else:
             x0 = base.copy()
 
-        x0 = np.asarray(x0, dtype=float).ravel()
-        x0 = np.clip(x0, lo, hi)
+        x0 = np.asarray(
+            x0,
+            dtype=float,
+        ).ravel()
 
-    except Exception as e:
-        print("[CMLE ERROR] Invalid initial parameters or bounds:", e)
+        x0 = np.clip(
+            x0,
+            lo,
+            hi,
+        )
+
+    except Exception as exc:
+        print(
+            "[CMLE ERROR] Invalid initial parameters or bounds:",
+            exc,
+        )
         return None
 
     if quick and "maxiter" not in options:
-        options = {**options, "maxiter": 50}
+        options = {
+            **options,
+            "maxiter": 50,
+        }
 
     BIG = 1e50
 
-    # 3) Negative log-likelihood on (u,v)
+    # ------------------------------------------------------------------
+    # 3) Negative copula log-likelihood
+    # ------------------------------------------------------------------
     def neg_loglik(params_raw):
         try:
-            params = np.asarray(params_raw, dtype=float).ravel()
-            params = np.clip(params, lo, hi)
+            params = np.asarray(
+                params_raw,
+                dtype=float,
+            ).ravel()
+
+            params = np.clip(
+                params,
+                lo,
+                hi,
+            )
 
             if len(params) != len(copula.get_parameters()):
                 return BIG
 
-            # CMLE: set parameters then call get_pdf(u,v) without theta
-            copula.set_parameters(params.tolist())
+            copula.set_parameters(
+                params.tolist()
+            )
 
             logpdf_vals = evaluate_copula_log_pdf(
                 copula,
@@ -922,19 +1092,31 @@ def _cmle(
                 pdf_floor=1e-300,
             )
 
-            if np.any(~np.isfinite(logpdf_vals)):
+            if np.any(
+                ~np.isfinite(logpdf_vals)
+            ):
                 return BIG
 
             return float(
                 -np.sum(logpdf_vals)
             )
+
         except Exception as err:
             if verbose:
-                print("[CMLE LOG_LIKELIHOOD ERROR]", err)
-                print("→ Params received:", params_raw)
+                print(
+                    "[CMLE LOG_LIKELIHOOD ERROR]",
+                    err,
+                )
+                print(
+                    "→ Params received:",
+                    params_raw,
+                )
+
             return BIG
 
+    # ------------------------------------------------------------------
     # 4) Optimize with likelihood guard and fallback
+    # ------------------------------------------------------------------
     result, selected_method, initial_nll = _minimize_with_fallback(
         objective=neg_loglik,
         x0=x0,
@@ -942,25 +1124,50 @@ def _cmle(
         primary_method=opti_method,
         options=options,
         verbose=verbose,
-        label=f"CMLE/{getattr(copula, 'name', 'Copula')}",
+        label=(
+            f"CMLE/"
+            f"{getattr(copula, 'name', 'Copula')}"
+        ),
         big_value=BIG,
     )
 
     if result is None:
         return None
 
+    # ------------------------------------------------------------------
     # 5) Output
+    # ------------------------------------------------------------------
     if result.success:
-        fitted_params = np.clip(np.asarray(result.x, dtype=float).ravel(), lo, hi)
-        loglik = float(-result.fun)
+        fitted_params = np.clip(
+            np.asarray(
+                result.x,
+                dtype=float,
+            ).ravel(),
+            lo,
+            hi,
+        )
 
-        # Safe write-back (avoid strict-boundary ValueError)
+        loglik = float(
+            -result.fun
+        )
+
         try:
-            copula.set_parameters(fitted_params.tolist())
+            copula.set_parameters(
+                fitted_params.tolist()
+            )
+
         except ValueError:
             eps = 1e-12
-            fitted_params = np.clip(fitted_params, lo + eps, hi - eps)
-            copula.set_parameters(fitted_params.tolist())
+
+            fitted_params = np.clip(
+                fitted_params,
+                lo + eps,
+                hi - eps,
+            )
+
+            copula.set_parameters(
+                fitted_params.tolist()
+            )
 
         _write_back_fit_metadata(
             copula=copula,
@@ -971,23 +1178,61 @@ def _cmle(
         if not return_metrics:
             return fitted_params, loglik
 
-        # Optional Huang tails on (u,v)
         try:
-            lamU = float(huang_lambda(u, v, side="upper"))
-            lamL = float(huang_lambda(u, v, side="lower"))
+            lamU = float(
+                huang_lambda(
+                    u,
+                    v,
+                    side="upper",
+                )
+            )
+
+            lamL = float(
+                huang_lambda(
+                    u,
+                    v,
+                    side="lower",
+                )
+            )
+
         except Exception:
-            lamU = lamL = None
+            lamU = None
+            lamL = None
 
-        extras = {"lambdaU_huang": lamU, "lambdaL_huang": lamL, "n_obs": len(u)}
-        return fitted_params, loglik, extras
+        extras = {
+            "lambdaU_huang": lamU,
+            "lambdaL_huang": lamL,
+            "n_obs": len(u),
+        }
 
-    else:
-        if verbose:
-            print(f"[CMLE FAILED] for copula '{getattr(copula, 'name', 'Unnamed Copula')}'")
-            print("→ Initial guess:", x0)
-            print("→ Bounds:", clean_bounds)
-            print("→ Message:", result.message)
-        return None
+        return (
+            fitted_params,
+            loglik,
+            extras,
+        )
+
+    if verbose:
+        print(
+            f"[CMLE FAILED] for copula "
+            f"'{getattr(copula, 'name', 'Unnamed Copula')}'"
+        )
+
+        print(
+            "→ Initial guess:",
+            x0,
+        )
+
+        print(
+            "→ Bounds:",
+            clean_bounds,
+        )
+
+        print(
+            "→ Message:",
+            result.message,
+        )
+
+    return None
 
 
 # ==============================================================================

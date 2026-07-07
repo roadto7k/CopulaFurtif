@@ -21,38 +21,235 @@ def _annualization_factor(interval: str):
         return 365.0 / days
     return 365.0 * 24.0  # fallback
 
-def performance_metrics(equity, interval: str = "D"):
-    eq = pd.Series(equity).replace([np.inf, -np.inf], np.nan).dropna()
+def performance_metrics(
+    equity,
+    interval: str = "D",
+):
+    """
+    Compute strategy performance metrics.
+
+    The primary Sharpe ratio is computed from:
+
+        annualized geometric return
+        --------------------------------
+        annualized monthly volatility
+
+    This provides a stable strategy-level metric and a comparison basis
+    close to the methodology reported in the reference paper.
+
+    The previous bar-frequency Sharpe is retained as a diagnostic metric.
+    """
+    eq = (
+        pd.Series(equity)
+        .replace(
+            [np.inf, -np.inf],
+            np.nan,
+        )
+        .dropna()
+    )
+
     if len(eq) < 3:
         return dict(
             total_return=np.nan,
             annual_return=np.nan,
             annual_vol=np.nan,
             sharpe=np.nan,
+            sharpe_bar=np.nan,
+            annual_vol_bar=np.nan,
             max_drawdown=np.nan,
             romad=np.nan,
         )
 
-    rets = eq.pct_change().dropna()
-    ann = _annualization_factor(interval)
-    mu = rets.mean() * ann
-    vol = rets.std(ddof=1) * math.sqrt(ann) if rets.std(ddof=1) > 0 else np.nan
-    sharpe = (mu / vol) if (vol is not None and np.isfinite(vol) and vol > 0) else np.nan
+    # ------------------------------------------------------------------
+    # Total return
+    # ------------------------------------------------------------------
+    initial_equity = float(
+        eq.iloc[0]
+    )
 
-    # drawdown
+    final_equity = float(
+        eq.iloc[-1]
+    )
+
+    total_return = (
+        final_equity / initial_equity
+        - 1.0
+    )
+
+    # ------------------------------------------------------------------
+    # Geometric annualized return
+    # ------------------------------------------------------------------
+    elapsed_seconds = (
+        pd.to_datetime(eq.index[-1])
+        - pd.to_datetime(eq.index[0])
+    ).total_seconds()
+
+    elapsed_years = (
+        elapsed_seconds
+        / (
+            365.25
+            * 24.0
+            * 60.0
+            * 60.0
+        )
+    )
+
+    if (
+        elapsed_years > 0.0
+        and initial_equity > 0.0
+        and final_equity > 0.0
+    ):
+        annual_return = (
+            (
+                final_equity
+                / initial_equity
+            )
+            ** (
+                1.0
+                / elapsed_years
+            )
+            - 1.0
+        )
+
+    else:
+        annual_return = np.nan
+
+    # ------------------------------------------------------------------
+    # Monthly strategy returns
+    # ------------------------------------------------------------------
+    monthly_returns = (
+        eq.resample("ME")
+        .last()
+        .pct_change()
+        .dropna()
+    )
+
+    if (
+        len(monthly_returns) >= 2
+        and monthly_returns.std(
+            ddof=1
+        ) > 0.0
+    ):
+        annual_vol = float(
+            monthly_returns.std(
+                ddof=1
+            )
+            * math.sqrt(12.0)
+        )
+
+        sharpe = (
+            annual_return
+            / annual_vol
+            if (
+                np.isfinite(annual_return)
+                and annual_vol > 0.0
+            )
+            else np.nan
+        )
+
+    else:
+        annual_vol = np.nan
+        sharpe = np.nan
+
+    # ------------------------------------------------------------------
+    # Naive bar-frequency Sharpe
+    #
+    # Retained for diagnostics only.
+    # ------------------------------------------------------------------
+    bar_returns = (
+        eq.pct_change()
+        .dropna()
+    )
+
+    ann = _annualization_factor(
+        interval
+    )
+
+    bar_std = bar_returns.std(
+        ddof=1
+    )
+
+    if (
+        len(bar_returns) >= 2
+        and np.isfinite(bar_std)
+        and bar_std > 0.0
+    ):
+        annual_vol_bar = float(
+            bar_std
+            * math.sqrt(ann)
+        )
+
+        sharpe_bar = float(
+            (
+                bar_returns.mean()
+                / bar_std
+            )
+            * math.sqrt(ann)
+        )
+
+    else:
+        annual_vol_bar = np.nan
+        sharpe_bar = np.nan
+
+    # ------------------------------------------------------------------
+    # Drawdown
+    # ------------------------------------------------------------------
     peak = eq.cummax()
-    dd = (eq / peak) - 1.0
-    mdd = float(dd.min())
-    tot = float(eq.iloc[-1] / eq.iloc[0] - 1.0)
-    romad = (tot / abs(mdd)) if (np.isfinite(mdd) and mdd < 0) else np.nan
+
+    drawdown = (
+        eq / peak
+        - 1.0
+    )
+
+    max_drawdown = float(
+        drawdown.min()
+    )
+
+    romad = (
+        total_return
+        / abs(max_drawdown)
+        if (
+            np.isfinite(max_drawdown)
+            and max_drawdown < 0.0
+        )
+        else np.nan
+    )
 
     return dict(
-        total_return=tot,
-        annual_return=float(mu),
-        annual_vol=float(vol) if vol is not None else np.nan,
-        sharpe=float(sharpe) if sharpe is not None else np.nan,
-        max_drawdown=float(mdd),
-        romad=float(romad) if romad is not None else np.nan,
+        total_return=float(
+            total_return
+        ),
+        annual_return=float(
+            annual_return
+        ) if np.isfinite(
+            annual_return
+        ) else np.nan,
+        annual_vol=float(
+            annual_vol
+        ) if np.isfinite(
+            annual_vol
+        ) else np.nan,
+        sharpe=float(
+            sharpe
+        ) if np.isfinite(
+            sharpe
+        ) else np.nan,
+        sharpe_bar=float(
+            sharpe_bar
+        ) if np.isfinite(
+            sharpe_bar
+        ) else np.nan,
+        annual_vol_bar=float(
+            annual_vol_bar
+        ) if np.isfinite(
+            annual_vol_bar
+        ) else np.nan,
+        max_drawdown=max_drawdown,
+        romad=float(
+            romad
+        ) if np.isfinite(
+            romad
+        ) else np.nan,
     )
 
 

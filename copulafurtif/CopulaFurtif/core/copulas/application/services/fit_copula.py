@@ -32,34 +32,96 @@ def _safe_write_back_result(copula, params, ll):
 
 
 class CopulaFitter:
-    def fit_cmle(self, data, copula,
-                 opti_method=None, options=None,
-                 use_init=True, quick=False, return_metrics=False, verbose=True):
+    def fit_cmle(
+            self,
+            data,
+            copula,
+            opti_method=None,
+            options=None,
+            use_init=True,
+            quick=False,
+            return_metrics=False,
+            verbose=True,
+            inputs_are_uniform=False,
+    ):
         """
-        CMLE wrapper with robust init/quick mode passthrough and safe result handling.
+        Fit copula parameters by maximizing the copula log-likelihood.
+
+        Parameters
+        ----------
+        data : sequence
+            Pair of raw observations or already-uniform PIT values.
+
+        copula : CopulaModel
+            Copula model to fit.
+
+        opti_method : str, optional
+            Optimization method.
+
+        options : dict, optional
+            Optimizer options.
+
+        use_init : bool, optional
+            Use robust data-driven initialization.
+
+        quick : bool, optional
+            Use reduced optimizer iterations.
+
+        return_metrics : bool, optional
+            Return optional fitting diagnostics.
+
+        verbose : bool, optional
+            Enable fitting diagnostics.
+
+        inputs_are_uniform : bool, optional
+            False:
+                Raw data are rank-transformed internally (CML).
+
+            True:
+                Inputs are already PIT/uniform values and are used directly
+                (IFM copula stage).
+
+        Returns
+        -------
+        tuple or None
+            (params, loglik) or
+            (params, loglik, extras).
         """
-        try:
-            res = _cmle(copula=copula, data=data,
-                        opti_method=opti_method, options=options,
-                        verbose=verbose, use_init=use_init,
-                        quick=quick, return_metrics=return_metrics)
-        except TypeError:
-            # fallback old signature
-            res = _cmle(copula, data)
+        res = _cmle(
+            copula=copula,
+            data=data,
+            opti_method=opti_method,
+            options=options,
+            verbose=verbose,
+            use_init=use_init,
+            quick=quick,
+            return_metrics=return_metrics,
+            inputs_are_uniform=inputs_are_uniform,
+        )
 
         if not res:
             return None
 
-        # unpack (params, ll[, extras])
-        if isinstance(res, (list, tuple)) and len(res) == 3:
+        if (
+                isinstance(res, (list, tuple))
+                and len(res) == 3
+        ):
             params, ll, extras = res
+
         else:
             params, ll = res
             extras = None
 
-        _safe_write_back_result(copula, params, ll)
+        _safe_write_back_result(
+            copula,
+            params,
+            ll,
+        )
 
-        return (params, ll, extras) if return_metrics else (params, ll)
+        if return_metrics:
+            return params, ll, extras
+
+        return params, ll
 
     def fit_mle(self, data, copula, marginals,
                 opti_method=None, known_parameters=True,
