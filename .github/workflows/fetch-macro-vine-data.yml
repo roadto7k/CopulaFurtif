@@ -15,7 +15,7 @@ permissions:
 jobs:
   fetch-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,11 +23,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Download hourly USDJPY
         run: |
-          mkdir -p macro_data
+          mkdir -p macro_data/usdjpy
           npx -y dukascopy-node@latest \
             -i usdjpy \
             -from 2020-12-01 \
@@ -35,14 +35,14 @@ jobs:
             -t h1 \
             -p bid \
             -f csv \
-            -dir macro_data \
-            -fn usdjpy_h1.csv \
+            -dir macro_data/usdjpy \
             -r 3 \
             -rp 1500 \
             -re
 
       - name: Download hourly USA Tech 100
         run: |
+          mkdir -p macro_data/nasdaq
           npx -y dukascopy-node@latest \
             -i usatechidxusd \
             -from 2020-12-01 \
@@ -50,17 +50,25 @@ jobs:
             -t h1 \
             -p bid \
             -f csv \
-            -dir macro_data \
-            -fn nasdaq100_h1.csv \
+            -dir macro_data/nasdaq \
             -r 3 \
             -rp 1500 \
             -re
 
-      - name: Validate data
+      - name: Normalize and validate data
+        shell: bash
         run: |
-          ls -lh macro_data
+          set -euxo pipefail
+          find macro_data -type f -maxdepth 5 -print -exec ls -lh {} \;
+          USD_FILE=$(find macro_data/usdjpy -type f -name '*.csv' | head -1)
+          NQ_FILE=$(find macro_data/nasdaq -type f -name '*.csv' | head -1)
+          test -n "$USD_FILE"
+          test -n "$NQ_FILE"
+          cp "$USD_FILE" macro_data/usdjpy_h1.csv
+          cp "$NQ_FILE" macro_data/nasdaq100_h1.csv
           test -s macro_data/usdjpy_h1.csv
           test -s macro_data/nasdaq100_h1.csv
+          wc -l macro_data/usdjpy_h1.csv macro_data/nasdaq100_h1.csv
           head -3 macro_data/usdjpy_h1.csv
           head -3 macro_data/nasdaq100_h1.csv
           tail -3 macro_data/usdjpy_h1.csv
@@ -70,6 +78,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macro-vine-hourly-data
-          path: macro_data/*.csv
+          path: |
+            macro_data/usdjpy_h1.csv
+            macro_data/nasdaq100_h1.csv
           if-no-files-found: error
           retention-days: 7
