@@ -1,0 +1,72 @@
+name: Fetch macro vine data
+
+on:
+  push:
+    branches:
+      - research/macro-vine-data-20260719
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Download hourly USDJPY
+        run: |
+          mkdir -p macro_data
+          npx -y dukascopy-node@latest \
+            -i usdjpy \
+            -from 2020-12-01 \
+            -to 2026-07-01 \
+            -t h1 \
+            -p bid \
+            -f csv \
+            -dir macro_data \
+            -fn usdjpy_h1.csv \
+            -r 3 \
+            -rp 1500 \
+            -re
+
+      - name: Download hourly USA Tech 100
+        run: |
+          npx -y dukascopy-node@latest \
+            -i usatechidxusd \
+            -from 2020-12-01 \
+            -to 2026-07-01 \
+            -t h1 \
+            -p bid \
+            -f csv \
+            -dir macro_data \
+            -fn nasdaq100_h1.csv \
+            -r 3 \
+            -rp 1500 \
+            -re
+
+      - name: Validate data
+        run: |
+          ls -lh macro_data
+          test -s macro_data/usdjpy_h1.csv
+          test -s macro_data/nasdaq100_h1.csv
+          head -3 macro_data/usdjpy_h1.csv
+          head -3 macro_data/nasdaq100_h1.csv
+          tail -3 macro_data/usdjpy_h1.csv
+          tail -3 macro_data/nasdaq100_h1.csv
+
+      - name: Upload macro data
+        uses: actions/upload-artifact@v4
+        with:
+          name: macro-vine-hourly-data
+          path: macro_data/*.csv
+          if-no-files-found: error
+          retention-days: 7
