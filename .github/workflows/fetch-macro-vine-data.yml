@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - research/macro-vine-data-20260719
+  pull_request:
+    branches:
+      - research/macro-vine-data-20260719
   workflow_dispatch:
 
 permissions:
